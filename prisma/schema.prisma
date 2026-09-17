@@ -1,0 +1,131 @@
+// ---------------------------------------------------------------------------
+// Érika Bruna — Gestão de Consultoria
+// Esquema do banco — FASE 1 (fundação)
+//
+// ESCOPO DELIBERADAMENTE MÍNIMO.
+//
+// Nesta fase existem APENAS as tabelas necessárias para autenticar e
+// identificar quem usa o sistema.
+//
+// NÃO existem aqui — e não devem ser adicionados antes das respostas da
+// Seção 17 do relatório da Fase 0:
+//   · Ingredient / ClientIngredient   (pendem dos pontos 4, 5, 6, 10)
+//   · Recipe / RecipeItem             (pendem dos pontos 4, 5, 6, 19)
+//   · RecipeCostSnapshot              (pendem dos pontos 7, 9, 19)
+//   · campos de CMV, markup, preço    (pendem do ponto 7)
+//   · índice de cocção                (pende do ponto 4)
+//
+// Criar esses modelos agora significaria inventar regra gastronômica.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+// Neon exige as duas conexões: a com pool (DATABASE_URL) para a aplicação
+// e a direta (DIRECT_URL) para as migrations. Ambas vão no .env.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Papéis de acesso. Nesta fase só ADMIN é usado.
+/// CONSULTORA e CLIENTE existem para não exigir migration estrutural
+/// quando as fases 8 e 9 chegarem.
+enum UserRole {
+  ADMIN
+  CONSULTORA
+  CLIENTE
+  EQUIPE_CLIENTE
+}
+
+model User {
+  id           String    @id @default(cuid())
+  nome         String
+  email        String    @unique
+  senhaHash    String
+  papel        UserRole  @default(ADMIN)
+  ativo        Boolean   @default(true)
+  ultimoAcesso DateTime?
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  contas    Account[]
+  sessoes   Session[]
+  auditoria AuditLog[]
+
+  @@map("users")
+}
+
+/// Tabelas exigidas pelo Auth.js. Mantidas com os nomes de campo que a
+/// biblioteca espera, para não precisar de adapter customizado.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+/// Trilha de auditoria. O sistema registra quem mudou o quê e quando —
+/// requisito levantado na Fase 0 (o histórico hoje não existe em lugar nenhum).
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  entidade  String
+  entidadeId String?
+  acao      String
+  valorAntes Json?
+  valorDepois Json?
+  criadoEm  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entidade, entidadeId])
+  @@index([criadoEm])
+  @@map("audit_logs")
+}
+
+/// Configurações gerais do sistema, em pares chave/valor.
+/// Usada para preferências que não merecem uma coluna própria.
+model AppSetting {
+  chave        String   @id
+  valor        Json
+  atualizadoEm DateTime @updatedAt
+
+  @@map("app_settings")
+}

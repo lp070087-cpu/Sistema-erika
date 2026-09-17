@@ -1,0 +1,440 @@
+/**
+ * TIPOS DA OPERAÇÃO — cliente, consultoria, tarefa, processo, ficha.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ A REGRA QUE GOVERNA ESTE ARQUIVO                                     │
+ * │                                                                      │
+ * │ NENHUM TIPO AQUI CARREGA UM NÚMERO CALCULADO.                        │
+ * │                                                                      │
+ * │ Não existe `cmv`, não existe `custoTotal`, não existe `margem`, não  │
+ * │ existe `indiceCoccao`, não existe `fatorCorrecaoAplicado`, não       │
+ * │ existe `score`. Todos esses dependem dos pontos 4, 5, 6, 7, 9, 11 e  │
+ * │ 19 da Seção 17, que seguem sem resposta.                             │
+ * │                                                                      │
+ * │ O que existe é o que é FATO OBSERVÁVEL: quem é o cliente, o que foi  │
+ * │ combinado, o que está pendente, o que foi declarado, que ingrediente │
+ * │ tem que preço, em que dia. Um sistema que demonstra a operação sem   │
+ * │ inventar a matemática dela.                                          │
+ * │                                                                      │
+ * │ Quando as decisões chegarem, os campos calculados ENTRAM AQUI como   │
+ * │ campos derivados — preenchidos pelo servidor, nunca pela tela. O     │
+ * │ contrato de `Ficha` já reserva o lugar onde isso vai acontecer, com  │
+ * │ um campo de estado (`situacaoCalculo`) que hoje diz "pendente".      │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+
+import type { BlocoChave } from "./perguntas";
+import type { LeadStatus, OrigemLead, TipoServico } from "./tipos";
+
+// ---------------------------------------------------------------------------
+// Cliente
+// ---------------------------------------------------------------------------
+
+export type SituacaoCliente = "ATIVO" | "EM_IMPLANTACAO" | "PAUSADO" | "ENCERRADO";
+
+export type Modalidade = "PRESENCIAL" | "ONLINE" | "MISTA";
+
+export type PorteEstabelecimento = "PEQUENO" | "MEDIO" | "GRANDE";
+
+/**
+ * O cliente.
+ *
+ * Os campos de contexto (`porte`, `funcionarios`, `controlaEstoque`) vêm
+ * das respostas que ELE deu no diagnóstico — não são dedução do sistema.
+ * É por isso que podem existir agora: são declarações, e o relatório da
+ * Fase 0 pediu que o cadastro carregasse o contexto do negócio.
+ *
+ * O que NÃO existe aqui: CMV alvo, margem desejada, origem do preço de
+ * insumo. São decisões da consultora (pontos 7 e 10) e virarão campos
+ * quando ela responder — não antes.
+ */
+export type Cliente = {
+  id: string;
+  nomeFantasia: string;
+  nomeContato: string;
+  email: string;
+  whatsapp: string;
+  tipoNegocio: TipoServico;
+  porte: PorteEstabelecimento;
+  cidade: string;
+  situacao: SituacaoCliente;
+  modalidade: Modalidade;
+  iniciadoEm: Date;
+  ultimaAtividadeEm: Date;
+  /** Número de funcionários declarado no diagnóstico. Faixa, não estimativa. */
+  funcionariosDeclarados: string;
+  /** De onde este cliente veio — liga a história de volta ao lead. */
+  leadOrigemId: string | null;
+  origem: OrigemLead;
+  /** O que ele declarou como maior problema, quando virou cliente. */
+  problemaDeclarado: string;
+};
+
+// ---------------------------------------------------------------------------
+// Consultoria
+// ---------------------------------------------------------------------------
+
+/**
+ * Status da consultoria.
+ *
+ * São rótulos que a consultora ATRIBUI. Não existe transição automática
+ * entre eles: o sistema não decide que uma consultoria "passou" para
+ * acompanhamento porque uma data chegou. Isso seria regra de negócio
+ * inventada, e ela não pediu automação.
+ */
+export type StatusConsultoria =
+  | "PLANEJAMENTO"
+  | "EM_ANDAMENTO"
+  | "AGUARDANDO_CLIENTE"
+  | "EM_ACOMPANHAMENTO"
+  | "CONCLUIDA";
+
+/** As etapas do método dela, na ordem que o site dela já publica. */
+export type EtapaConsultoria =
+  | "DIAGNOSTICO"
+  | "ANALISE"
+  | "PLANO_DE_ACAO"
+  | "IMPLANTACAO"
+  | "TREINAMENTO"
+  | "ACOMPANHAMENTO"
+  | "RESULTADO";
+
+export type EstadoEtapa = "NAO_INICIADA" | "EM_ANDAMENTO" | "CONCLUIDA" | "AGUARDANDO_DADOS";
+
+/**
+ * Uma etapa da jornada.
+ *
+ * `progresso` e `total` existem para o caso "3 de 12 fichas" — uma
+ * CONTAGEM, que é fato verificável. Repare que não existe percentual de
+ * conclusão geral da consultoria: somar etapas de naturezas diferentes
+ * exigiria pesos, e peso é decisão (ponto 11).
+ */
+export type EtapaJornada = {
+  etapa: EtapaConsultoria;
+  estado: EstadoEtapa;
+  /** Contagem quando faz sentido (fichas feitas, processos mapeados). */
+  progresso?: number;
+  total?: number;
+  /** Frase curta de situação. Escrita, não calculada. */
+  nota: string;
+};
+
+export type Consultoria = {
+  id: string;
+  clienteId: string;
+  titulo: string;
+  status: StatusConsultoria;
+  modalidade: Modalidade;
+  iniciadaEm: Date;
+  ultimoAcompanhamentoEm: Date | null;
+  proximaAcao: string;
+  proximaAcaoEm: Date | null;
+  /** Escopo combinado, em texto. O que ela vai entregar. */
+  escopo: string[];
+  jornada: EtapaJornada[];
+};
+
+// ---------------------------------------------------------------------------
+// Plano de ação
+// ---------------------------------------------------------------------------
+
+export type Prioridade = "ALTA" | "MEDIA" | "BAIXA";
+
+export type StatusAcao = "A_FAZER" | "EM_ANDAMENTO" | "AGUARDANDO_CLIENTE" | "CONCLUIDO";
+
+export type AcaoPlano = {
+  id: string;
+  consultoriaId: string;
+  clienteId: string;
+  titulo: string;
+  descricao: string;
+  responsavel: string;
+  prioridade: Prioridade;
+  status: StatusAcao;
+  prazo: Date | null;
+  observacao: string;
+  criadoEm: Date;
+};
+
+// ---------------------------------------------------------------------------
+// Tarefa
+// ---------------------------------------------------------------------------
+
+/**
+ * Tarefa é a ação do dia a dia da consultora — distinta da ação do plano,
+ * que é o combinado com o cliente. Uma tarefa pode não ter cliente
+ * (lembrar de comprar café) e uma ação de plano sempre tem.
+ */
+export type StatusTarefa = "A_FAZER" | "EM_ANDAMENTO" | "CONCLUIDA";
+
+export type Tarefa = {
+  id: string;
+  titulo: string;
+  clienteId: string | null;
+  consultoriaId: string | null;
+  prazo: Date | null;
+  status: StatusTarefa;
+  prioridade: Prioridade;
+  concluidaEm: Date | null;
+};
+
+// ---------------------------------------------------------------------------
+// Acompanhamento
+// ---------------------------------------------------------------------------
+
+export type TipoAcompanhamento = "REUNIAO" | "VISITA" | "ANALISE" | "RETORNO" | "REVISAO";
+
+export type Acompanhamento = {
+  id: string;
+  clienteId: string;
+  consultoriaId: string;
+  tipo: TipoAcompanhamento;
+  data: Date;
+  modalidade: Modalidade;
+  titulo: string;
+  resumo: string;
+  /** O que ficou combinado de fazer — em texto, escrito por ela. */
+  pendencias: string[];
+  proximaAcao: string;
+  /** O sistema não calcula duração nem produtividade. Só registra o fato. */
+  registradoEm: Date;
+};
+
+// ---------------------------------------------------------------------------
+// Processo / praça
+// ---------------------------------------------------------------------------
+
+/**
+ * Passo do fluxo de finalização.
+ *
+ * `tempoEstimadoMin` é o que a equipe DECLAROU, não cronometragem. O
+ * sistema não mede tempo — ele guarda o que foi informado, com o número
+ * redondo que veio. É diferente de um indicador calculado.
+ */
+export type PassoProcesso = {
+  ordem: number;
+  descricao: string;
+  responsavel: string;
+  tempoEstimadoMin: number | null;
+};
+
+export type Processo = {
+  id: string;
+  clienteId: string;
+  praca: string;
+  turno: string;
+  responsavel: string;
+  /** Pratos que passam por esta praça. Nomes, não ids — é o que ela vê. */
+  pratos: string[];
+  passos: PassoProcesso[];
+  /** Soma dos tempos declarados. Calculada porque é soma de fato, não regra. */
+  observacoes: string;
+};
+
+// ---------------------------------------------------------------------------
+// Ficha técnica — ESTRUTURA, SEM MOTOR
+// ---------------------------------------------------------------------------
+
+/**
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ESTA FICHA NÃO TEM CUSTO                                     │
+ * │                                                                      │
+ * │ Uma ficha técnica é, no fim, uma conta. E a conta depende de cinco   │
+ * │ decisões que ainda não existem:                                      │
+ * │                                                                      │
+ * │   · fator de correção aplicado onde?      → pontos 5 e 6            │
+ * │   · índice de cocção existe e como?       → ponto 4                 │
+ * │   · o que se faz com a perda declarada?   → ponto 4                 │
+ * │   · arredonda em que casa?                → ponto 19                │
+ * │                                                                      │
+ * │ Por isso `ItemFicha` guarda QUANTIDADE e PREÇO DE REFERÊNCIA — os    │
+ * │ dois fatos — e NÃO guarda custo. O custo é o produto dos dois, mas   │
+ * │ qual dos dois é ajustado antes de multiplicar ainda é decisão dela.  │
+ * │                                                                      │
+ * │ O campo `situacaoCalculo` é a resposta honesta para a tela: em vez   │
+ * │ de mostrar um número inventado, ela mostra que o número depende de   │
+ * │ uma configuração. Quando os pontos forem respondidos, este campo     │
+ * │ passa a "DISPONIVEL" e o servidor preenche os valores.               │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type SituacaoCalculo = "PENDENTE_METODOLOGIA" | "AGUARDANDO_DADOS" | "DISPONIVEL";
+
+export type ItemFicha = {
+  ingredienteId: string;
+  /** Quantidade líquida declarada. Como texto: "0,120" ou "a gosto". */
+  quantidade: string;
+  unidade: string;
+  /** Preço de referência do ingrediente no momento do uso. */
+  precoReferencia: number | null;
+  /**
+   * O custo do item. `null` enquanto a metodologia não for definida —
+   * e `null` é diferente de zero. Zero afirmaria que não custa nada.
+   */
+  custo: number | null;
+};
+
+export type SituacaoFicha = "COMPLETA" | "AGUARDANDO_DADOS" | "EM_REVISAO";
+
+export type Ficha = {
+  id: string;
+  clienteId: string;
+  nome: string;
+  categoria: string;
+  /** Rendimento em porções. Número declarado, não calculado. */
+  rendimentoPorcoes: number | null;
+  /** Peso da porção em gramas, quando declarado. */
+  porcaoGramas: number | null;
+  itens: ItemFicha[];
+  modoPreparo: string[];
+  finalizacao: string[];
+  observacoes: string;
+  situacao: SituacaoFicha;
+  situacaoCalculo: SituacaoCalculo;
+  atualizadaEm: Date;
+  /** Histórico de alterações da ficha — o que mudou e quando. */
+  historico: Array<{ em: Date; oQue: string; quem: string }>;
+};
+
+// ---------------------------------------------------------------------------
+// Ingrediente e histórico de preço
+// ---------------------------------------------------------------------------
+
+export type PrecoIngrediente = {
+  id: string;
+  /** Data em que este preço passou a valer. */
+  em: Date;
+  valor: number;
+  unidade: string;
+  fornecedor: string;
+  /** De onde veio o número: ela digitou, o cliente informou, ou é antigo. */
+  origem: "CONSULTORA" | "CLIENTE" | "IMPORTADO";
+};
+
+export type Ingrediente = {
+  id: string;
+  nome: string;
+  categoria: string;
+  unidade: string;
+  /** O preço vigente. É o primeiro da lista de histórico. */
+  precoAtual: number | null;
+  atualizadoEm: Date;
+  fornecedor: string;
+  /**
+   * Histórico de preços, do mais recente para o mais antigo.
+   *
+   * É o coração de um dos ganhos que a Fase 0 identificou: parar de
+   * redigitar preço em cada ficha. Só que o GANHO depende do ponto 10 —
+   * de onde vêm os preços — e do ponto 5, sobre fator de correção por
+   * contexto. Por isso o histórico é visível e o recálculo automático
+   * ainda não acontece.
+   */
+  historico: PrecoIngrediente[];
+};
+
+// ---------------------------------------------------------------------------
+// Documento
+// ---------------------------------------------------------------------------
+
+export type TipoDocumento = "RELATORIO" | "FICHA" | "PLANO_DE_ACAO" | "PROCESSO" | "OUTRO";
+
+export type SituacaoDocumento = "RASCUNHO" | "PRONTO" | "ENTREGUE";
+
+export type Documento = {
+  id: string;
+  clienteId: string;
+  nome: string;
+  tipo: TipoDocumento;
+  criadoEm: Date;
+  situacao: SituacaoDocumento;
+  /** Vazio nesta fase: não existe storage de arquivo. */
+  arquivo: null;
+};
+
+// ---------------------------------------------------------------------------
+// Histórico unificado do cliente
+// ---------------------------------------------------------------------------
+
+export type TipoEvento =
+  | "diagnostico_recebido"
+  | "lead_convertido"
+  | "consultoria_iniciada"
+  | "acompanhamento_registrado"
+  | "ficha_criada"
+  | "preco_atualizado"
+  | "processo_mapeado"
+  | "tarefa_concluida"
+  | "documento_gerado";
+
+export type EventoHistorico = {
+  id: string;
+  clienteId: string;
+  tipo: TipoEvento;
+  descricao: string;
+  em: Date;
+};
+
+// ---------------------------------------------------------------------------
+// Compromisso (agenda)
+// ---------------------------------------------------------------------------
+
+export type Compromisso = {
+  id: string;
+  clienteId: string;
+  consultoriaId: string | null;
+  titulo: string;
+  tipo: TipoAcompanhamento;
+  modalidade: Modalidade;
+  quando: Date;
+};
+
+// ---------------------------------------------------------------------------
+// Notificação interna
+// ---------------------------------------------------------------------------
+
+export type TipoNotificacao =
+  | "diagnostico_novo"
+  | "tarefa_proxima"
+  | "cliente_aguardando"
+  | "acompanhamento_previsto";
+
+export type Notificacao = {
+  id: string;
+  tipo: TipoNotificacao;
+  titulo: string;
+  descricao: string;
+  quando: Date;
+  /** Para onde a notificação leva. */
+  href: string;
+  lida: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Atenção — o bloco "precisa da sua atenção"
+// ---------------------------------------------------------------------------
+
+export type TipoAtencao =
+  | "INFORMACAO_AGUARDANDO_CLIENTE"
+  | "FICHA_AGUARDANDO_DADOS"
+  | "PROCESSO_AGUARDANDO_REVISAO"
+  | "ACOMPANHAMENTO_PENDENTE"
+  | "DIAGNOSTICO_NAO_LIDO";
+
+export type ItemAtencao = {
+  id: string;
+  tipo: TipoAtencao;
+  titulo: string;
+  detalhe: string;
+  clienteId: string | null;
+  /** Rota para agir. Nunca vazio — atenção sem ação é só preocupação. */
+  href: string;
+  desde: Date;
+};
+
+// ---------------------------------------------------------------------------
+// Helpers de leitura — o que a UI usa para rotular
+// ---------------------------------------------------------------------------
+
+export type OpcaoRotulada<T extends string> = { valor: T; texto: string };
+
+/** Reexportação para as telas não precisarem cavar em dois arquivos. */
+export type { BlocoChave, LeadStatus, OrigemLead, TipoServico };
