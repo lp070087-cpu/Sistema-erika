@@ -177,24 +177,28 @@ export default async function PaginaVisaoGeral() {
         titulo="O tamanho do dia"
         descricao="Seis contagens, todas conferíveis contra as telas de origem. Nenhuma delas é nota, média ou projeção — são coisas que se podem contar."
       >
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <Indicador
+            emCard
             rotulo="Diagnósticos novos"
             valor={resumo.aguardandoLeitura}
             tom={resumo.aguardandoLeitura > 0 ? "atencao" : "neutro"}
             contexto="Chegaram e ainda não foram lidos"
           />
           <Indicador
+            emCard
             rotulo="Clientes ativos"
             valor={clientes.filter((c) => c.situacao === "ATIVO").length}
             contexto={`de ${clientes.length} cadastrados`}
           />
           <Indicador
+            emCard
             rotulo="Consultorias"
             valor={consultoriasAbertas.length}
             contexto="Em andamento ou em acompanhamento"
           />
           <Indicador
+            emCard
             rotulo="Tarefas pendentes"
             valor={gavetas.hoje.length + gavetas.atrasadas.length + gavetas.proximas.length}
             tom={gavetas.atrasadas.length > 0 ? "critico" : "neutro"}
@@ -205,12 +209,14 @@ export default async function PaginaVisaoGeral() {
             }
           />
           <Indicador
+            emCard
             rotulo="Fichas"
             valor={fichas.filter((f) => f.situacao === "AGUARDANDO_DADOS").length}
             tom={fichas.some((f) => f.situacao === "AGUARDANDO_DADOS") ? "atencao" : "neutro"}
             contexto="Aguardando dados"
           />
           <Indicador
+            emCard
             rotulo="Contratos"
             valor={contratosAguardandoAceite.length}
             tom={contratosAguardandoAceite.length > 0 ? "atencao" : "neutro"}
@@ -267,11 +273,13 @@ export default async function PaginaVisaoGeral() {
             <>
               <div className="grid grid-cols-2 gap-3">
                 <Indicador
+                  emCard
                   rotulo="Aguardando aceite"
                   valor={contratosAguardandoAceite.length}
                   tom={contratosAguardandoAceite.length > 0 ? "atencao" : "neutro"}
                 />
                 <Indicador
+                  emCard
                   rotulo="Em andamento"
                   valor={linhasContrato.filter((l) => l.contrato.status === "EM_ANDAMENTO").length}
                 />
@@ -622,15 +630,15 @@ export default async function PaginaVisaoGeral() {
       <Aviso tom="atencao" titulo="O bloco de custo continua fora desta tela">
         <p>
           &ldquo;Variação de custo no período&rdquo; era o quinto bloco pedido para este painel, e é
-          o único que ainda não pode existir. Ele depende dos pontos{" "}
-          <strong className="font-semibold text-tinta tabular">4, 5, 6, 7 e 9</strong> — índice de
-          cocção, fator de correção, CMV alvo e origem do volume.
+          o único que ainda não pode existir. Ele depende de quanto o alimento rende depois de
+          cozido, de quanto se perde entre a compra e o uso, de{" "}
+          <strong className="font-semibold text-tinta">o que entra na conta do custo</strong> e de
+          qual margem é a alvo.
         </p>
         <p className="mt-2.5">
           Um painel de abertura mostrando &ldquo;variação de custo: 0%&rdquo; teria a aparência de
           operação saudável. O zero não mediria a cozinha de ninguém — mediria que a metodologia não
-          existe. É o mesmo defeito que a Fase 0 encontrou nas planilhas: ausência de dado virando
-          número.
+          existe. É o defeito de sempre: ausência de dado virando número.
         </p>
       </Aviso>
 

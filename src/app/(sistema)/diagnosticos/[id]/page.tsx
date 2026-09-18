@@ -135,24 +135,28 @@ export default async function PaginaDiagnostico({ params }: Props) {
         titulo="O que veio preenchido"
         descricao="Contagens diretas. Nenhuma delas mede a qualidade da operação — medem o preenchimento do formulário."
       >
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Indicador
+            emCard
             rotulo="Perguntas respondidas"
             valor={respondidas}
             contexto={`De ${PERGUNTAS.length} no formulário`}
           />
           <Indicador
+            emCard
             rotulo="Obrigatórias em branco"
             valor={faltando}
             tom={faltando > 0 ? "atencao" : "neutro"}
             contexto={faltando === 0 ? "Nenhuma pendência" : "A leitura considera o que existe"}
           />
           <Indicador
+            emCard
             rotulo="Pontos declarados"
             valor={sinais.length}
             contexto="Fatos objetivos que a pessoa informou"
           />
           <Indicador
+            emCard
             rotulo="Blocos lidos"
             valor={`${diagnostico.leitura.length} de ${BLOCOS_DIAGNOSTICO.length}`}
             contexto="Blocos com direcionamento escrito"
@@ -253,9 +257,9 @@ export default async function PaginaDiagnostico({ params }: Props) {
           </Painel>
 
           {/* Lacuna declarada ------------------------------------------ */}
-          <Aviso tom="atencao" titulo="Lacuna no material de origem">
+          <Aviso tom="atencao" titulo="Perguntas que ainda não foram transcritas">
             <p>
-              O relatório da Fase 0 registra{" "}
+              O formulário tem{" "}
               <strong className="font-semibold text-tinta tabular">
                 {LACUNA.declaradasNoRelatorio}
               </strong>{" "}
@@ -263,7 +267,8 @@ export default async function PaginaDiagnostico({ params }: Props) {
               <strong className="font-semibold text-tinta tabular">
                 {LACUNA.transcritas}
               </strong>
-              . As finais não foram lidas nas capturas e não foram inventadas.
+              . As finais não apareceram no material de origem e não foram
+              inventadas.
             </p>
             <ul className="mt-2.5 space-y-1.5">
               {LACUNA.reconstruidas.map((n) => (
@@ -281,8 +286,8 @@ export default async function PaginaDiagnostico({ params }: Props) {
           <Aviso tom="info" titulo="O que falta para o diagnóstico automático">
             <p>
               Para o sistema dizer o que as respostas significam — em vez de
-              só organizá-las — falta o peso de cada resposta, que é o ponto{" "}
-              <strong className="font-semibold text-tinta tabular">11</strong>.
+              só organizá-las — falta o peso de cada resposta. Esse peso é
+              critério seu, e ainda não foi definido.
             </p>
           </Aviso>
         </div>

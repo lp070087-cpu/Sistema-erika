@@ -656,10 +656,16 @@ export const LACUNA = {
   declaradasNoRelatorio: 33,
   /** Perguntas cujo material de origem está incompleto. */
   reconstruidas: [17],
+  /*
+    Texto lido pela consultora em /configuracoes. Por isso ele não cita
+    número de fase nem nome de relatório interno: descreve a lacuna em si —
+    o formulário tem mais perguntas do que o sistema conhece.
+  */
   descricao:
-    "O relatório da Fase 0 registra 33 perguntas no formulário atual. " +
-    "A transcrição literal cobre 29 delas — e a pergunta 17 teve as opções " +
-    "de resposta reconstruídas, porque o print original está cortado.",
+    "O formulário em uso tem mais perguntas do que as 29 que o sistema " +
+    "conhece. A pergunta 17 teve as opções de resposta reconstruídas a " +
+    "partir do padrão do próprio formulário, porque o material de origem " +
+    "está cortado.",
 } as const;
 
 /**

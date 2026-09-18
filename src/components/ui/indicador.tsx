@@ -28,6 +28,7 @@ export function Indicador({
   unidade,
   contexto,
   tom = "neutro",
+  emCard = false,
   className,
 }: {
   rotulo: string;
@@ -36,14 +37,40 @@ export function Indicador({
   unidade?: string;
   contexto?: string;
   tom?: Tom;
+  /**
+   * Envolve o indicador numa superfície com resposta ao mouse e ao toque.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ POR QUE É UM SINALIZADOR, E NÃO O PADRÃO                          │
+   * │                                                                    │
+   * │ O indicador aparece em dois contextos bem diferentes. Numa grade    │
+   * │ de números do Dashboard, cada um é um bloco que merece virar card   │
+   * │ e responder ao mouse. Dentro de um `Painel` que já é uma caixa      │
+   * │ fechada — como os quatro números do diagnóstico — envolver cada um  │
+   * │ em OUTRA caixa daria card dentro de card, duas bordas a 4px de      │
+   * │ distância.                                                         │
+   * │                                                                    │
+   * │ Então quem sabe se há card é a tela, não o componente: ela passa    │
+   * │ `emCard` onde faz sentido. O componente não adivinha pelo contexto. │
+   * └────────────────────────────────────────────────────────────────────┘
+   *
+   * A classe faz a elevação, a sombra e a transição — tudo em CSS, sem
+   * estado no cliente. Um indicador animado não custa JavaScript.
+   */
+  emCard?: boolean;
   className?: string;
 }) {
-  return (
-    <div className={cn("flex flex-col", className)}>
+  const corpo = (
+    <>
       <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.16em] text-[var(--tinta-fraca)]">
         {rotulo}
       </span>
-      <span className={cn("mt-1.5 font-display text-[1.5rem] leading-none tabular", coresTom[tom])}>
+      <span
+        className={cn(
+          "card-indicador__valor mt-1.5 font-display text-[1.5rem] leading-none tabular",
+          coresTom[tom]
+        )}
+      >
         {valor}
         {unidade ? (
           <span className="ml-1 font-texto text-[0.8125rem] font-normal text-[var(--tinta-suave)]">
@@ -56,7 +83,15 @@ export function Indicador({
           {contexto}
         </span>
       ) : null}
-    </div>
+    </>
+  );
+
+  if (!emCard) {
+    return <div className={cn("flex flex-col", className)}>{corpo}</div>;
+  }
+
+  return (
+    <div className={cn("card-indicador flex flex-col px-5 py-4", className)}>{corpo}</div>
   );
 }
 

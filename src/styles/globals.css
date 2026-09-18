@@ -278,6 +278,85 @@ em.destaque {
 }
 
 /* ---------------------------------------------------------------------------
+   Cards de indicador — a microinteração do valor.
+   ---------------------------------------------------------------------------
+
+   O PEDIDO: elevação leve no hover, transição suave de borda, mudança discreta
+   de sombra, ênfase pequena no valor, entrada suave e resposta ao toque — sem
+   ficar chamativo, sem mexer na paleta e sem custar desempenho.
+
+   POR QUE ISSO É CSS E NÃO MAIS UM COMPONENTE.
+
+   A alternativa era envolver cada bloco de indicador num componente de card
+   com estado (`useState` para hover). Isso traria JavaScript para dentro de
+   telas que hoje são 100% renderizadas no servidor — e pagaria o custo em
+   cada card de cada tela, para animar algo que só precisa de CSS.
+
+   EFEITOS ESCOLHIDOS, E POR QUE CADA UM.
+
+   · A ELEVAÇÃO É DE 2px, não de 8px. O sistema tem canto de 4px e sombras
+     quase inexistentes; um card que sobe muito destoa do resto da marca.
+     2px é o suficiente para o olho perceber que aquilo responde ao mouse.
+
+   · A BORDA CLAREIA, não ganha cor. Trocar a cor da borda por oliva puxaria
+     atenção para o card — e o card não é o conteúdo, o número é.
+
+   · A SOMBRA PASSA A EXISTIR, em vez de crescer. Hoje os cards não têm
+     sombra nenhuma; aparecer uma sombra de 1px é uma mudança maior do que
+     engrossar uma já existente.
+
+   · O VALOR ESCURECE UM POUCO. É a "ênfase pequena no valor" que foi pedida:
+     o número fica um tom mais firme junto com o card, sem crescer de corpo —
+     crescer mudaria a altura da linha e faria o texto ao lado pular.
+
+   · O TOQUE. `:active` existe porque hover não existe no celular: sem ele, o
+     toque não daria retorno nenhum antes de a tela trocar (ou de nada
+     acontecer, quando o card é só leitura).
+
+   A TRANSIÇÃO É DE BORDA, FUNDO E SOMBRA — não de `transform` sozinho. Animar
+   só o deslocamento deixaria a borda trocando de repente no meio do movimento.
+
+   `prefers-reduced-motion` já está tratado no bloco acima: com a preferência
+   ligada, a transição vira instantânea e o card só salta de estado, sem
+   animação. Nada aqui depende de movimento para ser compreendido.
+   --------------------------------------------------------------------------- */
+@utility card-indicador {
+  border-radius: var(--raio);
+  border: 1px solid var(--linha);
+  background: var(--superficie);
+  transition:
+    border-color 0.22s var(--ease-marca),
+    background-color 0.22s var(--ease-marca),
+    box-shadow 0.22s var(--ease-marca),
+    transform 0.22s var(--ease-marca);
+}
+
+@media (hover: hover) {
+  .card-indicador:hover {
+    transform: translateY(-2px);
+    border-color: var(--linha-forte);
+    background: var(--superficie-solida);
+    box-shadow: 0 1px 2px rgba(30, 26, 20, 0.06), 0 6px 14px -8px rgba(30, 26, 20, 0.16);
+  }
+
+  /* A ênfase do valor acompanha o card, e não o contrário. */
+  .card-indicador:hover .card-indicador__valor {
+    filter: saturate(1.12) brightness(0.94);
+  }
+}
+
+.card-indicador:active {
+  transform: translateY(-1px);
+  border-color: var(--linha-forte);
+}
+
+.card-indicador__valor {
+  transition:
+    filter 0.22s var(--ease-marca),
+    color 0.22s var(--ease-marca);
+}
+
+/* ---------------------------------------------------------------------------
    Acessibilidade — mesma postura do site.
    --------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {

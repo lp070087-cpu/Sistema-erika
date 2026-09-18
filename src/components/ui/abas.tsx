@@ -67,8 +67,18 @@ export function Abas({
                 href={aba.chave === primeira ? base : `${base}?aba=${aba.chave}`}
                 aria-current={ativa ? "page" : undefined}
                 className={cn(
-                  "relative flex items-center gap-2 px-3.5 py-2.5 text-[0.8125rem] whitespace-nowrap",
+                  /*
+                    `whitespace-nowrap` é o certo aqui: o rótulo da aba não deve
+                    quebrar no meio. O que ele NÃO pode é virar mais um motivo
+                    de a faixa passar da largura do celular — por isso a
+                    rolagem horizontal com barra escondida na <ul> acima, e o
+                    `min-w-0` no contêiner de quem usa o componente. O toque
+                    também fica maior do que a caixa do texto, para o dedo não
+                    errar entre duas abas vizinhas.
+                  */
+                  "relative flex items-center gap-2 px-3.5 py-3 text-[0.8125rem] whitespace-nowrap sm:py-2.5",
                   "transition-colors duration-150",
+                  "-mb-px border-b-2 border-transparent",
                   ativa
                     ? "font-semibold text-tinta"
                     : "text-[var(--tinta-suave)] hover:text-tinta"
@@ -85,11 +95,19 @@ export function Abas({
                     {aba.contagem}
                   </span>
                 ) : null}
-                {/* O traço da aba ativa — a mesma linguagem do rótulo de seção. */}
+                {/*
+                  O traço da aba ativa — a mesma linguagem do rótulo de seção.
+                  Fica na borda DE BAIXO do próprio link (`bottom-0`, e não
+                  `-bottom-px`), porque agora o link carrega a borda
+                  transparente que mantém a altura igual entre ativa e inativa.
+                  Assim o traço não depende mais de a borda da <ul> coincidir
+                  exatamente de pixel com a do item — que é o tipo de detalhe
+                  que quebra só em uma densidade de tela.
+                */}
                 <span
                   aria-hidden
                   className={cn(
-                    "absolute inset-x-2 -bottom-px h-[2px] transition-opacity duration-200",
+                    "absolute inset-x-2 bottom-0 h-[2px] transition-opacity duration-200",
                     ativa ? "bg-oliva opacity-100" : "opacity-0"
                   )}
                 />

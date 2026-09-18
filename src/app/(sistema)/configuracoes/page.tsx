@@ -232,9 +232,15 @@ export default async function PaginaConfiguracoes() {
                 onde está a pergunta original. Numa tela de trabalho (ficha,
                 planilha, consultoria) o número não diz nada e por isso foi
                 removido de todas elas — aqui ele é o endereço.
+
+                O texto ao lado do número, porém, NÃO nomeia o documento
+                interno de onde ele veio: quem lê é a consultora, e o nome do
+                relatório de levantamento não significa nada para ela. O que
+                ela precisa é do número — que continua sendo o endereço da
+                pergunta original.
               */}
               <p className="mt-2 text-[0.75rem] text-[var(--tinta-fraca)]">
-                Pergunta <span className="tabular">{m.ponto}</span> da lista de pendências da Fase 0
+                Pergunta <span className="tabular">{m.ponto}</span> da lista de definições em aberto
               </p>
             </div>
           ))}

@@ -5,7 +5,7 @@ import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso, Painel, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
 import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
-import { AvisoMetodologia } from "@/components/ui/jornada";
+import { DecisoesQueFaltam } from "@/components/ui/metodologia";
 import {
   ROTULO_SITUACAO_DOCUMENTO,
   ROTULO_TIPO_DOCUMENTO,
@@ -284,14 +284,19 @@ export default async function PaginaRelatorios() {
         </ul>
 
         <div className="mt-5">
-          <AvisoMetodologia>
-            Nenhum valor aparece nas linhas acima — nem zero, nem traço, nem
-            estimativa. O que aparece é o nome do dado e a decisão que falta
-            para que ele exista. Um relatório de resultado com número inventado
-            seria levado para uma reunião com cliente, e aí o sistema teria
-            participado de uma conversa comercial com dado fabricado. Não vale
-            o risco pela aparência.
-          </AvisoMetodologia>
+          <DecisoesQueFaltam
+            apenas={[
+              "coccao",
+              "compra-para-uso",
+              "custo-do-prato",
+              "formacao-de-preco",
+              "origem-do-preco",
+              "arredondamento",
+              "peso-das-etapas",
+            ]}
+            titulo="Por que nenhuma linha tem valor"
+            descricao="Nenhum valor aparece nas linhas acima — nem zero, nem traço, nem estimativa. O que aparece é o nome do dado e a decisão que falta para que ele exista. Um relatório de resultado com número inventado seria levado para uma reunião com cliente, e aí o sistema teria participado de uma conversa comercial com dado fabricado. Não vale o risco pela aparência."
+          />
         </div>
       </Secao>
 

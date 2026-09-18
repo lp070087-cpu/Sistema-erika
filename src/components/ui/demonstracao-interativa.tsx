@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils/cn";
 import { BotaoLink } from "./botao";
+import { DecisoesQueFaltam } from "./metodologia";
 
 /**
  * AVISO DE INTERAÇÃO SEM GRAVAÇÃO.
@@ -111,8 +112,18 @@ export function ModuloEmPreparacao({
   descricao: string;
   /** A razão real. Uma frase direta. */
   porque: string;
-  /** Os pontos abertos que travam o módulo, pelo número. Ex.: [4, 5, 6]. */
-  dependeDe?: readonly number[];
+  /**
+   * As decisões que travam o módulo, NOMEADAS.
+   *
+   * Já foi `readonly number[]` — os pontos abertos pelo número. Trocado
+   * porque número de ponto é endereço de obra: "depende dos pontos 4 e 5"
+   * não diz nada a quem lê a tela, e obriga a consultora a ir procurar o que
+   * é o ponto 4. Agora recebe os ids de `DECISOES_PENDENTES`, o mesmo
+   * vocabulário do `ModuloPendente` — uma lista de decisões, com nome.
+   *
+   * Ex.: ["coccao", "compra-para-uso"].
+   */
+  dependeDe?: readonly string[];
   acao?: { href: string; texto: string };
   className?: string;
 }) {
@@ -139,16 +150,7 @@ export function ModuloEmPreparacao({
           {porque}
         </p>
         {dependeDe && dependeDe.length > 0 ? (
-          <p className="mt-2 text-[0.8125rem] text-[var(--tinta-fraca)]">
-            Depende da definição dos pontos{" "}
-            {dependeDe.map((n, i) => (
-              <span key={n}>
-                {i > 0 ? (i === dependeDe.length - 1 ? " e " : ", ") : ""}
-                <span className="tabular font-medium text-[var(--tinta-suave)]">{n}</span>
-              </span>
-            ))}{" "}
-            — decisões da consultora, não do sistema.
-          </p>
+          <DecisoesQueFaltam apenas={dependeDe} className="mt-3" />
         ) : null}
       </div>
 

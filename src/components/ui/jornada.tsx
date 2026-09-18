@@ -206,3 +206,19 @@ export function AvisoMetodologia({ children }: { children?: ReactNode }) {
     </div>
   );
 }
+
+/*
+  AvisoMetodologia continua aqui, sem nenhum consumidor.
+
+  Não é descuido: é a tarja de uma linha que as telas usavam antes de
+  `@/components/ui/metodologia` existir. A frase única "cálculo disponível após
+  configuração da metodologia" dizia que algo estava travado sem dizer o quê
+  nem por quem — e cada tela que a repetisse acabaria divergindo das outras.
+  As telas de ficha, ingrediente, planilha, consultoria e relatório passaram a
+  usar `DecisoesQueFaltam`, que nomeia a decisão.
+
+  O componente fica porque é usado como padrão de tarja curta em telas que
+  ainda não têm decisão nomeada, e porque apagar um componente compartilhado
+  é o tipo de faxina que quebra um arquivo esquecido. Se um dia ele ficar
+  parado de vez, sai com o resto.
+*/

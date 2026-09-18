@@ -115,19 +115,22 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
         titulo="O que esta central sabe fazer"
         descricao="São contagens do catálogo abaixo — conferem com os cards, um por um."
       >
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Indicador
+            emCard
             rotulo="Modelos no catálogo"
             valor={TOTAL_MODELOS}
             contexto="Todas as planilhas que o sistema conhece"
           />
           <Indicador
+            emCard
             rotulo="Gerando arquivo"
             valor={TOTAL_DISPONIVEIS}
             tom="positivo"
             contexto="Prontas para baixar hoje"
           />
           <Indicador
+            emCard
             rotulo="Em preparação"
             valor={TOTAL_MODELOS - TOTAL_DISPONIVEIS}
             contexto="Dependem de trabalho ou de uma definição sua"

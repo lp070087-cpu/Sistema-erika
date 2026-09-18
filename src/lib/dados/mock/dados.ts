@@ -366,7 +366,7 @@ export const DIAGNOSTICOS: Diagnostico[] = [
         resumo: "Cozinha adaptada, perde tempo na movimentação e trava em volume maior.",
         atencao: [
           "É o caso de buffet: o gargalo é dimensionar produção, não precificar prato.",
-          "O ponto 9 do relatório da Fase 0 — origem do volume — é decisivo neste caso.",
+          "A origem do volume do período é decisiva neste caso — e ainda não foi definida.",
         ],
       },
       {
@@ -496,7 +496,9 @@ export const DIAGNOSTICOS: Diagnostico[] = [
       {
         bloco: "insumos",
         resumo: "Compra diária, sem controle de estoque, com perda percebida todos os dias.",
-        atencao: ["Caso clássico de produção por estimativa — depende do ponto 9."],
+        atencao: [
+          "Caso clássico de produção por estimativa — depende da origem do volume.",
+        ],
       },
       {
         bloco: "lucratividade",

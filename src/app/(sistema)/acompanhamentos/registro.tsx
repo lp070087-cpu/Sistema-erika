@@ -225,9 +225,9 @@ function FormularioDeAcompanhamento({
       <div className="space-y-5">
         <Aviso tom="atencao" titulo="Este registro não é gravado">
           <p>
-            Ele aparece na lista desta tela e some ao recarregar a página. Não
-            há banco conectado nesta fase — o formulário existe para mostrar o
-            fluxo, e é honesto sobre o que faz.
+            Ele aparece na lista desta tela e some ao recarregar a página. O
+            sistema ainda não está ligado a um banco de dados — o formulário
+            existe para mostrar o fluxo, e é honesto sobre o que faz.
           </p>
         </Aviso>
 

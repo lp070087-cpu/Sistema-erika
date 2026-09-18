@@ -9,6 +9,12 @@ ela descreve, e o que não foi executado está dito como não executado.
 Esta fase não recomeçou nada. As Fases 0, 1 e 2 permanecem como estavam: nenhum
 arquivo foi reescrito, nenhuma migration foi criada, nenhum banco foi conectado.
 
+> **Nota de leitura.** Este documento foi escrito em duas passagens. As Seções 1
+> a 6 descrevem o que a fase entregou antes da interrupção por erro de execução.
+> A **Seção 7-A** descreve o refinamento concluído depois da retomada — linguagem
+> interna fora da tela, microinterações e responsividade. A **Seção 9** foi
+> reescrita na retomada, porque o ambiente de verificação mudou.
+
 ---
 
 ## 1. O que esta fase entregou
@@ -33,6 +39,11 @@ a vencer. Sem gráfico financeiro inventado.
 A identidade visual não foi tocada: verde profundo, creme, oliva e dourado, a
 tipografia editorial e a tela de login aprovada continuam exatamente como
 estavam.
+
+**Depois da retomada** — Seção 7-A — entraram três acabamentos: a varredura de
+linguagem interna que ainda vazava para a tela, a microinteração dos cards de
+valor e a revisão de responsividade. Nenhum módulo novo, nenhuma regra de
+negócio nova.
 
 ---
 
@@ -232,42 +243,179 @@ pior do que não ter o botão.
 
 ## 7. Limitações conhecidas
 
-**O `exceljs` não pôde ser instalado neste ambiente.** O sandbox onde este
-trabalho foi feito não tem rede, então o `npm install` do `exceljs` não rodou
-aqui. A dependência foi adicionada ao `package.json` com a versão `^4.4.0`, e a
-implementação foi escrita por completo.
+**O `exceljs` não pôde ser instalado neste ambiente na primeira passagem.** O
+sandbox onde este trabalho começou não tinha rede, então o `npm install` do
+`exceljs` não rodou. A dependência foi adicionada ao `package.json` com a versão
+`^4.4.0`, e a implementação foi escrita por completo.
 
 Para conferir os tipos sem a biblioteca, foi criado um arquivo de declaração
 **fora do projeto**, apontado por um `tsconfig.check.json` descartável. Isso
 pegou dois erros reais que teriam aparecido só no Windows — a confusão entre os
 dois tipos `Cliente` do projeto e uma união de tipos larga demais no catálogo.
 
-**A validação final do `exceljs` precisa ser feita no Windows**, com rede, na
-sequência: `npm install`, `npm run lint`, `npm run typecheck`, `npm run build`.
+Na retomada, o sandbox voltou com rede e com o `node_modules` já instalado. O
+`exceljs` está **presente e resolvido**, e a checagem de tipos passou a rodar
+contra a biblioteca real — ver a Seção 9. O `tsconfig.check.json` e o arquivo de
+declaração descartável perderam a função e foram removidos.
 
-**O build não foi executado.** Pelo mesmo motivo de sempre: o `node_modules` foi
-instalado no Windows e o binário do compilador do Next para Linux não está
-presente. Isso não é defeito do código desta fase — é o limite do ambiente, já
-registrado nos documentos das fases anteriores.
+**O build não foi executado neste sandbox.** O `node_modules` foi instalado no
+Windows e o binário do compilador do Next para Linux não está presente. Isso não
+é defeito do código desta fase — é o limite do ambiente, já registrado nos
+documentos das fases anteriores. `lint` e `build` também excedem o limite de
+tempo do shell desta sessão (ver Seção 9), e por isso precisam ser confirmados
+no Windows.
 
-**Dois arquivos vazios ficaram no repositório** porque este ambiente não
-consegue apagar arquivo na pasta montada. Os dois podem ser removidos sem
-consequência, e ambos dizem isso dentro de si mesmos:
+**Os arquivos temporários foram removidos.** Na primeira passagem eles não
+puderam ser apagados porque o ambiente não tinha permissão de exclusão na pasta
+montada. Resolvido o acesso, saíram os quatro:
 
-- `tsconfig.check.json` — só o comentário e um `extends`. Não é usado por
-  `lint`, `typecheck` nem `build`, e nada no projeto aponta para ele.
+- `tsconfig.check.json` — o `extends` descartável do stub do `exceljs`.
 - `src/_resolucao-teste.ts` — só um `export {}`.
+- `src/app/(sistema)/planilhas/modelos.ts` — no-op. Foi a cópia local da lista de
+  modelos, que passou a viver em `src/lib/planilhas/modelos.ts`.
+- `src/app/(sistema)/contratos/novo.tsx` — o formulário antigo de contrato,
+  substituído por `contratos/novo/formulario.tsx`. Ficou órfão desde que
+  `/contratos` passou a apontar para o fluxo novo, e nada o importava.
 
-**Um arquivo virou no-op:** `src/app/(sistema)/planilhas/modelos.ts` está vazio.
-O conteúdo dele era uma cópia da lista de modelos que passou a viver em
-`src/lib/planilhas/modelos.ts`; a cópia foi removida e o arquivo ficou só com a
-explicação. Também pode ser apagado.
+A remoção dos dois últimos foi conferida por busca antes de apagar: nenhum
+arquivo do projeto aponta para eles. Os três `novo.tsx` que **continuam** na
+árvore — em `clientes/`, `ingredientes/` e `processos/` — são importados pelas
+respectivas páginas e foram mantidos.
 
 **Um detalhe de fim de linha.** Em `src/lib/auth/index.ts` o `git` registra o
 arquivo como alterado sem que haja mudança de conteúdo — é fim de linha (CRLF
 contra LF), não edição. A tela de login e o `src/app/entrar/` estão com o
 carimbo de modificação do dia 17, anteriores a esta fase: não foram tocados.
 Vale conferir com `git diff --ignore-all-space` antes de qualquer commit.
+
+---
+
+## 7-A. O refinamento de produto — o que mudou depois da retomada
+
+Esta é a parte da fase que foi concluída **depois** da interrupção. Nada dela
+recomeçou o que já existia: Dashboard, Contratos, Central de Planilhas, Cliente
+360°, Consultorias, Fichas, Ingredientes, Processos e Relatórios continuam sendo
+os mesmos módulos. O que entrou foram acabamento, responsividade e a limpeza da
+linguagem interna que ainda vazava para a tela.
+
+### 7-A.1 Linguagem interna fora da tela da cliente
+
+Era o item mais visível e o mais fácil de deixar passar, porque cada ocorrência
+isolada parecia inofensiva. Foi feita uma varredura de `Fase N`, de número de
+ponto da Seção 17 e de códigos como `f4`/`prévia`/`parcial` em **texto
+renderizado** — comentário de código não conta, ali a referência é útil.
+
+O que saiu da tela:
+
+| Onde | O que dizia | O que diz agora |
+| --- | --- | --- |
+| `ModuloPendente` (4 telas) | "Previsto para a Fase 4/5/6/9" | "Em preparação" |
+| `/precificacao`, `/cardapios`, `/equipe`, `/biblioteca` | lista de números de ponto | ids de decisão com nome, ou nada quando o bloqueio não é metodológico |
+| `/diagnosticos` | "pontuação por bloco que a Fase 0 previu" | "pontuação por bloco não está implementada" |
+| `/diagnosticos` | "A Fase 0 previu importar as respostas" | "As respostas que você já recebeu ainda não podem ser importadas" |
+| `/diagnosticos` | `<strong>11</strong>` solto no meio do texto | descrito como decisão, sem número |
+| `/diagnosticos/[id]` | "O relatório da Fase 0 registra…" | "O formulário tem…" |
+| `/diagnosticos/[id]` | "falta o peso de cada resposta, que é o ponto 11" | "Esse peso é critério seu, e ainda não foi definido" |
+| `/configuracoes` | "da lista de pendências da Fase 0" | "da lista de definições em aberto" |
+| `LACUNA.descricao` (lido em `/configuracoes`) | "O relatório da Fase 0 registra 33 perguntas" | "O formulário em uso tem mais perguntas do que as 29 que o sistema conhece" |
+
+**A exceção deliberada.** Em `/configuracoes` o **número** da pergunta continua
+("Pergunta 4", "Pergunta 19"). É a única tela onde ele fica: ela existe para ser
+o índice das decisões abertas, e o número é o endereço da pergunta original. O
+que saiu foi o nome do documento interno ao lado dele, não o número.
+
+**Uma armadilha que quase deixou dois casos passarem.** A primeira varredura
+procurou número de ponto dentro de JSX, e teria ficado por isso. Dois textos
+vazavam por um caminho diferente: eram **strings de dado**, escritas no cenário de
+demonstração e renderizadas depois —
+
+- `mock/operacao.ts` — a etapa `RESULTADO` de uma consultoria vinha com
+  `nota: "Depende do ponto 9"`.
+- `mock/dados.ts` — o bloco de insumos de um diagnóstico vinha com
+  `atencao: ["Caso clássico de produção por estimativa — depende do ponto 9."]`.
+
+Nos dois, o número não estava no JSX: estava no dado, e o componente só o
+imprimia. Os dois foram trocados por "Depende de como o volume do período é
+apurado" e "depende da origem do volume". A lição vale para a próxima varredura:
+buscar também em `mock/`, não só em `app/` e `components/`.
+
+Dois campos guardam listas de números de ponto que **nunca foram renderizadas** —
+`MODELOS[].pendencias` e `ItemNavegacao.pendencias`. Ficaram como estão: são
+anotação de obra, irmãs do campo `fase`, que o próprio código já documentava como
+"organiza a documentação, a tela não mostra". Convertê-las exigiria mapear
+números como `8`, `12` e `13` para decisões que não existem em
+`DECISOES_PENDENTES` — e inventar esse mapeamento seria pior do que deixar a
+anotação quieta.
+
+### 7-A.2 Microinterações nos cards de valor
+
+Foi acrescentada uma classe de marca, `card-indicador`, em `globals.css`, mais um
+sinalizador `emCard` no componente `Indicador` para as telas optarem por ela.
+
+O que a microinteração faz: eleva o card em **2px** no hover, clareia a borda sem
+trocar de cor, faz **aparecer** uma sombra (hoje não há nenhuma), escurece o valor
+um tom e responde ao toque com `:active`.
+
+Três decisões que valem registro:
+
+- **É CSS, não JavaScript.** A alternativa era um componente de card com estado
+  de hover, o que traria `useState` para dentro de telas hoje 100% renderizadas
+  no servidor — custo pago em cada card de cada tela para animar o que só precisa
+  de CSS.
+- **A elevação é de 2px, não de 8px.** O sistema tem canto de 4px e sombras quase
+  inexistentes; um card que sobe muito destoa da marca. E o valor **escurece** em
+  vez de crescer: crescer mudaria a altura da linha e faria o texto ao lado pular.
+- **`:active` existe porque hover não existe no celular.** O `@media (hover:
+  hover)` separa os dois casos, de modo que o toque tem retorno próprio.
+
+`prefers-reduced-motion` já é tratado globalmente no arquivo, então com a
+preferência ligada a transição vira instantânea sem nada mais a fazer. A paleta
+não foi alterada — nenhuma cor nova entrou.
+
+O `emCard` é **opt-in** e não padrão: o indicador aparece em dois contextos. Numa
+grade de números do Dashboard cada um é um bloco que merece virar card; dentro de
+um `Painel` que já é uma caixa fechada, envolver cada um em outra caixa daria
+card dentro de card, com duas bordas a 4px de distância. Quem sabe qual é o caso
+é a tela.
+
+Aplicado em: resumo de 6 números e par de contratos do Dashboard, três números da
+Central de Planilhas, e os quatro números do detalhe do diagnóstico.
+
+### 7-A.3 Responsividade
+
+A revisão foi de auditoria e ajuste pontual, não de reconstrução — a estrutura
+já era boa e mexer nela sem motivo quebraria o desktop.
+
+- **Grades.** Toda grade de múltiplas colunas do sistema foi conferida: todas
+  colapsam para uma coluna no celular (o prefixo `sm:`/`md:` está presente em
+  todas). Nada a corrigir.
+- **Filtros.** Os controles com largura mínima (130–200px) estão dentro de
+  contêiner com `flex-wrap` e ficam abaixo da largura do celular mais estreito:
+  eles quebram linha em vez de esticar a página.
+- **Abas.** A faixa de abas ganhou alvo de toque maior (`py-3` no celular, `py-2.5`
+  a partir de `sm:`) e o link passou a carregar a borda transparente que mantém a
+  altura igual entre aba ativa e inativa. O traço da aba ativa saiu de `-bottom-px`
+  para `bottom-0`, e com isso deixou de depender de a borda da `<ul>` coincidir
+  pixel a pixel com a do item — que é o tipo de detalhe que quebra só numa
+  densidade de tela.
+- **Tabelas.** Já rolam dentro de `overflow-x-auto`, com estratégia de cartão
+  (`ListaResponsiva`) onde a coluna não faz sentido no celular.
+- **Gaps.** Os blocos de números passaram de `gap-5` para `gap-4` onde viraram
+  card, para o respiro não dobrar com a borda nova.
+
+O desktop não foi sacrificado em nenhum desses ajustes.
+
+### 7-A.4 A pergunta que ficou aberta
+
+`AvisoMetodologia`, em `components/ui/jornada.tsx`, ficou **sem nenhum uso**. Ele
+era a "tarja de uma linha" que as telas usavam antes de `metodologia.tsx` existir;
+o último consumidor (`/relatorios`) migrou para `DecisoesQueFaltam`.
+
+O componente **não foi apagado**. A decisão está registrada em comentário no
+próprio arquivo: apagar componente compartilhado é a faxina que quebra um arquivo
+esquecido, e o custo de mantê-lo é uma função de quatro linhas. Com isso, toda
+tela que fala de bloqueio de metodologia usa hoje **uma lista, um vocabulário e
+um lugar só** para tirar um item quando a Érika responder.
 
 ---
 
@@ -295,18 +443,29 @@ que não foi calculado. Nenhum número de aparência correta foi colocado no lug
 
 ## 9. Verificação
 
-Executado neste ambiente:
+Executado neste ambiente, na retomada:
 
-- `npx tsc --noEmit -p tsconfig.check.json` — **sem erros** (a checagem com o
-  stub do `exceljs`; o projeto inteiro, com a biblioteca real, roda no Windows).
-- `npx eslint .` — **sem erros e sem avisos**.
+- `npx tsc --noEmit` — **exit 0, sem erros**. Agora contra o `node_modules` real,
+  com o `exceljs` resolvido: não é mais a checagem com stub. Rodado depois de
+  cada bloco de alteração, inclusive o último.
+- Confirmação por busca, antes de apagar arquivo: nenhuma referência no projeto a
+  `src/app/(sistema)/planilhas/modelos.ts` nem a
+  `src/app/(sistema)/contratos/novo.tsx`.
 
-Não executado aqui, e por quê:
+**Validado no Windows pelo responsável, antes da interrupção:**
 
-- `npm run typecheck` — falha na resolução de `exceljs` sem rede. É o mesmo
-  código que passou na checagem acima; falta o módulo, não a correção.
-- `npm run build` — o binário do Next para Linux não está no `node_modules`
-  instalado no Windows.
+- `npm run lint` — **passou**
+- `npm run typecheck` — **passou**
+- `npm run build` (produção) — **passou**, Next.js 15.5.25, Prisma 6.19.3
+
+Não executado *neste sandbox*, e por quê:
+
+- `npm run lint` e `npm run build` — os dois excedem o limite de tempo do shell
+  desta sessão (~3 min por comando) e estouram mesmo em um arquivo pequeno. **Não
+  foram verificados aqui.** As alterações desta retomada são de texto em JSX,
+  classes CSS e remoção de arquivos órfãos; nenhuma cria símbolo novo que o
+  `tsc` não tenha visto. Ainda assim, pela regra de não afirmar o que não foi
+  verificado, **lint e build precisam ser confirmados no Windows**.
 
 Nenhuma migration, nenhum `git`, nenhum push e nenhum deploy foram executados.
 Nenhuma pasta fora de `/sistema-erika` foi alterada.
@@ -325,6 +484,8 @@ Nenhuma pasta fora de `/sistema-erika` foi alterada.
 4. **Se a cobrança e o registro de pagamento são manuais.** Hoje o sistema
    registra o pagamento e não o provoca. Se ela quiser lembrete de vencimento,
    isso é uma decisão sobre notificação, não sobre cálculo.
-5. **As quatro perguntas que faltam no diagnóstico** — a lacuna das 29
-   transcritas contra as 33 do relatório da Fase 0, já declarada desde a Fase
-   2.6.
+5. **As quatro perguntas que faltam no diagnóstico** — a lacuna entre as 29
+   transcritas e as 33 que o formulário tem, já declarada desde a Fase 2.6.
+6. **Confirmar `npm run lint` e `npm run build` no Windows.** É a única coisa
+   desta retomada que ficou sem verificação, pelo limite de tempo do shell. O
+   `typecheck` passou aqui.

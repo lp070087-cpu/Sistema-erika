@@ -260,7 +260,11 @@ export const CONSULTORIAS: Consultoria[] = [
       },
       { etapa: "TREINAMENTO", estado: "NAO_INICIADA", nota: "Depende do dimensionamento" },
       { etapa: "ACOMPANHAMENTO", estado: "AGUARDANDO_DADOS", nota: "Sem retorno desde a visita" },
-      { etapa: "RESULTADO", estado: "AGUARDANDO_DADOS", nota: "Depende do ponto 9" },
+      {
+        etapa: "RESULTADO",
+        estado: "AGUARDANDO_DADOS",
+        nota: "Depende de como o volume do período é apurado",
+      },
     ],
   },
   {
