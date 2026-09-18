@@ -18,9 +18,13 @@ import { Dado, ListaDados } from "@/components/ui/dados";
  * │                                                                      │
  * │ O motivos é simples: um campo de custo em branco na tela é um convite │
  * │ para preencher "mais ou menos". E "mais ou menos" num custo vira CMV  │
- * │ errado, que vira preço errado, que vira prejuízo no fim do mês. A     │
- * │ metodologia da Érika define fator de correção, índice de cocção e     │
- * │ arredondamento — e nada disso está definido ainda.                    │
+ * │ errado, que vira preço errado, que vira prejuízo no fim do mês.       │
+ * │                                                                      │
+ * │ As decisões que faltam para o cálculo existir estão listadas em       │
+ * │ `@/components/ui/metodologia`, com nome: quanto o alimento rende       │
+ * │ depois de cozido, quanto se perde entre a compra e o uso, o que entra  │
+ * │ na conta do custo, como o preço de venda é formado e quantas casas     │
+ * │ cada número guarda.                                                   │
  * │                                                                      │
  * │ Então o formulário pede o que é fato: o que leva, quanto leva, quanto │
  * │ rende. E onde o custo ficaria, ele explica por que não está lá.       │
@@ -223,11 +227,11 @@ export function NovaFicha({
             <div className="rounded-[var(--raio)] border border-dashed border-dourado/70 bg-[rgba(201,165,78,0.08)] px-4 py-3.5">
               <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
                 <strong className="font-semibold text-tinta">
-                  Cálculo disponível após configuração da metodologia.
+                  A prévia mostra o que a ficha terá — sem custo.
                 </strong>{" "}
-                Custo, CMV e preço sugerido não aparecem aqui porque dependem
-                de decisões que a Érika ainda vai tomar — fator de correção,
-                índice de cocção e arredondamento.
+                Custo, CMV e preço sugerido ficam de fora enquanto as decisões
+                de metodologia estiverem abertas. A lista completa do que
+                segura cada um deles está na tela da ficha, junto da composição.
               </p>
             </div>
           </div>
@@ -418,12 +422,15 @@ export function NovaFicha({
               </p>
               <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
                 <strong className="font-semibold text-tinta">
-                  Cálculo disponível após configuração da metodologia.
+                  O formulário não pede custo porque ninguém decidiu como ele
+                  é calculado.
                 </strong>{" "}
-                Custo, CMV e preço sugerido dependem do fator de correção, do
-                índice de cocção e da regra de arredondamento — três decisões
-                que ainda não foram tomadas. Registrado errado, um custo vira
-                preço errado sem ninguém perceber.
+                Pedir um número de custo aqui sem saber quanto o alimento rende
+                depois de cozido, quanto se perde entre a compra e o uso e o que
+                entra na conta seria registrar um valor do qual ninguém sabe a
+                procedência — e um custo registrado errado vira preço errado sem
+                ninguém perceber. O que a ficha pede é o que é fato: quantidade,
+                unidade e rendimento.
               </p>
             </div>
 

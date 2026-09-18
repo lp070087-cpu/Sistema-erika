@@ -5,7 +5,7 @@ import { Etiqueta } from "@/components/ui/indicador";
 import { EstadoVazio, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
 import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
-import { AvisoMetodologia } from "@/components/ui/jornada";
+import { DecisoesQueFaltam } from "@/components/ui/metodologia";
 import { BarraFiltros } from "@/components/ui/filtros";
 import { ListaResponsiva } from "@/components/ui/lista-responsiva";
 import type { ColunaLista } from "@/components/ui/lista-responsiva";
@@ -33,7 +33,14 @@ export const metadata: Metadata = { title: "Fichas técnicas" };
  * │                                                                      │
  * │ O que ela NÃO mostra é custo. Toda ficha aqui tem `custo: null` no    │
  * │ item, e `situacaoCalculo: PENDENTE_METODOLOGIA` — porque o cálculo    │
- * │ depende dos pontos 4, 5, 6 e 19, que seguem abertos.                  │
+ * │ depende de decisões de metodologia que ainda não foram tomadas:       │
+ * │ quanto o alimento rende depois de cozido, quanto se perde entre a      │
+ * │ compra e o uso, o que entra na conta do custo, como o preço de venda   │
+ * │ é formado e quantas casas cada número guarda.                         │
+ * │                                                                      │
+ * │ A lista delas está escrita em `@/components/ui/metodologia`, e a tela  │
+ * │ mostra só as que travam custo — não uma frase genérica sobre           │
+ * │ "metodologia pendente".                                               │
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
@@ -215,14 +222,23 @@ export default async function PaginaFichas({ searchParams }: Props) {
         <Contagem rotulo="Em revisão" valor={contagem.emRevisao} />
       </div>
 
-      <AvisoMetodologia>
-        Nesta biblioteca não aparece custo, CMV nem preço sugerido — nem por
-        ficha, nem no total. O cálculo depende de decisões de metodologia que
-        ainda não foram tomadas (fator de correção, índice de cocção,
-        arredondamento), e um número inventado aqui teria a mesma aparência de
-        um número certo. O que a biblioteca mostra é o que existe de fato: as
-        quantidades declaradas e o rendimento informado.
-      </AvisoMetodologia>
+      {/*
+        ── O BLOCO GENÉRICO VIROU A LISTA CONCRETA ─────────────────────────
+
+        Antes: uma tarja dizendo "o cálculo depende de decisões de metodologia
+        que ainda não foram tomadas". É verdade, e não ajuda. Quem tem a
+        resposta precisa saber QUAL pergunta está aberta para poder respondê-la.
+
+        Agora são as decisões nomeadas, filtradas para as que travam custo —
+        que é o que esta biblioteca não mostra. O texto sai do componente
+        compartilhado, para as quatro telas que citam o mesmo bloqueio não
+        divergirem com o tempo.
+      */}
+      <DecisoesQueFaltam
+        apenas={["coccao", "compra-para-uso", "custo-do-prato", "formacao-de-preco", "arredondamento"]}
+        titulo="Por que não há custo nesta biblioteca"
+        descricao="Nem por ficha, nem no total. Estas são as decisões que seguram o cálculo — e nenhuma delas é o sistema que toma."
+      />
 
       <Secao
         rotulo={`${filtradas.length} de ${fichas.length}`}

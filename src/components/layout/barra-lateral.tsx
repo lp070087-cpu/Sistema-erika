@@ -19,8 +19,22 @@ import { cn } from "@/lib/utils/cn";
  *   < 1024px  vira gaveta sobreposta, aberta por um botão na barra de topo.
  *             É o modo de consulta: celular, durante uma visita presencial.
  *
- * Item ainda não implementado aparece esmaecido e com a fase marcada.
- * Nada de esconder o menu futuro — ela precisa ver para onde o sistema vai.
+ * Item ainda não implementado aparece esmaecido, com um AVISO EM PORTUGUÊS
+ * logo abaixo do nome. Nada de esconder o menu futuro — ela precisa ver para
+ * onde o sistema vai.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE O AVISO MUDOU DE LUGAR E DE FORMA                            │
+ * │                                                                      │
+ * │ Antes ele era um código curto alinhado à direita (`f4`, `parcial`).    │
+ * │ Cabia bem ao lado do título justamente porque não significava nada    │
+ * │ para quem lê: era um símbolo para quem constrói.                      │
+ * │                                                                      │
+ * │ Agora que o aviso é uma frase — "Custo aguardando definição" — ele    │
+ * │ não cabe mais na mesma linha, e nem deveria: ficaria espremido       │
+ * │ contra o título e truncado no meio da ideia. Virou uma SEGUNDA LINHA, │
+ * │ menor e mais clara, do jeito que uma legenda se lê.                   │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 export function BarraLateral({
   aberta,
@@ -132,8 +146,8 @@ export function BarraLateral({
                         href={item.href}
                         aria-current={ativo ? "page" : undefined}
                         className={cn(
-                          "group flex items-center justify-between gap-2 rounded-[var(--raio-sm)]",
-                          "px-2 py-1.5 text-[0.875rem] transition-colors duration-150",
+                          "group block rounded-[var(--raio-sm)] px-2 py-1.5",
+                          "transition-colors duration-150",
                           ativo
                             ? "bg-profundo text-off font-medium"
                             : aberto
@@ -141,20 +155,21 @@ export function BarraLateral({
                               : "text-[var(--tinta-fraca)] hover:bg-[rgba(107,122,70,0.05)] hover:text-[var(--tinta-suave)]"
                         )}
                       >
-                        <span className="truncate">{item.titulo}</span>
-                        {!noAr ? (
+                        <span className="block truncate text-[0.875rem]">{item.titulo}</span>
+                        {/*
+                          O aviso é lido por leitores de tela como parte do
+                          link — e deve ser. "Fichas técnicas, custo aguardando
+                          definição" é exatamente o que a pessoa precisa ouvir
+                          antes de decidir clicar.
+                        */}
+                        {!noAr && item.aviso ? (
                           <span
                             className={cn(
-                              "shrink-0 text-[0.5625rem] font-semibold uppercase tracking-[0.14em] tabular",
+                              "mt-0.5 block truncate text-[0.6875rem] leading-snug",
                               ativo ? "text-oliva-palha" : "text-[var(--tinta-fraca)]"
                             )}
-                            title={
-                              item.estado === "parcial"
-                                ? "Construído em parte — a tela explica o que falta"
-                                : `Previsto para a Fase ${item.fase}`
-                            }
                           >
-                            {item.selo ?? `f${item.fase}`}
+                            {item.aviso}
                           </span>
                         ) : null}
                       </Link>

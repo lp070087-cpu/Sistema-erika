@@ -15,6 +15,7 @@
 import type {
   LinhaCliente,
   LinhaConsultoria,
+  LinhaContrato,
   RepositorioOperacao,
   ResumoOperacao,
 } from "../repositorio-operacao";
@@ -24,6 +25,7 @@ import type {
   Cliente,
   Compromisso,
   Consultoria,
+  Contrato,
   Documento,
   EventoHistorico,
   Ficha,
@@ -33,18 +35,24 @@ import type {
   Tarefa,
 } from "../tipos-operacao";
 import {
+  contarParcelas,
   derivarAtencao,
   derivarNotificacoes,
+  mensalidadeDoContrato,
+  proximaParcela,
   ROTULO_PRIORIDADE,
   ROTULO_SITUACAO_CLIENTE,
   ROTULO_STATUS_CONSULTORIA,
   ROTULO_STATUS_TAREFA,
   ROTULO_TIPO_ACOMPANHAMENTO,
   ROTULO_TIPO_NEGOCIO,
+  somarPagas,
+  somarParcelas,
 } from "../derivacoes-operacao";
 import { ROTULO_ORIGEM, ROTULO_STATUS } from "../formato";
 import type { ItemBusca } from "../busca";
 import { DIAGNOSTICOS, LEADS } from "./dados";
+import { CONTRATOS } from "./contratos";
 import {
   ACOES,
   ACOMPANHAMENTOS,
@@ -297,6 +305,58 @@ export const repositorioOperacaoMock: RepositorioOperacao = {
 
   async obterIngrediente(id: string): Promise<Ingrediente | null> {
     return INGREDIENTES.find((i) => i.id === id) ?? null;
+  },
+
+  // -- Contratos -----------------------------------------------------------
+  async listarContratos(): Promise<Contrato[]> {
+    // Mais recente primeiro: o contrato que ela acabou de mexer é o que ela
+    // quer ver ao abrir a tela.
+    return [...CONTRATOS].sort((a, b) => b.criadoEm.getTime() - a.criadoEm.getTime());
+  },
+
+  async obterContrato(id: string): Promise<Contrato | null> {
+    return CONTRATOS.find((c) => c.id === id) ?? null;
+  },
+
+  async listarContratosDoCliente(clienteId: string): Promise<Contrato[]> {
+    return CONTRATOS.filter((c) => c.clienteId === clienteId).sort(
+      (a, b) => b.criadoEm.getTime() - a.criadoEm.getTime()
+    );
+  },
+
+  /**
+   * As linhas da lista, com as somas já feitas.
+   *
+   * As somas vêm de `derivacoes-operacao`, e não de um `reduce` escrito
+   * aqui: é a MESMA função que a tela do detalhe usa para mostrar o resumo
+   * financeiro. Se a regra de "cancelada não conta como dívida" mudar, ela
+   * muda num lugar só, e a lista e o detalhe continuam concordando.
+   */
+  async listarLinhasContrato(): Promise<LinhaContrato[]> {
+    const porId = new Map(CLIENTES.map((c) => [c.id, c]));
+
+    return CONTRATOS.map((contrato) => {
+      const cliente = porId.get(contrato.clienteId);
+      if (!cliente) {
+        // Um contrato sem cliente não deveria existir. Falhar alto é melhor
+        // que exibir a linha com "cliente não identificado" e seguir.
+        throw new Error(
+          `Contrato ${contrato.id} aponta para o cliente ${contrato.clienteId}, que não existe.`
+        );
+      }
+      const contagem = contarParcelas(contrato);
+      return {
+        id: contrato.id,
+        contrato,
+        cliente,
+        valorTotal: somarParcelas(contrato),
+        valorPago: somarPagas(contrato),
+        parcelasTotal: contrato.parcelas.length,
+        parcelasPagas: contagem.PAGO,
+        proximaParcela: proximaParcela(contrato),
+        mensalidade: mensalidadeDoContrato(contrato),
+      };
+    }).sort((a, b) => b.contrato.criadoEm.getTime() - a.contrato.criadoEm.getTime());
   },
 
   // -- Documentos ----------------------------------------------------------

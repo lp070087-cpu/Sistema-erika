@@ -8,13 +8,30 @@ import {
   TOM_SITUACAO_DOCUMENTO,
   dataCurta,
 } from "@/lib/dados";
-import type { ClienteOperacao, Documento } from "@/lib/dados";
+import type { ClienteOperacao, Contrato, Documento } from "@/lib/dados";
+import { CartaoPlanilhasDoCliente } from "../../../planilhas/cartao-cliente";
+import { CartaoContratosDoCliente } from "../../../contratos/cartao-cliente";
 
 /**
- * ABA 7 — DOCUMENTOS ENTREGUES.
+ * ABA 7 — DOCUMENTOS.
  *
- * O que já foi produzido e entregue a este cliente: leitura do diagnóstico,
- * plano de ação, padrão de montagem, lotes de ficha, relatórios.
+ * O que foi combinado, o que sai agora e o que já foi entregue a este
+ * cliente: o contrato que autoriza o trabalho, as planilhas que podem ser
+ * geradas a partir dos dados dele, e os documentos registrados como
+ * produzidos — leitura do diagnóstico, plano de ação, lotes de ficha.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE O CONTRATO ENTROU AQUI, E NÃO NUMA ABA PRÓPRIA               │
+ * │                                                                      │
+ * │ Contrato é documento. A régua de abas já é lida como o método —        │
+ * │ diagnóstico, consultoria, fichas, processos, acompanhamentos — e uma   │
+ * │ aba "Contratos" ao lado de "Documentos" recriaria a duplicação que     │
+ * │ este arquivo existe para evitar: duas abas para a mesma família de     │
+ * │ coisa, com a consultora tendo de adivinhar qual tem o quê.             │
+ * │                                                                      │
+ * │ O cartão de contratos é o MESMO componente que a tela da consultoria   │
+ * │ usa. Nenhuma linha de lista foi escrita duas vezes.                    │
+ * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │ POR QUE NÃO EXISTE BOTÃO DE DOWNLOAD                                  │
@@ -31,13 +48,38 @@ import type { ClienteOperacao, Documento } from "@/lib/dados";
  * │ Então a lista mostra o que existe (o registro, a data, o estado) e a   │
  * │ área de envio explica por que ainda não dá para anexar.               │
  * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ A EXCEÇÃO — O QUE SAI DE VERDADE                                     │
+ * │                                                                      │
+ * │ A regra acima vale para o documento REGISTRADO. A planilha é outra    │
+ * │ coisa: ela não é um registro parado esperando um arquivo, é um        │
+ * │ arquivo gerado na hora, a partir dos dados que já estão nesta ficha.  │
+ * │ Nada precisa ser armazenado para que ela exista.                      │
+ * │                                                                      │
+ * │ Por isso o cartão de planilhas fica ACIMA da lista, e não dentro      │
+ * │ dela: em cima é o que sai agora; embaixo é o que foi registrado. A    │
+ * │ distância entre os dois blocos é o que evita ler "gerar planilha"     │
+ * │ como mais um botão que não faz nada.                                  │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 export function AbaDocumentos({
   cliente,
   documentos,
+  contratos,
+  consultoriaId,
 }: {
   cliente: ClienteOperacao;
   documentos: readonly Documento[];
+  /** Os contratos deste cliente, já filtrados pelo repositório. */
+  contratos: readonly Contrato[];
+  /**
+   * A consultoria em curso, quando existe. Ela não entra na planilha como
+   * conteúdo — serve só para o relatório saber a qual contrato de trabalho
+   * esta ficha pertence. Opcional porque um cliente recém-cadastrado ainda
+   * não tem consultoria aberta, e nesse caso o arquivo sai só com o cadastro.
+   */
+  consultoriaId?: string | null;
 }) {
   const colunas: ColunaLista<Documento>[] = [
     {
@@ -89,6 +131,28 @@ export function AbaDocumentos({
 
   return (
     <div className="space-y-6">
+      {/*
+        ── A ORDEM DESTES TRÊS BLOCOS ────────────────────────────────────
+
+        Contrato primeiro, planilha depois, documentos registrados por último.
+        A ordem é a mesma do tempo verbal da aba: o contrato é o COMBINADO que
+        autoriza o trabalho, a planilha é o que sai AGORA a partir dos dados, e
+        a lista de baixo é o que já foi REGISTRADO como entregue. Quem abre
+        esta aba deveria conseguir ler de cima para baixo e entender a história
+        do que saiu daqui — combinar, produzir, entregar.
+      */}
+      <CartaoContratosDoCliente
+        clienteId={cliente.id}
+        nomeCliente={cliente.nomeFantasia}
+        contratos={contratos}
+      />
+
+      <CartaoPlanilhasDoCliente
+        clienteId={cliente.id}
+        nomeCliente={cliente.nomeFantasia}
+        consultoriaId={consultoriaId}
+      />
+
       <Secao
         rotulo="Documentos"
         titulo={

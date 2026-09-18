@@ -8,17 +8,25 @@ import {
   ROTULO_PRIORIDADE,
   ROTULO_STATUS_ACAO,
   ROTULO_STATUS_CONSULTORIA,
+  ROTULO_STATUS_CONTRATO,
   TOM_PRIORIDADE,
   TOM_STATUS_CONSULTORIA,
+  TOM_STATUS_CONTRATO,
+  contarParcelas,
   dataCurta,
   desdeQuando,
   derivarAtencao,
+  somarPagas,
+  somarParcelas,
+  somarPendentes,
+  valorEmReais,
 } from "@/lib/dados";
 import type {
   AcaoPlano,
   Acompanhamento,
   ClienteOperacao,
   Consultoria,
+  Contrato,
   Ficha,
   Processo,
   Tarefa,
@@ -53,6 +61,7 @@ export function AbaVisaoGeral({
   fichas,
   processos,
   acompanhamentos,
+  contratos,
   tarefas,
 }: {
   cliente: ClienteOperacao;
@@ -61,11 +70,38 @@ export function AbaVisaoGeral({
   fichas: readonly Ficha[];
   processos: readonly Processo[];
   acompanhamentos: readonly Acompanhamento[];
+  /** Os contratos deste cliente. Podem ser vários — um por trabalho. */
+  contratos: readonly Contrato[];
   tarefas: readonly Tarefa[];
 }) {
   const abertas = acoes.filter((a) => a.status !== "CONCLUIDO");
   const aguardandoCliente = abertas.filter((a) => a.status === "AGUARDANDO_CLIENTE");
   const concluidas = acoes.filter((a) => a.status === "CONCLUIDO");
+
+  /**
+   * O contrato em curso, para o resumo do lado.
+   *
+   * Vem do MAIS RECENTE que ainda não terminou — o contrato que governa o
+   * trabalho de agora. Se todos terminaram, mostra o último mesmo assim: um
+   * cliente sem nenhum contrato em aberto ainda tem um histórico de
+   * combinado, e escondê-lo deixaria o painel vazio sem motivo.
+   *
+   * A escolha é por STATUS, não por valor: escolher "o maior contrato" seria
+   * eleger o financeiro como mais importante que o estado do trabalho.
+   */
+  const contratoAtivo =
+    contratos.find((c) => c.status !== "CONCLUIDO" && c.status !== "CANCELADO") ??
+    contratos[0] ??
+    null;
+
+  const contratoValores = contratoAtivo
+    ? {
+        total: somarParcelas(contratoAtivo),
+        pago: somarPagas(contratoAtivo),
+        pendente: somarPendentes(contratoAtivo),
+        parcelas: contarParcelas(contratoAtivo),
+      }
+    : null;
 
   const fichasAguardando = fichas.filter((f) => f.situacao === "AGUARDANDO_DADOS");
   const fichasRevisao = fichas.filter((f) => f.situacao === "EM_REVISAO");
@@ -187,6 +223,91 @@ export function AbaVisaoGeral({
             </div>
           </Painel>
 
+          {/*
+            ── O CONTRATO ────────────────────────────────────────────────
+
+            Aqui, e não numa aba: "quanto ficou combinado e quanto já entrou" é
+            pergunta de visão geral, não de documento. A aba Documentos guarda
+            a lista completa, com todos os contratos e o estado de cada um.
+
+            Os três números são SOMAS das parcelas do contrato — as mesmas
+            funções que a lista de contratos usa. Nada de receita, projeção ou
+            valor corrigido: juros e multa são cláusula, e cláusula o sistema
+            não escreve.
+          */}
+          {contratoAtivo && contratoValores ? (
+            <Painel>
+              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+                  Contrato
+                </p>
+                <Etiqueta tom={TOM_STATUS_CONTRATO[contratoAtivo.status]}>
+                  {ROTULO_STATUS_CONTRATO[contratoAtivo.status]}
+                </Etiqueta>
+              </div>
+
+              <Link
+                href={`/contratos/${contratoAtivo.id}`}
+                className="mt-2.5 block text-[0.9375rem] leading-snug font-medium text-tinta underline-offset-4 hover:underline"
+              >
+                {contratoAtivo.titulo}
+              </Link>
+              <p className="mt-1 text-[0.8125rem] text-[var(--tinta-fraca)] tabular">
+                {contratoAtivo.numero}
+                {contratoAtivo.inicioEm ? ` · começou em ${dataCurta(contratoAtivo.inicioEm)}` : ""}
+              </p>
+
+              <div className="mt-3.5 space-y-2.5 border-t border-[var(--linha)] pt-3">
+                <LinhaResumo
+                  rotulo="Valor do projeto"
+                  texto={valorEmReais(contratoValores.total, { centavos: false })}
+                />
+                <LinhaResumo
+                  rotulo="Já recebido"
+                  texto={valorEmReais(contratoValores.pago, { centavos: false })}
+                />
+                <LinhaResumo
+                  rotulo="Ainda em aberto"
+                  texto={valorEmReais(contratoValores.pendente, { centavos: false })}
+                />
+                <LinhaResumo
+                  rotulo="Parcelas pagas"
+                  valor={contratoValores.parcelas.PAGO}
+                  sufixo={`de ${contratoAtivo.parcelas.length}`}
+                />
+              </div>
+
+              {contratoAtivo.parcelas.length === 0 ? (
+                <p className="mt-3 text-[0.75rem] leading-snug text-[var(--tinta-fraca)]">
+                  Este contrato ainda não tem parcela combinada.
+                </p>
+              ) : null}
+
+              <p className="mt-3 text-[0.75rem] leading-snug text-[var(--tinta-fraca)]">
+                {contratos.length === 1
+                  ? "Há 1 contrato com este cliente."
+                  : `Há ${contratos.length} contratos com este cliente.`}{" "}
+                A lista inteira fica na aba Documentos.
+              </p>
+            </Painel>
+          ) : (
+            <Painel>
+              <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+                Contrato
+              </p>
+              <p className="mt-2.5 text-[0.875rem] leading-relaxed text-[var(--tinta-suave)]">
+                Nenhum contrato registrado com este cliente. Quando um combinado
+                for fechado, o valor e as parcelas aparecem aqui.
+              </p>
+              <Link
+                href={`/contratos/novo?cliente=${encodeURIComponent(cliente.id)}`}
+                className="mt-2.5 inline-block text-[0.6875rem] font-semibold tracking-[0.13em] text-oliva uppercase hover:underline"
+              >
+                Montar um contrato
+              </Link>
+            </Painel>
+          )}
+
           {ultimoAcompanhamento ? (
             <Painel>
               <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
@@ -282,11 +403,34 @@ export function AbaVisaoGeral({
   );
 }
 
-function LinhaResumo({ rotulo, valor }: { rotulo: string; valor: number }) {
+/**
+ * Uma linha "rótulo — número" do painel lateral.
+ *
+ * Aceita três formas de valor porque os três painéis contam coisas
+ * diferentes: contagem solta (`valor`), dinheiro já formatado (`texto`, que
+ * passa por `valorEmReais` e por isso não pode virar número de novo aqui) e
+ * contagem com complemento (`valor` + `sufixo`, como "2 de 4"). Formatar
+ * dinheiro nesta função exigiria que ela soubesse que aquele número é
+ * dinheiro — e é justamente isso que `valorEmReais` decide.
+ */
+function LinhaResumo({
+  rotulo,
+  valor,
+  texto,
+  sufixo,
+}: {
+  rotulo: string;
+  valor?: number;
+  texto?: string;
+  sufixo?: string;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <span className="text-[0.8125rem] text-[var(--tinta-suave)]">{rotulo}</span>
-      <span className="tabular text-[0.9375rem] font-medium text-tinta">{valor}</span>
+      <span className="tabular text-[0.9375rem] font-medium text-tinta">
+        {texto ?? valor}
+        {sufixo ? <span className="text-[var(--tinta-fraca)]"> {sufixo}</span> : null}
+      </span>
     </div>
   );
 }

@@ -87,8 +87,35 @@ export const SUGESTAO_BIO_INSTAGRAM =
  */
 export const ENVIO_DO_DIAGNOSTICO_ATIVO = false;
 
+/**
+ * O fuso horário da consultora.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO PRECISA ESTAR DECLARADO, E NÃO SER LIDO DO SISTEMA      │
+ * │                                                                      │
+ * │ O servidor do sistema roda em UTC. A saudação do painel, o "hoje" da  │
+ * │ agenda e a comparação de prazo precisam do horário DA PAREDE DELA —   │
+ * │ e às 21h em São Paulo o servidor já está no dia seguinte.             │
+ * │                                                                      │
+ * │ Declarado aqui, o fuso é um dado só: quando a consultoria atender     │
+ * │ alguém em outro estado, é esta linha que muda, e nenhuma tela         │
+ * │ precisa saber disso.                                                  │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export const FUSO_HORARIO = "America/Sao_Paulo";
+
 /** Linha de rodapé de identificação do produto. */
 export const MARCA_NOME = "Érika Bruna";
+/**
+ * Como o sistema a chama ao falar COM ela.
+ *
+ * Declarado em vez de derivado de `MARCA_NOME.split(" ")`: a saudação é a
+ * primeira coisa que ela lê ao abrir o sistema, e não é lugar para uma
+ * expressão que funciona por acidente — no dia em que o nome virar "Érika
+ * Bruna Consultoria", o `split` passaria a chamá-la de "Érika" por sorte e
+ * o rodapé mudaria junto.
+ */
+export const MARCA_PRIMEIRO_NOME = "Érika";
 export const MARCA_DESCRICAO = "Consultoria Gastronômica";
 export const SISTEMA_VERSAO = "0.1.0";
 

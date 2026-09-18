@@ -35,12 +35,16 @@ export const metadata: Metadata = { title: "Ingrediente" };
  * │ Não recalcula nada. Não estima o impacto no custo de nenhum prato.    │
  * │ Não sugere reprecificar.                                              │
  * │                                                                      │
- * │ O motivo é o ponto 10, e ele é concreto: não se sabe de onde o preço  │
- * │ vem (ela digita na visita? o cliente manda por mensagem? sai de       │
- * │ nota?) nem de quanto em quanto tempo é atualizado. Sem isso, um       │
- * │ "impacto no custo" seria uma multiplicação sobre uma base de que     │
- * │ ninguém sabe a procedência. Mostrar a variação é fato; calcular o     │
- * │ efeito dela é metodologia — e metodologia aqui ainda não existe.      │
+ * │ O motivo é concreto: não se sabe de onde o preço vem (ela digita na   │
+ * │ visita? o cliente manda por mensagem? sai de nota?) nem de quanto em  │
+ * │ quanto tempo é atualizado. Sem isso, um "impacto no custo" seria uma  │
+ * │ multiplicação sobre uma base de que ninguém sabe a procedência.       │
+ * │ Mostrar a variação é fato; calcular o efeito dela é metodologia — e   │
+ * │ metodologia aqui ainda não existe.                                    │
+ * │                                                                      │
+ * │ A lista de decisões que travam o custo fica na tela da ficha, junto    │
+ * │ da composição — que é onde a pergunta nasce. Repeti-la aqui seria     │
+ * │ pedir que a consultora lesse o mesmo bloqueio duas vezes.              │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -208,9 +212,11 @@ export default async function PaginaIngrediente({ params }: Props) {
               do dia em que foi escrita, e ele continua lá.
             </p>
             <p className="mt-2.5 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-              O recálculo depende do ponto 10 — de onde vêm os preços e de
-              quanto em quanto tempo são atualizados. Enquanto isso não fecha,
-              o sistema mostra a diferença e deixa a decisão com ela.
+              O recálculo automático depende de duas coisas que ainda não foram
+              decididas: de onde vem o preço e de quanto em quanto tempo ele é
+              atualizado, e o que deve acontecer com as fichas antigas quando
+              ele mudar. Enquanto isso não fecha, o sistema mostra a diferença
+              e deixa a decisão com você.
             </p>
           </Painel>
         </div>

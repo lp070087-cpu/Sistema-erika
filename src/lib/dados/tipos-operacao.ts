@@ -417,7 +417,9 @@ export type TipoAtencao =
   | "FICHA_AGUARDANDO_DADOS"
   | "PROCESSO_AGUARDANDO_REVISAO"
   | "ACOMPANHAMENTO_PENDENTE"
-  | "DIAGNOSTICO_NAO_LIDO";
+  | "DIAGNOSTICO_NAO_LIDO"
+  | "CONTRATO_AGUARDANDO_ACEITE"
+  | "PARCELA_ATRASADA";
 
 export type ItemAtencao = {
   id: string;
@@ -435,6 +437,144 @@ export type ItemAtencao = {
 // ---------------------------------------------------------------------------
 
 export type OpcaoRotulada<T extends string> = { valor: T; texto: string };
+
+// ---------------------------------------------------------------------------
+// Contrato
+// ---------------------------------------------------------------------------
+
+/**
+ * O CONTRATO — a formalização comercial de uma consultoria.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE É FATO AQUI, E O QUE NÃO É                                     │
+ * │                                                                      │
+ * │ Valor do projeto, valor de cada parcela, datas, status: tudo isso é   │
+ * │ FATO DECLARADO. Alguém combinou esses números, e o sistema só os      │
+ * │ guarda. Não há nada calculado neste tipo — nem juros, nem multa, nem  │
+ * │ projeção, nem total "esperado".                                       │
+ * │                                                                      │
+ * │ Repare que NÃO existe campo `valorTotal` no contrato. O total é a     │
+ * │ soma das parcelas, e somar é fato, não decisão: `somarParcelas()`     │
+ * │ faz isso na derivação. Guardar o total ao lado das parcelas criaria   │
+ * │ duas fontes para o mesmo número — e no dia em que uma parcela fosse   │
+ * │ editada, uma das duas estaria errada.                                 │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type StatusContrato =
+  | "RASCUNHO"
+  | "AGUARDANDO_ACEITE"
+  | "ASSINADO"
+  | "EM_ANDAMENTO"
+  | "CONCLUIDO"
+  | "CANCELADO";
+
+/**
+ * Estado do documento do contrato.
+ *
+ * Existe separado do `StatusContrato` porque são duas perguntas diferentes:
+ * "em que ponto do trabalho estamos" e "o papel foi assinado". Um contrato
+ * assinado e um contrato em rascunho podem estar os dois em `EM_ANDAMENTO`,
+ * e a consultora precisa ver a diferença.
+ */
+export type EstadoDocumentoContrato = "NAO_ENVIADO" | "AGUARDANDO_ACEITE" | "ASSINADO";
+
+/** Como o aceite aconteceu, quando aconteceu. */
+export type TipoAceite = "ASSINATURA_DIGITAL" | "ASSINATURA_MANUSCRITA" | "ACEITE_POR_EMAIL";
+
+export type Aceite = {
+  tipo: TipoAceite;
+  em: Date;
+  /** Quem aceitou. Nome declarado, não usuário de sistema. */
+  por: string;
+};
+
+export type StatusParcela = "PENDENTE" | "PAGO" | "ATRASADO" | "CANCELADO";
+
+/**
+ * UMA PARCELA DO CONTRATO.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O SISTEMA NÃO SABE QUANTAS PARCELAS UM CONTRATO TEM                  │
+ * │                                                                      │
+ * │ Não existe "1º pagamento", "2º pagamento" como campos. Uma parcela é  │
+ * │ uma LINHA numa lista, e o contrato carrega N delas — duas, quatro,    │
+ * │ seis, doze. O rótulo que aparece na tela ("2ª parcela") é derivado da │
+ * │ POSIÇÃO na lista, não gravado.                                        │
+ * │                                                                      │
+ * │ A alternativa — quatro campos fixos — funcionaria para o contrato de  │
+ * │ hoje e quebraria no primeiro cliente que negociasse entrada + 3x.     │
+ * │ Como o contrato é justamente onde as condições variam por cliente, é  │
+ * │ ali que fixar estrutura custa mais caro.                              │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type ParcelaContrato = {
+  id: string;
+  /** Posição na lista, começando em 1. Gravada para ordenar sem ambiguidade. */
+  numero: number;
+  /** O que esta parcela representa: entrada, mensalidade, parcela, entrega. */
+  descricao: string;
+  valor: number;
+  /** Condição declarada em texto — "na assinatura", "todo dia 10". */
+  condicao: string;
+  /** Quando vence. `null` quando a condição ainda não virou data. */
+  venceEm: Date | null;
+  /** Quando foi paga. `null` enquanto não foi. */
+  pagoEm: Date | null;
+  status: StatusParcela;
+  /**
+   * Recorrente ou não.
+   *
+   * É o que separa a ENTRADA (uma vez) da MENSALIDADE (todo mês). Sem esta
+   * marca, a tela não teria como dizer "mensalidade" sem deduzir do texto da
+   * descrição — e deduzir texto é como o sistema passaria a inventar.
+   */
+  recorrente: boolean;
+};
+
+/** Eventos da vida do contrato. Mesma ideia de `TipoEvento`, outro escopo. */
+export type TipoEventoContrato =
+  | "criado"
+  | "enviado"
+  | "visualizado"
+  | "aceito"
+  | "pagamento_registrado"
+  | "projeto_iniciado"
+  | "projeto_entregue"
+  | "cancelado";
+
+export type EventoContrato = {
+  id: string;
+  tipo: TipoEventoContrato;
+  descricao: string;
+  em: Date;
+  /** Quem provocou. "Érika Bruna" ou o nome de quem aceitou. */
+  por: string;
+};
+
+export type Contrato = {
+  id: string;
+  clienteId: string;
+  /** A consultoria que este contrato formaliza. `null` antes de vincular. */
+  consultoriaId: string | null;
+  /** Número do contrato, como ela o chama. Texto, não sequência do sistema. */
+  numero: string;
+  titulo: string;
+  status: StatusContrato;
+  criadoEm: Date;
+  /** Data de início do trabalho, combinada. */
+  inicioEm: Date | null;
+  /** Previsão de entrega. Compromisso declarado, não prazo calculado. */
+  entregaPrevistaEm: Date | null;
+  /** Aceite formal, quando existir. */
+  aceite: Aceite | null;
+  estadoDocumento: EstadoDocumentoContrato;
+  /** Quantas parcelas, de quantas pagas. Contagem — não percentual. */
+  parcelas: ParcelaContrato[];
+  eventos: EventoContrato[];
+  /** O que está combinado, em texto. Igual a `escopo` da consultoria. */
+  escopo: string[];
+  observacoes: string;
+};
 
 /** Reexportação para as telas não precisarem cavar em dois arquivos. */
 export type { BlocoChave, LeadStatus, OrigemLead, TipoServico };

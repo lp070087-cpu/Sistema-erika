@@ -82,6 +82,7 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
     processos,
     acompanhamentos,
     documentos,
+    contratos,
     eventos,
     tarefas,
   ] = await Promise.all([
@@ -91,6 +92,7 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
     operacao.listarProcessosDoCliente(id),
     operacao.listarAcompanhamentosDoCliente(id),
     operacao.listarDocumentosDoCliente(id),
+    operacao.listarContratosDoCliente(id),
     operacao.listarEventos(id),
     operacao.listarTarefas(),
   ]);
@@ -118,6 +120,7 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
         fichas={fichas}
         processos={processos}
         acompanhamentos={acompanhamentos}
+        contratos={contratos}
         tarefas={tarefas.filter((t) => t.clienteId === cliente.id)}
       />
     ),
@@ -130,7 +133,14 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
     acompanhamentos: (
       <AbaAcompanhamentos cliente={cliente} acompanhamentos={acompanhamentos} />
     ),
-    documentos: <AbaDocumentos cliente={cliente} documentos={documentos} />,
+    documentos: (
+      <AbaDocumentos
+        cliente={cliente}
+        documentos={documentos}
+        contratos={contratos}
+        consultoriaId={consultoria?.id ?? null}
+      />
+    ),
     historico: <AbaHistorico cliente={cliente} eventos={eventos} />,
   }[atual];
 
@@ -139,6 +149,12 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
    * abrindo a aba. As três primeiras ficam sem contagem de propósito: não há
    * o que contar em "visão geral", e mostrar "1" ao lado de "diagnóstico" ou
    * "consultoria" sugeriria uma medida onde só existe um registro.
+   *
+   * A aba Documentos conta contratos E documentos porque ela mostra os dois:
+   * contar só os documentos faria o número discordar do que se vê ao abrir a
+   * aba — o cartão de contratos está logo no topo, e um "2" ali em cima de
+   * dois contratos seria lido como erro. As planilhas não entram na conta:
+   * não são uma lista deste cliente, são uma ação que pode ser feita.
    */
   const abasComContagem = ABAS.map((a) => ({
     ...a,
@@ -150,7 +166,7 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
           : a.chave === "acompanhamentos"
             ? acompanhamentos.length
             : a.chave === "documentos"
-              ? documentos.length
+              ? documentos.length + contratos.length
               : undefined,
   }));
 

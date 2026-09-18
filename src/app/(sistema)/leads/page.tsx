@@ -346,8 +346,9 @@ export default async function PaginaLeads({ searchParams }: Props) {
             </p>
             <p className="mt-2.5">
               A conversão de lead em cliente existe no contrato de dados mas
-              não é oferecida em nenhuma tela: o cadastro de cliente depende
-              dos pontos 1, 2, 3 e 10.
+              não é oferecida em nenhuma tela: o cadastro completo de cliente
+              depende de decisões sobre o que é obrigatório preencher, de onde
+              vêm os preços e como o faturamento é informado.
             </p>
           </Aviso>
         </div>

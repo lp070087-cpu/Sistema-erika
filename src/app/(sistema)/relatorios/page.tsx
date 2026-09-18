@@ -53,33 +53,42 @@ export const metadata: Metadata = { title: "Relatórios" };
 /**
  * As linhas de resultado que o relatório final vai ter.
  *
- * Cada uma declara de QUEM ela depende. Não é decoração: é a resposta
- * pronta para a pergunta que a Érika vai fazer ao ver a tela — "e isso
- * aqui, quando fica pronto?". A resposta é sempre um ponto numerado da
- * lista de decisões pendentes, nunca "em breve".
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE `depende` NOMEIA A DECISÃO, E NÃO O NÚMERO DELA              │
+ * │                                                                      │
+ * │ Antes cada linha dizia "Ponto 4 (índice de cocção) e 5 (fator de      │
+ * │ correção por contexto)". O parêntese salvava o número, e mesmo assim   │
+ * │ era um número de controle interno vazando para a tela de quem usa o    │
+ * │ sistema.                                                              │
+ * │                                                                      │
+ * │ Agora a linha diz a decisão em palavras, do mesmo jeito que           │
+ * │ `@/components/ui/metodologia` diz. São dois lugares falando do mesmo   │
+ * │ bloqueio, e falar a mesma língua é o que permite que a resposta da     │
+ * │ consultora seja reconhecida nos dois.                                  │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 const LINHAS_DE_RESULTADO = [
   {
     titulo: "Custo por prato e custo por porção",
-    depende: "Ponto 4 (índice de cocção) e 5 (fator de correção por contexto)",
+    depende: "Quanto o alimento rende depois de cozido, e quanto se perde entre a compra e o uso",
     porque:
       "Os dois mudam o número final. Sem eles, o custo sairia com uma margem de erro que ninguém consegue medir.",
   },
   {
     titulo: "Variação de custo no período do acompanhamento",
-    depende: "Pontos 4, 5, 6 e 19 (arredondamento e precisão)",
+    depende: "As mesmas duas decisões acima, mais quantas casas decimais cada número guarda",
     porque:
-      "Comparar dois momentos exige que os dois tenham sido calculados do mesmo jeito. O ponto 19 define quantas casas decimais sobrevivem à comparação.",
+      "Comparar dois momentos exige que os dois tenham sido calculados do mesmo jeito. Quantas casas sobrevivem à comparação é uma decisão, e ela muda o resultado da conta.",
   },
   {
     titulo: "CMV e margem por prato",
-    depende: "Ponto 7 (CMV alvo ou markup) e 9 (origem do volume do cardápio)",
+    depende: "Como o preço de venda é formado, e de onde vem o volume vendido de cada prato",
     porque:
-      "CMV precisa de um alvo para virar julgamento, e o alvo é decisão dela. E o volume vendido precisa de uma origem — o sistema não presume.",
+      "CMV precisa de um alvo para virar julgamento, e o alvo é decisão sua. E o volume vendido precisa de uma origem — o sistema não presume que o prato mais caro vende menos.",
   },
   {
     titulo: "Cardápio com preço sugerido",
-    depende: "Pontos 7, 9, 11 e 19",
+    depende: "As decisões de custo e de formação de preço, mais o peso de cada etapa do método",
     porque:
       "Preço sugerido é o número mais consequente do sistema. É o que vai para o cliente, e é o último a poder sair.",
   },

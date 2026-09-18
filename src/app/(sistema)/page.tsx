@@ -6,7 +6,11 @@ import { Aviso, EstadoVazio, Painel, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
 import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { AbrirLink, CopiarLink, EnderecoPublico } from "@/components/ui/link-publico";
-import { SITE_PUBLICO_URL } from "@/lib/configuracao-publica";
+import {
+  SITE_PUBLICO_URL,
+  FUSO_HORARIO,
+  MARCA_PRIMEIRO_NOME,
+} from "@/lib/configuracao-publica";
 import { ListaAtencao } from "@/components/ui/atencao";
 import { LinhaDoTempo } from "@/components/ui/linha-do-tempo";
 import {
@@ -16,49 +20,61 @@ import {
   TOM_STATUS,
   TOM_STATUS_CONSULTORIA,
   agruparTarefas,
+  contarParcelas,
   dataCurta,
   desdeQuando,
   derivarAtencao,
   obterRepositorio,
   obterRepositorioOperacao,
+  proximaParcela,
+  saudacao,
+  valorEmReais,
 } from "@/lib/dados";
 import { NAVEGACAO } from "@/lib/navegacao";
 
 export const metadata: Metadata = { title: "Visão geral" };
 
 /**
- * VISÃO GERAL DA OPERAÇÃO — segunda camada (§21).
- *
- * A frase-guia é da Fase 0: "Onde a operação está perdendo dinheiro agora".
+ * PAINEL DE ABERTURA.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ O QUE MUDOU DA FASE 2 PARA A 2.5                                     │
+ * │ A ORDEM DESTA TELA É UMA DECISÃO, E NÃO UM LAYOUT                    │
  * │                                                                      │
- * │ Na Fase 2, esta tela só podia mostrar a ENTRADA. Dos cinco blocos     │
- * │ que a Seção 12.2 pediu, quatro dependiam de módulos que não existiam  │
- * │ — e a tela declarava isso, em vez de mostrar zero.                    │
+ * │ 1. SAUDAÇÃO e a frase que diz o que a tela é.                         │
+ * │ 2. RESUMO — seis números, todos contagem, todos conferíveis.          │
+ * │ 3. PRECISA DA SUA ATENÇÃO — o que travou, com o caminho para destravar.│
+ * │ 4. EM ANDAMENTO — o que está vivo.                                    │
+ * │ 5. ATIVIDADE RECENTE — o que se moveu.                                │
  * │                                                                      │
- * │ Na Fase 2.5 os módulos existem. Então os blocos entram: atenção,       │
- * │ próximos acompanhamentos, consultorias em andamento, atividade        │
- * │ recente e atalhos.                                                    │
- * │                                                                      │
- * │ MAS O BLOCO DE CUSTO CONTINUA FORA — e continua declarado, não        │
- * │ escondido. Ele depende dos pontos 4, 5, 6, 7, 9 e 19, e um painel de  │
- * │ abertura com "variação de custo: 0%" seria lido como uma operação     │
- * │ saudável quando na verdade é um sistema sem metodologia.              │
+ * │ O resumo vem ANTES da atenção porque ele é o mapa: seis números que   │
+ * │ dizem onde olhar. A atenção vem em seguida porque é a única parte     │
+ * │ acionável. Invertido, a tela abriria numa lista de problemas sem que  │
+ * │ a pessoa soubesse de que tamanho é o dia.                             │
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE "PRECISA DA SUA ATENÇÃO" VEM ANTES DE QUALQUER NÚMERO        │
+ * │ POR QUE NÃO HÁ GRÁFICO FINANCEIRO NESTA TELA                          │
  * │                                                                      │
- * │ Quem abre esta tela de manhã não quer saber quantos leads existem.    │
- * │ Quer saber o que fazer primeiro. Colocar a contagem acima da lista    │
- * │ obrigaria a pessoa a ler números para chegar na única coisa acionável │
- * │ da tela.                                                              │
+ * │ Um gráfico de faturamento mês a mês é a coisa mais fácil de desenhar  │
+ * │ aqui — e a mais fácil de estar errada. Os valores dos contratos        │
+ * │ existem, mas o que eles SOMAM não é medição de nada: são cinco         │
+ * │ contratos de demonstração. Um gráfico bonito em cima disso seria lido │
+ * │ como o desempenho da consultoria dela.                                │
  * │                                                                      │
- * │ Toda linha de atenção tem link. Item de atenção sem caminho para      │
- * │ agir é só preocupação — e uma tela que lista preocupações é pior do   │
- * │ que uma que não lista nada.                                           │
+ * │ O que aparece é o que se pode conferir: contagem de contrato por      │
+ * │ estado, soma das parcelas de cada contrato, próxima parcela a vencer. │
+ * │ Cada número desses se confere contra a lista de contratos. Um gráfico │
+ * │ de evolução, não.                                                     │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE A SAUDAÇÃO USA O FUSO DELA E NÃO O DO SERVIDOR                │
+ * │                                                                      │
+ * │ O servidor roda em UTC. Às 21h de São Paulo ele já está no dia         │
+ * │ seguinte, e a tela cumprimentaria com "Bom dia" quem está fechando a   │
+ * │ cozinha. `FUSO_HORARIO` é o fuso da parede dela, declarado num lugar   │
+ * │ só — e `saudacao()` recebe a data como argumento para que o HTML do    │
+ * │ servidor e o do navegador digam a mesma palavra.                       │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 export default async function PaginaVisaoGeral() {
@@ -76,6 +92,7 @@ export default async function PaginaVisaoGeral() {
     tarefas,
     acompanhamentos,
     compromissos,
+    linhasContrato,
   ] = await Promise.all([
     entrada.resumo(),
     entrada.listarLeads(),
@@ -87,6 +104,7 @@ export default async function PaginaVisaoGeral() {
     operacao.listarTarefas(),
     operacao.listarAcompanhamentos(),
     operacao.listarCompromissos(),
+    operacao.listarLinhasContrato(),
   ]);
 
   const agora = new Date();
@@ -104,6 +122,7 @@ export default async function PaginaVisaoGeral() {
       processos,
       consultorias,
       clientes,
+      contratos: linhasContrato,
       diagnosticosNaoLidos: naoLidos.map((l) => ({
         leadId: l.id,
         leadNome: l.nomeFantasia,
@@ -115,25 +134,92 @@ export default async function PaginaVisaoGeral() {
 
   const gavetas = agruparTarefas(tarefas, agora);
   const consultoriasAbertas = consultorias.filter((c) => c.status !== "CONCLUIDA");
+
+  const contratosAguardandoAceite = linhasContrato.filter(
+    (l) => l.contrato.status === "AGUARDANDO_ACEITE"
+  );
+
+  const proximaParcelaGeral = linhasContrato
+    .map((l) => ({
+      linha: l,
+      parcela: proximaParcela(l.contrato),
+    }))
+    .filter(
+      (x): x is { linha: (typeof linhasContrato)[number]; parcela: NonNullable<typeof x.parcela> } =>
+        x.parcela !== null && x.parcela.venceEm !== null && x.parcela.venceEm.getTime() >= agora.getTime()
+    )
+    .sort((a, b) => (a.parcela.venceEm?.getTime() ?? 0) - (b.parcela.venceEm?.getTime() ?? 0))
+    .slice(0, 4);
+
   const proximosCompromissos = compromissos
     .filter((c) => c.quando.getTime() >= agora.getTime())
     .sort((a, b) => a.quando.getTime() - b.quando.getTime())
     .slice(0, 5);
 
   const totalItens = NAVEGACAO.reduce((s, g) => s + g.itens.length, 0);
+  const minhaSaudacao = saudacao(agora, FUSO_HORARIO);
 
   return (
     <div className="space-y-7">
+      {/* ── SAUDAÇÃO ─────────────────────────────────────────────────── */}
       <CabecalhoPagina
         rotulo="Visão geral da operação"
-        titulo="Onde a operação está perdendo dinheiro agora"
-        descricao="O que precisa de você hoje, o que está em andamento e o que chegou novo. Os números de custo continuam fora desta tela — dependem da metodologia, e estão declarados no fim."
+        titulo={`${minhaSaudacao}, ${MARCA_PRIMEIRO_NOME}.`}
+        descricao="Veja o que precisa da sua atenção hoje."
         acoes={<Etiqueta tom="oliva">Demonstração</Etiqueta>}
       />
 
-      <FaixaDemonstracao oQue="Clientes, consultorias, tarefas, fichas e diagnósticos desta tela são de demonstração. Nenhuma empresa ou pessoa aqui existe, e nada foi gravado em banco." />
+      <FaixaDemonstracao oQue="Clientes, consultorias, contratos, tarefas, fichas e diagnósticos desta tela são de demonstração. Nenhuma empresa ou pessoa aqui existe, e nada foi gravado em banco." />
 
-      {/* ── 1. PRECISA DA SUA ATENÇÃO ──────────────────────────────────── */}
+      {/* ── RESUMO ───────────────────────────────────────────────────── */}
+      <Secao
+        rotulo="Resumo"
+        titulo="O tamanho do dia"
+        descricao="Seis contagens, todas conferíveis contra as telas de origem. Nenhuma delas é nota, média ou projeção — são coisas que se podem contar."
+      >
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <Indicador
+            rotulo="Diagnósticos novos"
+            valor={resumo.aguardandoLeitura}
+            tom={resumo.aguardandoLeitura > 0 ? "atencao" : "neutro"}
+            contexto="Chegaram e ainda não foram lidos"
+          />
+          <Indicador
+            rotulo="Clientes ativos"
+            valor={clientes.filter((c) => c.situacao === "ATIVO").length}
+            contexto={`de ${clientes.length} cadastrados`}
+          />
+          <Indicador
+            rotulo="Consultorias"
+            valor={consultoriasAbertas.length}
+            contexto="Em andamento ou em acompanhamento"
+          />
+          <Indicador
+            rotulo="Tarefas pendentes"
+            valor={gavetas.hoje.length + gavetas.atrasadas.length + gavetas.proximas.length}
+            tom={gavetas.atrasadas.length > 0 ? "critico" : "neutro"}
+            contexto={
+              gavetas.atrasadas.length > 0
+                ? `${gavetas.atrasadas.length} atrasadas`
+                : "Nenhuma atrasada"
+            }
+          />
+          <Indicador
+            rotulo="Fichas"
+            valor={fichas.filter((f) => f.situacao === "AGUARDANDO_DADOS").length}
+            tom={fichas.some((f) => f.situacao === "AGUARDANDO_DADOS") ? "atencao" : "neutro"}
+            contexto="Aguardando dados"
+          />
+          <Indicador
+            rotulo="Contratos"
+            valor={contratosAguardandoAceite.length}
+            tom={contratosAguardandoAceite.length > 0 ? "atencao" : "neutro"}
+            contexto="Aguardando aceite"
+          />
+        </div>
+      </Secao>
+
+      {/* ── PRECISA DA SUA ATENÇÃO ───────────────────────────────────── */}
       <Secao
         rotulo="Precisa da sua atenção"
         titulo={
@@ -150,17 +236,129 @@ export default async function PaginaVisaoGeral() {
       >
         <ListaAtencao
           itens={atencao}
-          maximo={6}
+          maximo={7}
           vazio={
             <EstadoVazio
               titulo="Nada travado neste momento"
-              descricao="Quando uma ficha ficar sem dado, um processo sem tempo ou um cliente parado, o item aparece aqui com o caminho para resolver."
+              descricao="Quando um contrato esperar aceite, uma parcela vencer, uma ficha ficar sem dado ou um cliente parar, o item aparece aqui com o caminho para resolver."
             />
           }
         />
       </Secao>
 
-      {/* ── 2 e 3. TAREFAS E PRÓXIMOS ACOMPANHAMENTOS ──────────────────── */}
+      {/* ── CONTRATOS ────────────────────────────────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Secao
+          rotulo="Contratos"
+          titulo="Propostas e parcelas"
+          descricao="O que está formalizado e o que está por receber. Os valores são os declarados em cada contrato — a soma é aritmética, não previsão."
+          acoes={
+            <BotaoLink href="/contratos" variante="secundario" tamanho="sm">
+              Ver contratos
+            </BotaoLink>
+          }
+        >
+          {linhasContrato.length === 0 ? (
+            <EstadoVazio
+              titulo="Nenhum contrato registrado"
+              descricao="Uma proposta formalizada aparece aqui com o estado, o valor e o que já foi pago."
+            />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Indicador
+                  rotulo="Aguardando aceite"
+                  valor={contratosAguardandoAceite.length}
+                  tom={contratosAguardandoAceite.length > 0 ? "atencao" : "neutro"}
+                />
+                <Indicador
+                  rotulo="Em andamento"
+                  valor={linhasContrato.filter((l) => l.contrato.status === "EM_ANDAMENTO").length}
+                />
+              </div>
+
+              <ul className="mt-5 space-y-2.5">
+                {linhasContrato.slice(0, 4).map((l) => {
+                  const parcelas = contarParcelas(l.contrato);
+                  return (
+                    <li key={l.id}>
+                      <Link
+                        href={`/contratos/${l.id}`}
+                        className="block rounded-[var(--raio-sm)] border border-[var(--linha)] bg-[var(--superficie)] px-3.5 py-3 transition-colors duration-150 hover:border-[var(--linha-forte)] hover:bg-white"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                          <span className="min-w-0 truncate text-[0.875rem] font-medium text-tinta">
+                            {l.cliente.nomeFantasia}
+                          </span>
+                          <span className="tabular shrink-0 text-[0.875rem] text-tinta">
+                            {valorEmReais(l.valorTotal, { centavos: false })}
+                          </span>
+                        </div>
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.75rem] text-[var(--tinta-fraca)]">
+                          <span className="truncate">{l.contrato.titulo}</span>
+                          {parcelas.ATRASADO > 0 ? (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span className="font-semibold text-red-800">
+                                {parcelas.ATRASADO}{" "}
+                                {parcelas.ATRASADO === 1 ? "parcela atrasada" : "parcelas atrasadas"}
+                              </span>
+                            </>
+                          ) : null}
+                        </p>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </Secao>
+
+        <Secao
+          rotulo="A receber"
+          titulo="Os próximos vencimentos"
+          descricao="As parcelas com data marcada à frente, na ordem em que vencem. Só entram parcelas que ainda não foram pagas — paga não é previsão, é fato."
+          acoes={
+            <BotaoLink href="/contratos" variante="secundario" tamanho="sm">
+              Ver todos
+            </BotaoLink>
+          }
+        >
+          {proximaParcelaGeral.length === 0 ? (
+            <EstadoVazio
+              titulo="Nenhuma parcela à frente"
+              descricao="Quando um contrato tiver parcela com data de vencimento futura, ela aparece aqui na ordem."
+            />
+          ) : (
+            <ul className="space-y-2.5">
+              {proximaParcelaGeral.map(({ linha, parcela }) => (
+                <li
+                  key={parcela.id}
+                  className="flex items-baseline justify-between gap-4 border-l-2 border-l-[var(--linha-forte)] pl-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[0.875rem] text-tinta">{linha.cliente.nomeFantasia}</p>
+                    <p className="mt-0.5 text-[0.75rem] text-[var(--tinta-fraca)]">
+                      {parcela.descricao}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-right">
+                    <span className="tabular block text-[0.8125rem] text-tinta">
+                      {valorEmReais(parcela.valor)}
+                    </span>
+                    <span className="mt-0.5 block text-[0.75rem] text-[var(--tinta-fraca)]">
+                      {parcela.venceEm ? dataCurta(parcela.venceEm) : "sem data"}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Secao>
+      </div>
+
+      {/* ── TAREFAS E PRÓXIMOS ACOMPANHAMENTOS ───────────────────────── */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Secao
           rotulo="Tarefas"
@@ -183,18 +381,15 @@ export default async function PaginaVisaoGeral() {
 
           {gavetas.hoje.length === 0 && gavetas.atrasadas.length === 0 ? (
             <p className="mt-4 text-[0.875rem] text-[var(--tinta-suave)]">
-              Nenhuma tarefa com prazo para hoje. As {gavetas.proximas.length}{" "}
-              próximas estão no centro de tarefas.
+              Nenhuma tarefa com prazo para hoje. As {gavetas.proximas.length} próximas estão no
+              centro de tarefas.
             </p>
           ) : (
             <ul className="mt-4 space-y-2.5">
               {[...gavetas.atrasadas, ...gavetas.hoje].slice(0, 4).map((t) => {
                 const dono = t.clienteId ? clientePorId.get(t.clienteId) : null;
                 return (
-                  <li
-                    key={t.id}
-                    className="border-l-2 border-l-[var(--linha-forte)] pl-3"
-                  >
+                  <li key={t.id} className="border-l-2 border-l-[var(--linha-forte)] pl-3">
                     <p className="text-[0.875rem] leading-snug text-tinta">{t.titulo}</p>
                     <p className="mt-0.5 text-[0.75rem] text-[var(--tinta-fraca)]">
                       {dono ? dono.nomeFantasia : "sem cliente"} ·{" "}
@@ -251,7 +446,7 @@ export default async function PaginaVisaoGeral() {
         </Secao>
       </div>
 
-      {/* ── 4. CONSULTORIAS EM ANDAMENTO ──────────────────────────────── */}
+      {/* ── CONSULTORIAS EM ANDAMENTO ────────────────────────────────── */}
       <Secao
         rotulo="Em andamento"
         titulo={`${consultoriasAbertas.length} ${consultoriasAbertas.length === 1 ? "consultoria aberta" : "consultorias abertas"}`}
@@ -300,7 +495,7 @@ export default async function PaginaVisaoGeral() {
         )}
       </Secao>
 
-      {/* ── 5. ATIVIDADE RECENTE ──────────────────────────────────────── */}
+      {/* ── ATIVIDADE RECENTE ────────────────────────────────────────── */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
         <Secao
           rotulo="Atividade recente"
@@ -330,7 +525,7 @@ export default async function PaginaVisaoGeral() {
 
         <div className="space-y-4">
           {/*
-            MEU SITE — atalho, não painel (§25).
+            MEU SITE — atalho, não painel.
             Três linhas e dois botões. A tela inteira vive em /meu-site; aqui
             fica só o que se precisa ter à mão quando alguém pede o endereço,
             que é o caso mais comum de abrir o sistema fora do trabalho.
@@ -359,16 +554,23 @@ export default async function PaginaVisaoGeral() {
             </div>
           </Secao>
 
-          {/* Atalhos rápidos — §21 */}
           <Secao rotulo="Atalhos" titulo="Ir direto para">
             <ul className="space-y-2">
               {[
                 { href: "/clientes", texto: "Clientes", nota: `${clientes.length} cadastrados` },
+                {
+                  href: "/contratos",
+                  texto: "Contratos",
+                  nota: `${linhasContrato.length} registrados`,
+                },
+                {
+                  href: "/planilhas",
+                  texto: "Planilhas",
+                  nota: "1 modelo disponível",
+                },
                 { href: "/tarefas", texto: "Tarefas", nota: `${gavetas.proximas.length} à frente` },
                 { href: "/fichas", texto: "Fichas técnicas", nota: `${fichas.length} no acervo` },
-                { href: "/ingredientes", texto: "Ingredientes", nota: "com histórico de preço" },
                 { href: "/processos", texto: "Processos", nota: `${processos.length} mapeados` },
-                { href: "/relatorios", texto: "Relatórios", nota: "prévia" },
               ].map((a) => (
                 <li key={a.href}>
                   <Link
@@ -416,28 +618,27 @@ export default async function PaginaVisaoGeral() {
         </div>
       </div>
 
-      {/* ── O QUE AINDA NÃO ENTRA ─────────────────────────────────────── */}
+      {/* ── O QUE AINDA NÃO ENTRA ────────────────────────────────────── */}
       <Aviso tom="atencao" titulo="O bloco de custo continua fora desta tela">
         <p>
-          &ldquo;Variação de custo no período&rdquo; era o quinto bloco pedido
-          para este painel, e é o único que ainda não pode existir. Ele depende
-          dos pontos{" "}
-          <strong className="font-semibold text-tinta tabular">4, 5, 6, 7 e 9</strong>{" "}
-          — índice de cocção, fator de correção, CMV alvo e origem do volume.
+          &ldquo;Variação de custo no período&rdquo; era o quinto bloco pedido para este painel, e é
+          o único que ainda não pode existir. Ele depende dos pontos{" "}
+          <strong className="font-semibold text-tinta tabular">4, 5, 6, 7 e 9</strong> — índice de
+          cocção, fator de correção, CMV alvo e origem do volume.
         </p>
         <p className="mt-2.5">
-          Um painel de abertura mostrando &ldquo;variação de custo: 0%&rdquo;
-          teria a aparência de operação saudável. O zero não mediria a cozinha
-          de ninguém — mediria que a metodologia não existe. É o mesmo defeito
-          que a Fase 0 encontrou nas planilhas: ausência de dado virando número.
+          Um painel de abertura mostrando &ldquo;variação de custo: 0%&rdquo; teria a aparência de
+          operação saudável. O zero não mediria a cozinha de ninguém — mediria que a metodologia não
+          existe. É o mesmo defeito que a Fase 0 encontrou nas planilhas: ausência de dado virando
+          número.
         </p>
       </Aviso>
 
-      {/* ── MAPA DO SISTEMA ───────────────────────────────────────────── */}
+      {/* ── MAPA DO SISTEMA ──────────────────────────────────────────── */}
       <Secao
         rotulo="Mapa do sistema"
         titulo={`Os ${totalItens} módulos e o estado de cada um`}
-        descricao="O estado é declarado item a item, não deduzido do número da fase. Módulo parcial abre e explica o que falta; módulo previsto tem rota e escopo."
+        descricao="O estado é declarado item a item, não deduzido do número da fase. Módulo em preparação abre e explica o que falta; módulo previsto tem rota e escopo."
       >
         <div className="space-y-5">
           {NAVEGACAO.map((grupo) => (
@@ -449,8 +650,8 @@ export default async function PaginaVisaoGeral() {
                     item.estado === "no-ar"
                       ? { tom: "verde" as const, texto: "No ar" }
                       : item.estado === "parcial"
-                        ? { tom: "dourado" as const, texto: "Parcial" }
-                        : { tom: "neutro" as const, texto: `Fase ${item.fase}` };
+                        ? { tom: "dourado" as const, texto: "Em preparação" }
+                        : { tom: "neutro" as const, texto: "Em breve" };
                   return (
                     <li key={item.chave}>
                       <Link
@@ -478,9 +679,9 @@ export default async function PaginaVisaoGeral() {
             A operação inteira aparece. O cálculo ainda não.
           </p>
           <p className="mt-1.5 max-w-[62ch] text-[0.875rem] text-creme/65">
-            {totalItens} módulos. Cliente, consultoria, tarefa, ficha, processo
-            e acompanhamento já funcionam de ponta a ponta — o que falta é a
-            metodologia de custo, e ela depende de decisão dela.
+            {totalItens} módulos. Cliente, consultoria, contrato, tarefa, ficha, processo,
+            acompanhamento e planilha já funcionam de ponta a ponta — o que falta é a metodologia de
+            custo, e ela depende de decisão dela.
           </p>
         </div>
         <span className="assina text-[1.5rem] text-oliva-palha">Organização gera lucro</span>

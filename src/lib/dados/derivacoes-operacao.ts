@@ -29,16 +29,24 @@ import type {
   Acompanhamento,
   Cliente,
   Consultoria,
+  Contrato,
+  EstadoDocumentoContrato,
   Ficha,
   ItemAtencao,
   Notificacao,
+  ParcelaContrato,
   Processo,
   SituacaoCliente,
   StatusConsultoria,
+  StatusContrato,
+  StatusParcela,
   StatusTarefa,
   Tarefa,
+  TipoAceite,
   TipoAtencao,
+  TipoEventoContrato,
 } from "./tipos-operacao";
+import type { LinhaContrato } from "./repositorio-operacao";
 
 // ---------------------------------------------------------------------------
 // Datas — comparação simples, sem fuso e sem biblioteca
@@ -122,16 +130,27 @@ const ROTULO_ATENCAO: Record<TipoAtencao, string> = {
   PROCESSO_AGUARDANDO_REVISAO: "Processo aguardando revisão",
   ACOMPANHAMENTO_PENDENTE: "Acompanhamento pendente",
   DIAGNOSTICO_NAO_LIDO: "Diagnóstico não lido",
+  CONTRATO_AGUARDANDO_ACEITE: "Contrato aguardando aceite",
+  PARCELA_ATRASADA: "Parcela atrasada",
 };
 
 export function rotuloAtencao(t: TipoAtencao): string {
   return ROTULO_ATENCAO[t];
 }
 
-/** Ordem de gravidade — o que trava o trabalho dela vem primeiro. */
+/**
+ * Ordem de gravidade — o que trava o trabalho dela vem primeiro.
+ *
+ * O critério é um só: quanto tempo o item já está parado esperando alguém.
+ * Por isso "aguardando aceite" e "parcela atrasada" entram perto do topo —
+ * são os dois casos em que quem espera é ela, com data marcada, e o atraso
+ * custa dinheiro ou começa o trabalho.
+ */
 const ORDEM_ATENCAO: readonly TipoAtencao[] = [
   "ACOMPANHAMENTO_PENDENTE",
+  "PARCELA_ATRASADA",
   "INFORMACAO_AGUARDANDO_CLIENTE",
+  "CONTRATO_AGUARDANDO_ACEITE",
   "DIAGNOSTICO_NAO_LIDO",
   "FICHA_AGUARDANDO_DADOS",
   "PROCESSO_AGUARDANDO_REVISAO",
@@ -145,6 +164,15 @@ export type FontesAtencao = {
   clientes: readonly Cliente[];
   /** Leads com diagnóstico ainda não lido — vêm da camada de entrada. */
   diagnosticosNaoLidos: readonly { leadId: string; leadNome: string; quando: Date }[];
+  /**
+   * Contratos, para os dois avisos que só eles podem dar: proposta parada
+   * esperando aceite e parcela vencida não paga.
+   *
+   * Opcional porque a tela que monta a lista sem contrato ainda precisa
+   * funcionar — e porque "não perguntei sobre contratos" e "não há contrato
+   * nenhum" são estados diferentes. Ausente = não perguntei.
+   */
+  contratos?: readonly LinhaContrato[];
 };
 
 /**
@@ -229,6 +257,58 @@ export function derivarAtencao(fontes: FontesAtencao, agora: Date): ItemAtencao[
       href: `/leads/${d.leadId}`,
       desde: d.quando,
     });
+  }
+
+  /*
+    ── CONTRATOS ────────────────────────────────────────────────────────────
+    Dois avisos, e só dois. O contrato NÃO gera aviso por estar em rascunho:
+    rascunho é trabalho em curso, não pendência — e um painel que aponta
+    rascunho como problema ensina a ignorar o painel.
+
+    Uma nota sobre `desde`: a parcela atrasada conta o tempo desde o
+    VENCIMENTO, não desde a criação do contrato. É o vencimento que está
+    passando, e é ele que a frase "vencida há 8 dias" deve medir.
+  */
+  for (const linha of fontes.contratos ?? []) {
+    const { contrato, cliente } = linha;
+    const quem = cliente.nomeFantasia;
+
+    if (contrato.status === "AGUARDANDO_ACEITE") {
+      const enviado = contrato.eventos.find((e) => e.tipo === "enviado");
+      itens.push({
+        id: `at_ct_${contrato.id}`,
+        tipo: "CONTRATO_AGUARDANDO_ACEITE",
+        titulo: contrato.titulo,
+        detalhe: `${quem} · proposta enviada${enviado ? "" : " e ainda não assinada"}`,
+        clienteId: contrato.clienteId,
+        href: `/contratos/${contrato.id}`,
+        desde: enviado?.em ?? contrato.criadoEm,
+      });
+    }
+
+    const vencidas = contrato.parcelas.filter(
+      (p) => p.status === "ATRASADO" && p.venceEm !== null && terminou(p.venceEm, agora)
+    );
+    if (vencidas.length > 0) {
+      // A mais antiga é a que define a gravidade: três parcelas atrasadas
+      // com a primeira vencida há 60 dias é um problema mais velho do que
+      // a contagem de parcelas sugere.
+      const maisAntiga = vencidas.reduce((a, b) =>
+        (a.venceEm?.getTime() ?? 0) <= (b.venceEm?.getTime() ?? 0) ? a : b
+      );
+      itens.push({
+        id: `at_ct_${contrato.id}_atraso`,
+        tipo: "PARCELA_ATRASADA",
+        titulo: contrato.titulo,
+        detalhe:
+          vencidas.length === 1
+            ? `${quem} · 1 parcela vencida`
+            : `${quem} · ${vencidas.length} parcelas vencidas`,
+        clienteId: contrato.clienteId,
+        href: `/contratos/${contrato.id}`,
+        desde: maisAntiga.venceEm ?? contrato.criadoEm,
+      });
+    }
   }
 
   return itens.sort((a, b) => {
@@ -418,6 +498,199 @@ export const TOM_SITUACAO_DOCUMENTO: Record<"RASCUNHO" | "PRONTO" | "ENTREGUE", 
   PRONTO: "dourado",
   ENTREGUE: "verde",
 };
+
+// ---------------------------------------------------------------------------
+// Contratos — vocabulário
+// ---------------------------------------------------------------------------
+
+export const ROTULO_STATUS_CONTRATO: Record<StatusContrato, string> = {
+  RASCUNHO: "Rascunho",
+  AGUARDANDO_ACEITE: "Aguardando aceite",
+  ASSINADO: "Assinado",
+  EM_ANDAMENTO: "Em andamento",
+  CONCLUIDO: "Concluído",
+  CANCELADO: "Cancelado",
+};
+
+export const ORDEM_STATUS_CONTRATO: readonly StatusContrato[] = [
+  "RASCUNHO",
+  "AGUARDANDO_ACEITE",
+  "ASSINADO",
+  "EM_ANDAMENTO",
+  "CONCLUIDO",
+  "CANCELADO",
+];
+
+export const ROTULO_STATUS_PARCELA: Record<StatusParcela, string> = {
+  PENDENTE: "Pendente",
+  PAGO: "Pago",
+  ATRASADO: "Atrasado",
+  CANCELADO: "Cancelado",
+};
+
+/**
+ * O TOM DE CADA ESTADO — e a regra de não depender só de cor.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO NÃO É UM SEMÁFORO                                       │
+ * │                                                                      │
+ * │ Seria fácil pintar PAGO de verde, ATRASADO de vermelho e PENDENTE de  │
+ * │ amarelo. O problema é que "em andamento" e "assinado" não são         │
+ * │ melhores nem piores que um do outro — são ETAPAS. Tratá-los como      │
+ * │ graus de sucesso faria a tela mentir sobre a natureza do dado.        │
+ * │                                                                      │
+ * │ Então o tom marca só onde há uma distinção que ela precisa ver de     │
+ * │ longe: o que está esperando ela (dourado), o que terminou (verde), o  │
+ * │ que está parado (crítico) e o resto (neutro).                         │
+ * │                                                                      │
+ * │ E o tom NUNCA aparece sozinho: sempre acompanha o rótulo escrito.     │
+ * │ Quem não distingue cor lê a mesma informação.                         │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export const TOM_STATUS_CONTRATO: Record<StatusContrato, TomSituacao> = {
+  RASCUNHO: "neutro",
+  AGUARDANDO_ACEITE: "dourado",
+  ASSINADO: "oliva",
+  EM_ANDAMENTO: "oliva",
+  CONCLUIDO: "verde",
+  CANCELADO: "critico",
+};
+
+export const TOM_STATUS_PARCELA: Record<StatusParcela, TomSituacao> = {
+  PENDENTE: "neutro",
+  PAGO: "verde",
+  ATRASADO: "critico",
+  CANCELADO: "neutro",
+};
+
+export const ROTULO_ESTADO_DOCUMENTO: Record<EstadoDocumentoContrato, string> = {
+  NAO_ENVIADO: "Não enviado",
+  AGUARDANDO_ACEITE: "Aguardando aceite",
+  ASSINADO: "Assinado",
+};
+
+export const ROTULO_TIPO_ACEITE: Record<TipoAceite, string> = {
+  ASSINATURA_DIGITAL: "Assinatura digital",
+  ASSINATURA_MANUSCRITA: "Assinatura manuscrita",
+  ACEITE_POR_EMAIL: "Aceite por e-mail",
+};
+
+export const ROTULO_EVENTO_CONTRATO: Record<TipoEventoContrato, string> = {
+  criado: "Contrato criado",
+  enviado: "Enviado para o cliente",
+  visualizado: "Cliente visualizou",
+  aceito: "Contrato aceito",
+  pagamento_registrado: "Pagamento registrado",
+  projeto_iniciado: "Projeto iniciado",
+  projeto_entregue: "Projeto entregue",
+  cancelado: "Contrato cancelado",
+};
+
+// ---------------------------------------------------------------------------
+// Contratos — contas
+// ---------------------------------------------------------------------------
+
+/**
+ * AS CONTAS DO CONTRATO — e por que só existem estas.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ SOMA, CONTAGEM E COMPARAÇÃO DE DATA. NADA MAIS.                      │
+ * │                                                                      │
+ * │ Um contrato tem dinheiro, então é tentador que este arquivo comece a  │
+ * │ calcular juros de atraso, multa, valor corrigido, "total a receber    │
+ * │ até o fim do contrato". Nada disso está aqui.                         │
+ * │                                                                      │
+ * │ Juros e multa são CLÁUSULA — dependem do que foi assinado, e nem todo │
+ * │ contrato tem. "Total a receber" precisaria decidir se conta parcela   │
+ * │ atrasada como provável, o que é projeção. Somar as parcelas que       │
+ * │ existem não é projeção: é a única soma que os dados sustentam.        │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+
+/** Soma das parcelas, ignorando as canceladas. Cancelada não é dívida. */
+export function somarParcelas(contrato: Contrato): number {
+  return contrato.parcelas
+    .filter((p) => p.status !== "CANCELADO")
+    .reduce((total, p) => total + p.valor, 0);
+}
+
+/** Soma do que já foi pago. */
+export function somarPagas(contrato: Contrato): number {
+  return contrato.parcelas
+    .filter((p) => p.status === "PAGO")
+    .reduce((total, p) => total + p.valor, 0);
+}
+
+/** O que falta. Diferença de duas somas — não é previsão de recebimento. */
+export function somarPendentes(contrato: Contrato): number {
+  return contrato.parcelas
+    .filter((p) => p.status === "PENDENTE" || p.status === "ATRASADO")
+    .reduce((total, p) => total + p.valor, 0);
+}
+
+/** Quantas parcelas de cada estado. Contagem, para o resumo do topo. */
+export function contarParcelas(contrato: Contrato): Record<StatusParcela, number> {
+  const base: Record<StatusParcela, number> = {
+    PENDENTE: 0,
+    PAGO: 0,
+    ATRASADO: 0,
+    CANCELADO: 0,
+  };
+  for (const p of contrato.parcelas) {
+    base[p.status] += 1;
+  }
+  return base;
+}
+
+/**
+ * A parcela recorrente — a mensalidade.
+ *
+ * Devolve o valor da primeira parcela marcada como recorrente, ou `null`.
+ * Não soma nem multiplica meses: o contrato não sabe quantos meses o
+ * acompanhamento vai durar, e chutar seria inventar.
+ */
+export function mensalidadeDoContrato(contrato: Contrato): number | null {
+  const recorrente = contrato.parcelas.find((p) => p.recorrente);
+  return recorrente ? recorrente.valor : null;
+}
+
+/**
+ * A próxima parcela em aberto.
+ *
+ * "Próxima" = a de menor vencimento entre as que ainda não foram pagas.
+ * Parcela sem data de vencimento não entra na escolha — ela pode ser a
+ * próxima na prática, mas o sistema não tem como afirmar qual é, e ordenar
+ * por `null` colocaria uma parcela sem prazo no topo da lista.
+ */
+export function proximaParcela(contrato: Contrato): ParcelaContrato | null {
+  const abertas = contrato.parcelas.filter(
+    (p) => (p.status === "PENDENTE" || p.status === "ATRASADO") && p.venceEm !== null
+  );
+  if (abertas.length === 0) return null;
+  return abertas.reduce((maisProxima, p) => {
+    const a = p.venceEm as Date;
+    const b = maisProxima.venceEm as Date;
+    return a.getTime() < b.getTime() ? p : maisProxima;
+  });
+}
+
+/**
+ * O rótulo de posição da parcela — "2ª parcela", "4ª parcela".
+ *
+ * Derivado da POSIÇÃO, não gravado: se uma parcela do meio for removida, as
+ * seguintes se renumeram sozinhas e o rótulo nunca fica fora de sequência.
+ */
+export function rotuloParcela(numero: number): string {
+  return `${numero}ª parcela`;
+}
+
+/** Contratos que ainda pedem movimento da consultora. */
+export const STATUS_CONTRATO_ABERTOS: readonly StatusContrato[] = [
+  "RASCUNHO",
+  "AGUARDANDO_ACEITE",
+  "ASSINADO",
+  "EM_ANDAMENTO",
+];
 
 // ---------------------------------------------------------------------------
 // Notificações derivadas

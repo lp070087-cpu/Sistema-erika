@@ -225,8 +225,16 @@ export default async function PaginaConfiguracoes() {
               <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
                 {m.trava}
               </p>
+              {/*
+                Esta é a ÚNICA tela onde o número da pergunta continua.
+                Ela existe para ser o índice das decisões abertas: a
+                consultora vem aqui justamente para saber o que responder e
+                onde está a pergunta original. Numa tela de trabalho (ficha,
+                planilha, consultoria) o número não diz nada e por isso foi
+                removido de todas elas — aqui ele é o endereço.
+              */}
               <p className="mt-2 text-[0.75rem] text-[var(--tinta-fraca)]">
-                Ponto <span className="tabular">{m.ponto}</span> do relatório da Fase 0
+                Pergunta <span className="tabular">{m.ponto}</span> da lista de pendências da Fase 0
               </p>
             </div>
           ))}

@@ -38,12 +38,14 @@ import type {
   Cliente,
   Compromisso,
   Consultoria,
+  Contrato,
   Documento,
   EventoHistorico,
   Ficha,
   Ingrediente,
   ItemAtencao,
   Notificacao,
+  ParcelaContrato,
   Processo,
   StatusAcao,
   Tarefa,
@@ -89,6 +91,39 @@ export type LinhaConsultoria = {
   acoesTotal: number;
   acoesConcluidas: number;
   ultimoAcompanhamentoEm: Date | null;
+};
+
+/**
+ * Uma linha da lista de contratos.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE OS NÚMEROS FINANCEIROS VÊM PRONTOS AQUI                      │
+ * │                                                                      │
+ * │ As somas de valor e de valor pago são feitas UMA VEZ, no repositório, │
+ * │ e chegam à tela somadas. A alternativa — a lista receber contratos    │
+ * │ crus e somar as parcelas de cada um — repetiria a mesma soma em cada  │
+ * │ tela que mostrasse contrato, e bastaria uma delas somar diferente     │
+ * │ (esquecer de excluir cancelada, contar duas vezes) para os números    │
+ * │ divergirem entre duas páginas do mesmo sistema.                       │
+ * │                                                                      │
+ * │ São SOMAS de valores declarados. Não há juros, multa, correção ou     │
+ * │ projeção em lugar nenhum.                                             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type LinhaContrato = {
+  id: string;
+  contrato: Contrato;
+  cliente: Cliente;
+  /** Soma das parcelas não canceladas. */
+  valorTotal: number;
+  /** Soma das parcelas com status PAGO. */
+  valorPago: number;
+  parcelasTotal: number;
+  parcelasPagas: number;
+  /** A próxima parcela em aberto, por data. `null` quando não há. */
+  proximaParcela: ParcelaContrato | null;
+  /** Valor da parcela recorrente, quando o contrato tem mensalidade. */
+  mensalidade: number | null;
 };
 
 export interface RepositorioOperacao {
@@ -142,6 +177,12 @@ export interface RepositorioOperacao {
   // -- Ingredientes --------------------------------------------------------
   listarIngredientes(): Promise<Ingrediente[]>;
   obterIngrediente(id: string): Promise<Ingrediente | null>;
+
+  // -- Contratos -----------------------------------------------------------
+  listarContratos(): Promise<Contrato[]>;
+  obterContrato(id: string): Promise<Contrato | null>;
+  listarContratosDoCliente(clienteId: string): Promise<Contrato[]>;
+  listarLinhasContrato(): Promise<LinhaContrato[]>;
 
   // -- Documentos ----------------------------------------------------------
   listarDocumentos(): Promise<Documento[]>;

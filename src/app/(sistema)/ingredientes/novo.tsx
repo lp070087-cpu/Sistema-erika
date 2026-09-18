@@ -321,12 +321,13 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
               </p>
               <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
                 <strong className="font-semibold text-tinta">
-                  Cálculo disponível após configuração da metodologia.
+                  O cadastro guarda o preço como ele foi informado.
                 </strong>{" "}
                 Não há conversão da unidade de compra para a unidade usada na
                 ficha, nem custo por porção. As duas dependem de quanto o
                 insumo rende depois de limpo e de como a porção é definida —
-                decisões que ainda não foram tomadas.
+                duas decisões que ainda não foram tomadas, e que estão
+                nomeadas na tela da ficha.
               </p>
             </div>
 

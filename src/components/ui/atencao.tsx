@@ -23,7 +23,13 @@ import type { ItemAtencao, TipoAtencao } from "@/lib/dados";
 
 const TOM_ATENCAO: Record<TipoAtencao, "atencao" | "critico" | "neutro"> = {
   ACOMPANHAMENTO_PENDENTE: "critico",
+  // Parcela vencida é dinheiro que não entrou. Vermelho, e pelo mesmo
+  // motivo que o acompanhamento pendente: é o trabalho dela parado.
+  PARCELA_ATRASADA: "critico",
   INFORMACAO_AGUARDANDO_CLIENTE: "atencao",
+  // Aguardando aceite é dourado, não vermelho: a bola está com o cliente,
+  // e o contrato ainda não começou. Não há atraso — há espera.
+  CONTRATO_AGUARDANDO_ACEITE: "atencao",
   DIAGNOSTICO_NAO_LIDO: "atencao",
   FICHA_AGUARDANDO_DADOS: "neutro",
   PROCESSO_AGUARDANDO_REVISAO: "neutro",

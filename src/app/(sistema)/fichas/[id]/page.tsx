@@ -17,7 +17,7 @@ import {
   obterRepositorioOperacao,
 } from "@/lib/dados";
 import type { Ingrediente, ItemFicha } from "@/lib/dados";
-import { AvisoMetodologia } from "@/components/ui/jornada";
+import { DecisoesQueFaltam } from "@/components/ui/metodologia";
 
 export const metadata: Metadata = { title: "Ficha técnica" };
 
@@ -45,9 +45,14 @@ export const metadata: Metadata = { title: "Ficha técnica" };
  * │ │ Uma coluna vazia com traço em todas as linhas parece defeito.  │   │
  * │ │ Ela sugere que o sistema tentou calcular e não conseguiu.      │   │
  * │ │                                                                │   │
- * │ │ Sem a coluna, e com uma frase que explica o motivo, a mesma    │   │
- * │ │ ausência vira informação: o cálculo existe no projeto, está    │   │
- * │ │ esperando uma decisão dela, e nada foi inventado no meio.      │   │
+ * │ │ Sem a coluna, e com a lista de decisões que trava o cálculo    │   │
+ * │ │ logo abaixo da composição, a mesma ausência vira informação:   │   │
+ * │ │ o cálculo existe no projeto, está esperando uma decisão dela,  │   │
+ * │ │ e nada foi inventado no meio.                                  │   │
+ * │ │                                                                │   │
+ * │ │ A lista vem de `DecisoesQueFaltam`, o mesmo componente que a   │   │
+ * │ │ tela da planilha e a da consultoria usam — para que as três    │   │
+ * │ │ não passem a dizer coisas diferentes sobre o mesmo bloqueio.   │   │
  * │ └────────────────────────────────────────────────────────────────┘   │
  * └──────────────────────────────────────────────────────────────────────┘
  */
@@ -209,8 +214,25 @@ export default async function PaginaFicha({ params }: Props) {
             />
           )}
 
+          {/*
+            ── AQUI FICAVA O AVISO GENÉRICO ─────────────────────────────────
+
+            Antes havia um `AvisoMetodologia` de uma linha: "cálculo
+            disponível após configuração da metodologia". Ele dizia que faltava
+            algo sem dizer o quê — e a consultora, que é quem tem a resposta,
+            não tinha como saber qual pergunta estava sendo feita.
+
+            No lugar dele entra a lista das decisões que travam ESTA tela,
+            nomeadas. As três que aparecem aqui são as que mexem no custo por
+            porção: quanto o alimento rende depois de cozido, quanto se perde
+            entre a compra e o uso, e o que entra na conta do custo.
+          */}
           <div className="mt-5">
-            <AvisoMetodologia />
+            <DecisoesQueFaltam
+              apenas={["coccao", "compra-para-uso", "custo-do-prato"]}
+              titulo="Por que esta ficha ainda não mostra custo"
+              descricao="A ficha já guarda tudo o que a conta vai precisar — quantidade declarada, preço de referência com data, rendimento e peso da porção. O que falta é decidir como calcular. Cada uma das decisões abaixo muda o resultado, e nenhuma delas é o sistema que toma."
+            />
           </div>
 
           <p className="mt-3 text-[0.75rem] leading-relaxed text-[var(--tinta-fraca)]">
@@ -316,20 +338,19 @@ export default async function PaginaFicha({ params }: Props) {
         </Secao>
       ) : null}
 
-      <Aviso tom="info" titulo="O que ainda não está nesta tela">
+      <Aviso tom="info" titulo="O que a ficha já resolve, mesmo sem o cálculo">
         <p>
-          Custo por item, custo da porção, CMV e preço sugerido não aparecem —
-          e não é limitação técnica: é que a conta depende de como ela trabalha
-          com fator de correção, perda e índice de cocção, e essas decisões
-          ainda não foram tomadas. Cada um desses números sai com uma casa
-          decimal diferente conforme a resposta, e um valor inventado aqui
-          seria lido como certo.
+          Custo por item, custo da porção, CMV e preço sugerido não aparecem
+          ainda — a lista acima diz exatamente qual decisão segura cada um
+          deles.
         </p>
         <p className="mt-2.5">
-          O que a ficha já faz é guardar tudo o que a conta vai precisar:
-          quantidade declarada, preço de referência datado, rendimento e peso
-          da porção. Quando a metodologia fechar, o cálculo entra sem que
-          nenhum dado precise ser redigitado.
+          O que a ficha faz desde já é guardar tudo o que a conta vai precisar,
+          e guardar com data: quantidade declarada, preço de referência do dia
+          em que a ficha foi escrita, rendimento e peso da porção. Quando a
+          metodologia fechar, o cálculo entra sem que nenhum dado precise ser
+          redigitado — e as fichas antigas continuam contando o preço que valia
+          quando foram escritas.
         </p>
       </Aviso>
     </div>

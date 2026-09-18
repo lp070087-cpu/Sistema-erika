@@ -36,6 +36,45 @@ export function dataEHora(d: Date): string {
 }
 
 /**
+ * Valor em reais, no formato que se lê em voz alta.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO VIROU FUNÇÃO, E NÃO FICOU ESPALHADO                      │
+ * │                                                                      │
+ * │ Antes da Fase 2.8 existiam quatro lugares escrevendo                  │
+ * │ `R$ ${v.toFixed(2).replace(".", ",")}` à mão. Funciona, e mente em    │
+ * │ dois casos: valor redondo vira "R$ 3200,00" (a Érika lê "três mil e   │
+ * │ duzentos reais", não "trinta e dois reais"), e valor acima de mil     │
+ * │ sai sem separador de milhar — que é onde o olho erra a ordem de       │
+ * │ grandeza.                                                             │
+ * │                                                                      │
+ * │ `Intl` resolve os dois sem tabela própria: separador de milhar,       │
+ * │ vírgula decimal e o "R$" posicionado como o português do Brasil pede. │
+ * │                                                                      │
+ * │ `centavos = false` é para TABELA e COLUNA, onde a uniformidade importa │
+ * │ mais que a leitura corrida: "R$ 3.200" alinha, "R$ 3.200,00" repete    │
+ * │ duas casas que ninguém precisa em toda linha.                         │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+const FORMATO_MOEDA = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+
+const FORMATO_MOEDA_CURTA = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+export function valorEmReais(valor: number, opcoes: { centavos?: boolean } = {}): string {
+  return opcoes.centavos === false
+    ? FORMATO_MOEDA_CURTA.format(valor)
+    : FORMATO_MOEDA.format(valor);
+}
+
+/**
  * Distância em palavras. É o que a consultora realmente quer ver na fila
  * ("chegou há 2 dias"), não o carimbo de data — mas o carimbo aparece no
  * detalhe, porque é ele que serve de prova.
@@ -56,6 +95,44 @@ export function desdeQuando(d: Date, agora: Date = new Date()): string {
 
   const meses = Math.floor(dias / 30);
   return meses === 1 ? "há 1 mês" : `há ${meses} meses`;
+}
+
+/**
+ * A saudação, pelo relógio da consultora.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ AS DUAS ARMADILHAS DESTA FUNÇÃO, E COMO CADA UMA FOI EVITADA          │
+ * │                                                                      │
+ * │ 1. O FUSO. O servidor do sistema roda em UTC. Às 21h em São Paulo o   │
+ * │    servidor acha que é meia-noite do dia seguinte, e a tela diria     │
+ * │    "Bom dia, Érika" para quem está fechando a cozinha. O horário é    │
+ * │    lido NO FUSO DELA, declarado em `configuracao-publica.ts`.         │
+ * │                                                                      │
+ * │ 2. A HIDRATAÇÃO. Se a função lesse o relógio do navegador, o HTML     │
+ * │    que veio do servidor diria uma coisa e o navegador pintaria outra  │
+ * │    — o React acusa divergência e a palavra pisca na tela. Por isso    │
+ * │    ela recebe a DATA como argumento e não chama `new Date()`: mesma    │
+ * │    entrada, mesma saída, no servidor e no cliente.                    │
+ * │                                                                      │
+ * │ A FRONTEIRA DAS FAIXAS também não é a óbvia. Quem trabalha em cozinha │
+ * │ raramente almoça ao meio-dia, e este sistema é aberto depois do       │
+ * │ serviço. Vale a fala real: até as 12h é "bom dia", até as 18h é "boa  │
+ * │ tarde", depois é "boa noite". A madrugada cai em "boa noite", que é   │
+ * │ a menos errada das duas — "bom dia" às 2h seria simplesmente falso.   │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function saudacao(quando: Date, fuso: string): string {
+  const hora = Number(
+    new Intl.DateTimeFormat("pt-BR", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: fuso,
+    }).format(quando)
+  );
+
+  if (hora >= 12 && hora < 18) return "Boa tarde";
+  if (hora >= 5 && hora < 12) return "Bom dia";
+  return "Boa noite";
 }
 
 // ---------------------------------------------------------------------------
