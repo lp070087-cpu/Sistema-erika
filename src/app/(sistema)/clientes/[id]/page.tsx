@@ -1,31 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CabecalhoPagina } from "@/components/ui/rotulo";
-import { Etiqueta } from "@/components/ui/indicador";
-import { Aviso } from "@/components/ui/superficie";
-import { Abas } from "@/components/ui/abas";
-import { Dado, ListaDados } from "@/components/ui/dados";
-import {
-  ROTULO_MODALIDADE,
-  ROTULO_ORIGEM,
-  ROTULO_SITUACAO_CLIENTE,
-  ROTULO_TIPO_NEGOCIO,
-  TOM_SITUACAO_CLIENTE,
-  dataCurta,
-  obterRepositorio,
-  obterRepositorioOperacao,
-} from "@/lib/dados";
+import { obterRepositorio, obterRepositorioOperacao } from "@/lib/dados";
 import type { AbaChave } from "./tipos";
-import { ABA_ORDEM, ABAS } from "./tipos";
-import { AbaVisaoGeral } from "./abas/visao-geral";
-import { AbaDiagnostico } from "./abas/diagnostico";
-import { AbaConsultoria } from "./abas/consultoria";
-import { AbaFichas } from "./abas/fichas";
-import { AbaProcessos } from "./abas/processos";
-import { AbaAcompanhamentos } from "./abas/acompanhamentos";
-import { AbaDocumentos } from "./abas/documentos";
-import { AbaHistorico } from "./abas/historico";
+import { ABA_ORDEM } from "./tipos";
+import { TelaDoCliente } from "./tela-do-cliente";
 
 export const metadata: Metadata = { title: "Cliente" };
 
@@ -33,29 +11,33 @@ export const metadata: Metadata = { title: "Cliente" };
  * DETALHE DO CLIENTE — a tela 360°.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE ESTA TELA É A MAIS IMPORTANTE DO SISTEMA                     │
+ * │ POR QUE ESTA PÁGINA É QUASE VAZIA, E POR QUE ISSO É CORRETO           │
  * │                                                                      │
- * │ Todo o resto existe para alimentá-la. O lead vira cliente aqui, a     │
- * │ consultoria aponta para cá, a ficha, o processo e o acompanhamento    │
- * │ também. Quando a consultora quer saber "como está o Empório Verde?",  │
- * │ é esta página que responde — e por isso ela reúne OITO seções.        │
+ * │ Ela lê o repositório UMA vez e entrega o cenário pronto. Todo o        │
+ * │ desenho — cabeçalho, painel de identificação, as oito abas — vive no   │
+ * │ componente de cliente, e por um motivo só: o cadastro deste cliente    │
+ * │ pode ser corrigido, e a correção vive no navegador.                    │
  * │                                                                      │
- * │ Oito seções empilhadas viram uma página de dois metros, que é        │
- * │ exatamente o que a Seção 3 do briefing proibiu ("Não criar páginas    │
- * │ gigantes"). Daí as abas.                                              │
+ * │ Não é preferência de arquitetura. `demonstracao.ts` é um módulo de     │
+ * │ NAVEGADOR, com estado em memória. Uma página de servidor que lesse     │
+ * │ dele receberia um estado vazio a cada requisição — e mostraria o nome  │
+ * │ do cenário por cima de um cadastro que ela acabou de corrigir.         │
+ * │                                                                      │
+ * │ É o mesmo desenho da ficha técnica, e pela mesma razão.                │
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE O CABEÇALHO NÃO TEM NÚMERO                                    │
+ * │ O QUE ESTA TELA RESPONDE                                              │
  * │                                                                      │
- * │ Um resumo de cliente costuma trazer "CMV médio", "margem", "custo     │
- * │ por prato". Nenhum deles entra: todos dependem dos pontos 4, 5, 6, 7  │
- * │ e 19, que seguem abertos. O cabeçalho traz o que é FATO — quem é a    │
- * │ empresa, quem responde por ela, o que ela é, como é atendida, em que  │
- * │ ponto está e desde quando. Seis campos, todos verificáveis.          │
+ * │ Todo o resto do sistema existe para alimentá-la. O lead vira cliente   │
+ * │ aqui, a consultoria aponta para cá, a ficha, o processo e o            │
+ * │ acompanhamento também. Quando a consultora quer saber "como está o     │
+ * │ Empório Verde?", é esta página que responde — e por isso ela reúne     │
+ * │ OITO seções.                                                          │
  * │                                                                      │
- * │ A quantidade de fichas e processos aparece nas abas, como contagem —  │
- * │ número que se confere contra a lista, não indicador calculado.        │
+ * │ Oito seções empilhadas viram uma página de dois metros, que é         │
+ * │ exatamente o que a Seção 3 do briefing proibiu ("Não criar páginas    │
+ * │ gigantes"). Daí as abas.                                              │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -125,134 +107,23 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
     ? (aba as AbaChave)
     : "visao-geral";
 
-  const base = `/clientes/${cliente.id}`;
-
-  const conteudo = {
-    "visao-geral": (
-      <AbaVisaoGeral
-        cliente={cliente}
-        consultoria={consultoria}
-        acoes={acoes}
-        fichas={fichas}
-        processos={processos}
-        acompanhamentos={acompanhamentos}
-        contratos={contratos}
-        tarefas={tarefas.filter((t) => t.clienteId === cliente.id)}
-      />
-    ),
-    diagnostico: (
-      <AbaDiagnostico cliente={cliente} lead={leadOrigem} diagnostico={diagnostico} />
-    ),
-    consultoria: <AbaConsultoria cliente={cliente} consultoria={consultoria} acoes={acoes} />,
-    fichas: (
-      <AbaFichas
-        cliente={cliente}
-        fichas={fichas}
-        ingredientes={ingredientes}
-        precosDoCliente={precosDoCliente}
-      />
-    ),
-    processos: <AbaProcessos cliente={cliente} processos={processos} />,
-    acompanhamentos: (
-      <AbaAcompanhamentos cliente={cliente} acompanhamentos={acompanhamentos} />
-    ),
-    documentos: (
-      <AbaDocumentos
-        cliente={cliente}
-        documentos={documentos}
-        contratos={contratos}
-        consultoriaId={consultoria?.id ?? null}
-      />
-    ),
-    historico: <AbaHistorico cliente={cliente} eventos={eventos} />,
-  }[atual];
-
-  /**
-   * A contagem de cada aba é o tamanho da sua lista — número que se confere
-   * abrindo a aba. As três primeiras ficam sem contagem de propósito: não há
-   * o que contar em "visão geral", e mostrar "1" ao lado de "diagnóstico" ou
-   * "consultoria" sugeriria uma medida onde só existe um registro.
-   *
-   * A aba Documentos conta contratos E documentos porque ela mostra os dois:
-   * contar só os documentos faria o número discordar do que se vê ao abrir a
-   * aba — o cartão de contratos está logo no topo, e um "2" ali em cima de
-   * dois contratos seria lido como erro. As planilhas não entram na conta:
-   * não são uma lista deste cliente, são uma ação que pode ser feita.
-   */
-  const abasComContagem = ABAS.map((a) => ({
-    ...a,
-    contagem:
-      a.chave === "fichas"
-        ? fichas.length
-        : a.chave === "processos"
-          ? processos.length
-          : a.chave === "acompanhamentos"
-            ? acompanhamentos.length
-            : a.chave === "documentos"
-              ? documentos.length + contratos.length
-              : undefined,
-  }));
-
   return (
-    <div className="space-y-5">
-      <Link
-        href="/clientes"
-        className="inline-flex items-center gap-2 text-[0.8125rem] text-[var(--tinta-suave)] transition-colors hover:text-tinta"
-      >
-        <span aria-hidden>←</span> Voltar para a carteira
-      </Link>
-
-      <CabecalhoPagina
-        rotulo={ROTULO_ORIGEM[cliente.origem]}
-        titulo={cliente.nomeFantasia}
-        descricao={cliente.problemaDeclarado}
-        acoes={
-          <Etiqueta tom={TOM_SITUACAO_CLIENTE[cliente.situacao]}>
-            {ROTULO_SITUACAO_CLIENTE[cliente.situacao]}
-          </Etiqueta>
-        }
-      />
-
-      {/* Os seis campos exigidos pela Seção 3 — todos fato, nenhum cálculo. */}
-      <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-5 py-5">
-        <ListaDados colunas={3}>
-          <Dado rotulo="Empresa">{cliente.nomeFantasia}</Dado>
-          <Dado rotulo="Responsável">{cliente.nomeContato}</Dado>
-          <Dado rotulo="Tipo de negócio">{ROTULO_TIPO_NEGOCIO[cliente.tipoNegocio]}</Dado>
-          <Dado rotulo="Modalidade">{ROTULO_MODALIDADE[cliente.modalidade]}</Dado>
-          <Dado rotulo="Situação">
-            {ROTULO_SITUACAO_CLIENTE[cliente.situacao]}
-          </Dado>
-          <Dado rotulo="Início do atendimento">{dataCurta(cliente.iniciadoEm)}</Dado>
-          <Dado rotulo="Cidade">{cliente.cidade}</Dado>
-          <Dado rotulo="Porte declarado">
-            {cliente.porte === "PEQUENO"
-              ? "Pequeno"
-              : cliente.porte === "MEDIO"
-                ? "Médio"
-                : "Grande"}
-          </Dado>
-          <Dado rotulo="Equipe declarada">{cliente.funcionariosDeclarados}</Dado>
-        </ListaDados>
-      </div>
-
-      <Abas
-        abas={abasComContagem}
-        atual={atual}
-        base={base}
-      />
-
-      <div>{conteudo}</div>
-
-      <Aviso tom="info" titulo="O que esta tela ainda não mostra">
-        <p>
-          Não há, de propósito, custo por prato, CMV, margem nem qualquer
-          indicador financeiro. Todos dependem de decisões de metodologia que
-          ainda não foram tomadas — e um número inventado aqui teria a mesma
-          aparência de um número certo. Onde o cálculo dependeria dessas
-          decisões, a tela diz que ele está em preparação.
-        </p>
-      </Aviso>
-    </div>
+    <TelaDoCliente
+      clienteDoCenario={cliente}
+      abaAtual={atual}
+      consultoria={consultoria}
+      acoes={acoes}
+      fichas={fichas}
+      processos={processos}
+      acompanhamentos={acompanhamentos}
+      documentos={documentos}
+      contratos={contratos}
+      eventos={eventos}
+      tarefas={tarefas}
+      ingredientes={ingredientes}
+      precosDoCliente={precosDoCliente}
+      leadOrigem={leadOrigem}
+      diagnostico={diagnostico}
+    />
   );
 }

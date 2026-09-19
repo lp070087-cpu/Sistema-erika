@@ -1,4 +1,4 @@
-import { Aviso, EstadoVazio, Secao } from "@/components/ui/superficie";
+import { EstadoVazio, Secao } from "@/components/ui/superficie";
 import { ListaResponsiva } from "@/components/ui/lista-responsiva";
 import type { ColunaLista } from "@/components/ui/lista-responsiva";
 import { dataCurta } from "@/lib/dados";
@@ -9,32 +9,28 @@ import type { RegistroPlanilha } from "@/lib/planilhas/historico";
  * O HISTÓRICO DE PLANILHAS GERADAS.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE ESTE BLOCO APARECE NUMA LISTA QUE ESTÁ SEMPRE VAZIA          │
+ * │ ESTE BLOCO JÁ EXPLICOU DEMAIS, E AGORA CALA                         │
  * │                                                                      │
- * │ Uma seção que nunca tem conteúdo é candidata óbvia a não existir.     │
- * │ Aqui ela existe por dois motivos, e o segundo é o que importa:        │
+ * │ Ele chegou a ter três parágrafos dizendo por que a lista estava       │
+ * │ vazia, mais uma faixa listando as colunas que um registro futuro       │
+ * │ teria. A intenção era boa — tornar visível uma ausência — e o          │
+ * │ resultado era o oposto: uma área de documentos que abria falando       │
+ * │ sobre a ausência de área, com o vocabulário de quem constrói o         │
+ * │ sistema ("ainda não tem onde guardar o registro").                     │
  * │                                                                      │
- * │ 1. É o lugar onde a lista vai estar. Quando o histórico for ligado,   │
- * │    ele não muda de posição nem empurra o resto da tela.               │
- * │                                                                      │
- * │ 2. ELA TORNA VISÍVEL UMA AUSÊNCIA. Sem este bloco, ninguém — nem a    │
- * │    consultora, nem quem for continuar o sistema — percebe que o       │
- * │    sistema gera planilhas e não guarda registro nenhum. A tela        │
- * │    pareceria completa. Com ele, a falta está escrita na tela, com o   │
- * │    motivo e com o que falta para resolver.                            │
- * │                                                                      │
- * │ É a mesma escolha dos quatro cards "em preparação" do catálogo: o     │
- * │ que não existe aparece e diz por quê, em vez de sumir.                │
+ * │ A ausência continua dita, porque esconder uma lista vazia seria pior:  │
+ * │ uma frase. O que saiu foi a explicação de engenharia em volta dela, e   │
+ * │ a lista de colunas — que descrevia um registro que ninguém tem em mãos.│
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ AS COLUNAS SÃO AS MESMAS QUE O HISTÓRICO VAI TER                     │
+ * │ AS COLUNAS AINDA VÊM DO FORMATO, E NÃO DE UMA TABELA DESENHADA AQUI  │
  * │                                                                      │
- * │ A lista monta as colunas lendo `COLUNAS_HISTORICO`, do módulo que      │
- * │ define o registro. Não é uma tabela decorativa desenhada aqui: é a     │
- * │ tabela de verdade, lendo o formato de verdade — só sem nenhuma linha   │
- * │ dentro. Quando o primeiro registro for gravado, esta lista o mostra    │
- * │ sem que se toque neste arquivo.                                       │
+ * │ Isto não mudou, e é o que faz o bloco valer a pena: a lista monta as  │
+ * │ colunas lendo `COLUNAS_HISTORICO`, do módulo que define o registro.   │
+ * │ Quando o primeiro registro for gravado, esta lista o mostra sem que se │
+ * │ toque neste arquivo — e o formato das colunas já está decidido em um   │
+ * │ lugar só.                                                             │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 export function HistoricoDePlanilhas({
@@ -136,66 +132,13 @@ export function HistoricoDePlanilhas({
   return (
     <Secao
       rotulo="Histórico"
-      titulo={
-        registros.length === 0
-          ? "Nenhuma planilha registrada ainda"
-          : `${registros.length} ${registros.length === 1 ? "planilha gerada" : "planilhas geradas"}`
-      }
-      descricao="Toda planilha que sair daqui vai ficar listada neste lugar, com o cliente, a data e a versão."
+      titulo={registros.length === 0 ? "Planilhas geradas" : `${registros.length} ${registros.length === 1 ? "planilha gerada" : "planilhas geradas"}`}
     >
       <ListaResponsiva
         itens={registros}
         colunas={colunas}
-        vazio={
-          <EstadoVazio
-            titulo="Nenhuma planilha registrada ainda"
-            descricao="Esta lista vai guardar cada planilha gerada — de quem era, quando saiu e em que versão. Ela está vazia por um motivo, não por falta de uso: o sistema gera o arquivo e o entrega, mas ainda não tem onde guardar o registro."
-          />
-        }
+        vazio={<EstadoVazio titulo="Nenhuma planilha gerada ainda." />}
       />
-
-      {/*
-        ── O QUE A LISTA VAI MOSTRAR ────────────────────────────────────────
-
-        Esta é a parte que transforma "lista vazia" em "lista vazia, e aqui
-        está o que ela vai ter". Sem ela, o bloco acima é indistinguível de um
-        componente que não carregou.
-
-        As colunas vêm de `COLUNAS_HISTORICO`, o mesmo array que a tabela lê —
-        então este resumo não pode divergir do que a lista mostra.
-      */}
-      <div className="mt-5 rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] px-4 py-3.5">
-        <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
-          O que cada linha vai dizer
-        </p>
-        <ul className="mt-2.5 flex flex-wrap gap-x-2 gap-y-1.5">
-          {COLUNAS_HISTORICO.map((c) => (
-            <li
-              key={c.chave}
-              className="rounded-[var(--raio-sm)] border border-[var(--linha)] bg-[var(--superficie)] px-2.5 py-1 text-[0.8125rem] text-[var(--tinta-suave)]"
-            >
-              {c.titulo}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <Aviso tom="info" titulo="Por que a lista está vazia">
-        <p>
-          A planilha é gerada na hora e vai direto para o seu computador — o
-          servidor não guarda cópia dela. Sem um lugar onde guardar o arquivo,
-          um histórico não teria como reabrir nada: registraria a data e o
-          nome, e não devolveria o documento. Um registro que não devolve o
-          documento é pior que nenhum, porque dá a impressão de que a planilha
-          está arquivada.
-        </p>
-        <p className="mt-2.5">
-          Por isso esta área fica visível e vazia, em vez de preenchida com
-          exemplos. Quando houver onde guardar os arquivos, as planilhas
-          geradas passam a aparecer aqui — e as antigas, se ainda existirem,
-          vêm junto.
-        </p>
-      </Aviso>
     </Secao>
   );
 }

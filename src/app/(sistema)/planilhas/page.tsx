@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CabecalhoPagina, Rotulo } from "@/components/ui/rotulo";
-import { Etiqueta, Indicador } from "@/components/ui/indicador";
-import { Aviso, EstadoVazio, Painel, Secao } from "@/components/ui/superficie";
+import { Etiqueta } from "@/components/ui/indicador";
+import { EstadoVazio, Painel, Secao } from "@/components/ui/superficie";
 import { Dado, ListaDados } from "@/components/ui/dados";
 import { obterRepositorioOperacao } from "@/lib/dados";
-import type { ClienteOperacao } from "@/lib/dados";
+import type { Acompanhamento, Ficha, Tarefa } from "@/lib/dados";
 import {
   EXPLICACAO_ESTADO_MODELO,
   ROTULO_ESTADO_MODELO,
@@ -13,10 +13,12 @@ import {
 } from "@/lib/planilhas/estado";
 import { MODELOS, TOTAL_DISPONIVEIS, TOTAL_MODELOS } from "@/lib/planilhas/modelos";
 import { listarPlanilhasGeradas } from "@/lib/planilhas/historico";
+import { recorteDoCliente } from "@/lib/planilhas/relatorio";
 import type { ModeloPlanilha } from "@/lib/planilhas/tipos";
 import { BotaoGerarPlanilha } from "./gerar";
 import { SeletorDeCliente } from "./seletor";
 import { HistoricoDePlanilhas } from "./historico";
+import { PreviaDoRelatorio } from "./previa-relatorio";
 
 export const metadata: Metadata = { title: "Planilhas" };
 
@@ -24,47 +26,32 @@ export const metadata: Metadata = { title: "Planilhas" };
  * A CENTRAL DE PLANILHAS.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ O QUE ESTA TELA É — E O QUE ELA NÃO É                                │
+ * │ A ORDEM DESTA TELA É A ORDEM DA TAREFA                               │
  * │                                                                      │
- * │ É uma CENTRAL, e não um gerador. A diferença é que ela mostra o       │
- * │ catálogo inteiro — inclusive o que ainda não funciona — e diz por quê. │
- * │ Uma tela que só listasse o modelo pronto pareceria completa e         │
- * │ esconderia justamente a informação que destrava os outros quatro:     │
- * │ que três esperam programação e um espera uma resposta dela.           │
+ * │ 1. GERAR      — escolher o cliente e a planilha, e baixar. É o que    │
+ * │                 ela veio fazer aqui, e por isso vem primeiro.         │
+ * │ 2. PRÉVIA     — o que o arquivo vai ter, antes de baixar.             │
+ * │ 3. MODELOS    — o catálogo inteiro, com o estado de cada um.          │
+ * │ 4. HISTÓRICO  — o que já saiu daqui. Hoje, sempre vazio.              │
  * │                                                                      │
- * │ Não é uma tela de configuração nem um construtor de planilha. Não há  │
- * │ "monte sua planilha escolhendo colunas": escolher coluna é decidir o  │
- * │ que o documento deve conter, e isso é a metodologia dela, não uma     │
+ * │ A versão anterior desta tela começava com duas contagens ("quantos    │
+ * │ modelos existem", "quantos funcionam") e só depois chegava ao botão.  │
+ * │ Quem entra aqui quer UM arquivo de UM cliente, não um panorama do      │
+ * │ catálogo — e o panorama ocupava a dobra inteira.                      │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE ESTA TELA NÃO É                                                 │
+ * │                                                                      │
+ * │ Não é um gerador nem um construtor de planilha. Não existe "monte sua │
+ * │ planilha escolhendo colunas": escolher coluna é decidir o que o        │
+ * │ documento deve conter, e isso é a metodologia dela, não uma            │
  * │ preferência de interface.                                             │
- * └──────────────────────────────────────────────────────────────────────┘
- *
- * ┌──────────────────────────────────────────────────────────────────────┐
- * │ A ORDEM DOS BLOCOS, E POR QUE ELA É ESTA                            │
  * │                                                                      │
- * │ 1. RESUMO     — quantos modelos existem, quantos funcionam.           │
- * │ 2. O QUE SAI  — o modelo que já gera arquivo, com o botão. É o que    │
- * │                 ela veio fazer aqui.                                  │
- * │ 3. CATÁLOGO   — os outros quatro, com o motivo de cada um.            │
- * │ 4. HISTÓRICO  — as planilhas já geradas. Hoje, sempre vazio.          │
- * │                                                                      │
- * │ O que funciona vem PRIMEIRO e ocupa mais espaço. Numa lista onde a    │
- * │ maioria dos itens está desabilitada, o item habilitado precisa ser    │
- * │ inconfundível — senão a tela inteira lê como "nada funciona aqui".    │
- * └──────────────────────────────────────────────────────────────────────┘
- *
- * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE O HISTÓRICO APARECE VAZIO, EM VEZ DE NÃO APARECER            │
- * │                                                                      │
- * │ A planilha é gerada e entregue: os bytes vão para o computador de     │
- * │ quem clicou e o servidor não guarda cópia. Não existe histórico real  │
- * │ hoje — e a lista abaixo diz isso com todas as letras, em vez de        │
- * │ esconder a ausência ou preenchê-la com exemplos inventados.           │
- * │                                                                      │
- * │ O formato de cada registro, porém, já está definido em                │
- * │ `@/lib/planilhas/historico`, campo por campo. É o que permite que a    │
- * │ lista vazia já tenha as colunas certas — e que, no dia em que houver   │
- * │ onde guardar, o registro nasça completo em vez de faltar justamente o  │
- * │ dado que não dá para reconstruir depois.                              │
+ * │ E ela não tem uma segunda cópia dos dados. A prévia lê o mesmo         │
+ * │ repositório que o gerador lê, pelas mesmas funções de recorte e        │
+ * │ ordenação (`@/lib/planilhas/relatorio`). A planilha é uma              │
+ * │ REPRESENTAÇÃO dos dados do sistema — não uma base paralela.            │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -89,6 +76,36 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
   const restantes = MODELOS.filter((m) => m.estado !== "DISPONIVEL");
 
   /*
+    AS LISTAS INTEIRAS, E O RECORTE DEPOIS.
+
+    As tarefas e os acompanhamentos vêm completos — de todos os clientes — e
+    o recorte por cliente acontece em `recorteDoCliente`, que é a MESMA
+    função que o gerador usa antes de escrever o arquivo.
+
+    Recortar aqui, com um `filter` escrito nesta página, seria a segunda
+    implementação da regra mais importante do módulo: "nenhum dado de outro
+    cliente entra nesta planilha". Duas implementações divergem, e a que
+    divergisse estaria mostrando ao lado de um botão que gera a outra.
+  */
+  const [tarefas, acompanhamentos] = await Promise.all([
+    operacao.listarTarefas(),
+    operacao.listarAcompanhamentos(),
+  ]);
+
+  const recorte = clienteEscolhido
+    ? recorteDoCliente({
+        cliente: clienteEscolhido,
+        tarefas,
+        acompanhamentos,
+        geradoEm: new Date(),
+      })
+    : {
+        tarefas: [] as readonly Tarefa[],
+        acompanhamentos: [] as readonly Acompanhamento[],
+        fichas: [] as readonly Ficha[],
+      };
+
+  /*
     O histórico vem do módulo de planilhas, e não de um `[]` escrito aqui.
 
     Hoje a função devolve lista vazia — é a ESTRUTURA do histórico, ainda sem
@@ -106,73 +123,107 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
         descricao="Transforme os dados da consultoria em documentos organizados e prontos para análise ou envio."
       />
 
-      {/* ── RESUMO ─────────────────────────────────────────────────────── */}
-      <Secao
-        rotulo="Resumo"
-        titulo="O que dá para gerar hoje"
-        descricao="Duas contagens, conferíveis contra os cards abaixo — uma por uma."
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Indicador
-            emCard
-            rotulo="Gerando arquivo"
-            valor={TOTAL_DISPONIVEIS}
-            tom="positivo"
-            contexto="Prontas para baixar agora"
-          />
-          <Indicador
-            emCard
-            rotulo="No catálogo"
-            valor={TOTAL_MODELOS}
-            contexto="Todas as planilhas que o sistema conhece"
-          />
-        </div>
-      </Secao>
-
-      {/* ── O QUE JÁ GERA ARQUIVO ──────────────────────────────────────── */}
+      {/* ── 1. GERAR ───────────────────────────────────────────────────── */}
       {disponivel ? (
-        <CardDisponivel modelo={disponivel} clientes={clientes} cliente={clienteEscolhido} />
+        <Secao
+          rotulo="Ações principais"
+          titulo="Gerar planilha"
+          descricao="Escolha o cliente, confira a prévia abaixo e baixe o arquivo."
+          acoes={
+            <Etiqueta tom={TOM_ESTADO_MODELO[disponivel.estado]}>
+              {ROTULO_ESTADO_MODELO[disponivel.estado]}
+            </Etiqueta>
+          }
+        >
+          <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-5 py-5">
+            {clientes.length === 0 ? (
+              <EstadoVazio
+                titulo="Nenhum cliente cadastrado"
+                descricao="O relatório é de um cliente. Assim que houver um cadastro, ele aparece aqui para ser escolhido."
+              />
+            ) : (
+              <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-start">
+                <div className="min-w-0">
+                  <label
+                    htmlFor="cliente-planilha"
+                    className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase"
+                  >
+                    De qual cliente
+                  </label>
+
+                  <SeletorDeCliente clientes={clientes} selecionado={clienteEscolhido?.id ?? ""} />
+
+                  <p className="mt-2 text-[0.75rem] leading-snug text-[var(--tinta-fraca)]">
+                    A escolha troca o cliente do botão e da prévia abaixo.{" "}
+                    <Link href="/clientes" className="text-oliva hover:underline">
+                      Ver os clientes cadastrados
+                    </Link>
+                  </p>
+                </div>
+
+                <div className="lg:pt-6">
+                  {clienteEscolhido ? (
+                    <BotaoGerarPlanilha
+                      modeloId={disponivel.id}
+                      clienteId={clienteEscolhido.id}
+                      nomeCliente={clienteEscolhido.nomeFantasia}
+                    />
+                  ) : (
+                    <p className="text-[0.8125rem] text-[var(--tinta-fraca)]">
+                      Escolha um cliente para gerar.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 border-t border-[var(--linha)] pt-5">
+              <ListaDados colunas={2}>
+                <Dado rotulo="O que sai daqui">
+                  Um arquivo <span className="tabular">.xlsx</span> com as abas{" "}
+                  {disponivel.abas?.join(", ") ?? "do modelo"}, que abre no Excel e no LibreOffice.
+                </Dado>
+                <Dado rotulo="O que não acontece">
+                  Nada é enviado a ninguém. O arquivo é baixado direto para o seu computador.
+                </Dado>
+              </ListaDados>
+            </div>
+          </div>
+        </Secao>
       ) : null}
 
-      {/* ── O RESTANTE DO CATÁLOGO ─────────────────────────────────────── */}
+      {/* ── 2. PRÉVIA EM FORMATO DE PLANILHA ───────────────────────────── */}
       <Secao
-        rotulo="Catálogo"
-        titulo="O que ainda está por vir"
-        descricao="Cada card diz o que falta para ficar pronto. Um deles depende de uma decisão sua, e está marcado como tal."
+        rotulo="Prévia em formato de planilha"
+        titulo={
+          clienteEscolhido
+            ? `Como vai sair: ${clienteEscolhido.nomeFantasia}`
+            : "Como o arquivo vai sair"
+        }
+        descricao="Antes de baixar, veja as linhas. É a mesma grade do arquivo — as mesmas colunas, a mesma ordem e o mesmo texto."
+      >
+        <PreviaDoRelatorio
+          cliente={clienteEscolhido}
+          tarefas={recorte.tarefas}
+          acompanhamentos={recorte.acompanhamentos}
+        />
+      </Secao>
+
+      {/* ── 3. MODELOS ─────────────────────────────────────────────────── */}
+      <Secao
+        rotulo="Modelos"
+        titulo="As planilhas que o sistema conhece"
+        descricao={`${TOTAL_MODELOS} no catálogo, ${TOTAL_DISPONIVEIS} gerando arquivo hoje. Cada card abaixo diz em que ponto está.`}
       >
         <div className="grid gap-4 lg:grid-cols-2">
           {restantes.map((m) => (
-            <CardIndisponivel key={m.id} modelo={m} />
+            <CardModelo key={m.id} modelo={m} />
           ))}
         </div>
       </Secao>
 
-      {/*
-        ── POR QUE O HISTÓRICO VEM DEPOIS DO CATÁLOGO ───────────────────────
-
-        A ordem da tela é a ordem da pergunta: o que eu posso gerar agora
-        (o card disponível), o que ainda não posso (o catálogo), e só então o
-        que já foi gerado. Quem entra aqui vem gerar uma planilha; quem vem
-        procurar uma planilha antiga já sabe que ela existe e desce direto.
-
-        Posto antes do catálogo, o histórico empurraria para baixo o único
-        card que funciona — e a primeira coisa que se veria numa tela de
-        geração seria uma lista vazia.
-      */}
+      {/* ── 4. HISTÓRICO ───────────────────────────────────────────────── */}
       <HistoricoDePlanilhas registros={geradas} />
-
-      {/* ── O QUE A ÁREA AINDA NÃO FAZ ─────────────────────────────────── */}
-      <Aviso titulo="O que esta área ainda não faz">
-        <p>
-          Não há envio automático por e-mail, não há integração com Google Sheets ou Drive, e nada é
-          importado de uma planilha existente. O arquivo é baixado e fica com você.
-        </p>
-        <p className="mt-2.5">
-          O histórico abaixo fica vazio de propósito: o arquivo é entregue ao seu computador e o
-          servidor não guarda cópia. A lista mostra as colunas que um registro vai ter no dia em que
-          houver onde guardá-lo.
-        </p>
-      </Aviso>
 
       <Painel escuro className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -192,130 +243,22 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
 }
 
 /**
- * O CARD DO MODELO QUE FUNCIONA.
- *
- * A escolha do cliente acontece AQUI, e não numa tela anterior. A Central é a
- * primeira tela da área, e obrigar a passar por `/clientes` para gerar uma
- * planilha acrescentaria dois cliques a uma tarefa que é essencialmente
- * "baixar um arquivo deste cliente".
- */
-function CardDisponivel({
-  modelo,
-  clientes,
-  cliente,
-}: {
-  modelo: ModeloPlanilha;
-  clientes: readonly ClienteOperacao[];
-  cliente: ClienteOperacao | null;
-}) {
-  return (
-    <Secao
-      rotulo="Pronto para usar"
-      titulo={modelo.nome}
-      descricao={modelo.descricao}
-      acoes={
-        <Etiqueta tom={TOM_ESTADO_MODELO[modelo.estado]}>
-          {ROTULO_ESTADO_MODELO[modelo.estado]}
-        </Etiqueta>
-      }
-    >
-      <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-5 py-5">
-        {clientes.length === 0 ? (
-          <EstadoVazio
-            titulo="Nenhum cliente cadastrado"
-            descricao="O relatório é de um cliente. Assim que houver um cadastro, ele aparece aqui para ser escolhido."
-          />
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-start">
-            <div className="min-w-0">
-              <label
-                htmlFor="cliente-planilha"
-                className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase"
-              >
-                De qual cliente
-              </label>
-
-              <SeletorDeCliente clientes={clientes} selecionado={cliente?.id ?? ""} />
-
-              <p className="mt-2 text-[0.75rem] leading-snug text-[var(--tinta-fraca)]">
-                A escolha troca o cliente do botão ao lado.{" "}
-                <Link href="/clientes" className="text-oliva hover:underline">
-                  Ver os clientes cadastrados
-                </Link>
-              </p>
-            </div>
-
-            <div className="lg:pt-6">
-              {cliente ? (
-                <BotaoGerarPlanilha
-                  modeloId={modelo.id}
-                  clienteId={cliente.id}
-                  nomeCliente={cliente.nomeFantasia}
-                />
-              ) : (
-                <p className="text-[0.8125rem] text-[var(--tinta-fraca)]">
-                  Escolha um cliente para gerar.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {modelo.abas ? (
-          <div className="mt-5 border-t border-[var(--linha)] pt-5">
-            <Rotulo className="mb-3">O arquivo terá {modelo.abas.length} abas</Rotulo>
-            <ul className="flex flex-wrap gap-2">
-              {modelo.abas.map((aba, i) => (
-                <li
-                  key={aba}
-                  className="rounded-[var(--raio-sm)] border border-[var(--linha)] bg-[rgba(107,122,70,0.06)] px-2.5 py-1.5 text-[0.8125rem] text-[var(--tinta-suave)]"
-                >
-                  <span
-                    aria-hidden
-                    className="tabular mr-1.5 text-[0.6875rem] text-[var(--tinta-fraca)]"
-                  >
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  {aba}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        <div className="mt-5 border-t border-[var(--linha)] pt-5">
-          <ListaDados colunas={2}>
-            <Dado rotulo="O que sai daqui">
-              Um arquivo <span className="tabular">.xlsx</span>, que abre no Excel e no
-              LibreOffice.
-            </Dado>
-            <Dado rotulo="O que não acontece">
-              Nada é enviado a ninguém. O arquivo é baixado direto para o seu computador.
-            </Dado>
-          </ListaDados>
-        </div>
-      </div>
-    </Secao>
-  );
-}
-
-/**
  * O CARD DE UM MODELO QUE AINDA NÃO SAI.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │ POR QUE O MOTIVO APARECE, E NÃO SÓ O ESTADO                          │
  * │                                                                      │
- * │ "Em preparação" sozinho é um cadeado sem placa: não diz se falta uma  │
- * │ semana de programação ou uma decisão que ninguém tomou. As duas        │
+ * │ "Ainda não sai" sozinho é um cadeado sem placa: não diz se é questão   │
+ * │ de tempo ou se é uma pergunta que ninguém respondeu. As duas           │
  * │ situações pedem coisas diferentes dela — numa, esperar; na outra,      │
  * │ responder.                                                            │
  * │                                                                      │
- * │ O tom do card também separa as duas: dourado para o que é trabalho de  │
- * │ programação, traço neutro para o que espera definição. De longe já se  │
- * │ vê o que depende dela.                                                │
+ * │ O tom do card também separa as duas: dourado para o que depende de     │
+ * │ tempo, traço neutro para o que espera definição. De longe já se vê o    │
+ * │ que depende dela.                                                      │
  * └──────────────────────────────────────────────────────────────────────┘
  */
-function CardIndisponivel({ modelo }: { modelo: ModeloPlanilha }) {
+function CardModelo({ modelo }: { modelo: ModeloPlanilha }) {
   const esperaDefinicao = modelo.estado === "AGUARDANDO_DEFINICAO";
 
   return (
@@ -350,15 +293,20 @@ function CardIndisponivel({ modelo }: { modelo: ModeloPlanilha }) {
       ) : null}
 
       <div className="mt-auto pt-4">
+        {/*
+          O RODAPÉ DIZ ONDE O MODELO ESTÁ, E NÃO A FORMA QUE ELE TERIA.
+
+          Aqui já esteve escrito "{n} abas previstas: Fichas, Itens,
+          Informações". É uma frase sobre a ESTRUTURA de um arquivo que ainda
+          não existe — e o efeito era prometer uma forma que ainda pode mudar.
+          A aba de um modelo que não sai não é informação: é esboço.
+
+          Quando o modelo sai, as abas dele aparecem no bloco de gerar, lá em
+          cima, junto do arquivo de verdade.
+        */}
         <p className="text-[0.75rem] leading-snug text-[var(--tinta-fraca)]">
           {EXPLICACAO_ESTADO_MODELO[modelo.estado]}
         </p>
-        {modelo.abas ? (
-          <p className="mt-1.5 text-[0.75rem] leading-snug text-[var(--tinta-fraca)]">
-            {modelo.abas.length} abas previstas:{" "}
-            <span className="text-[var(--tinta-suave)]">{modelo.abas.join(", ")}</span>
-          </p>
-        ) : null}
       </div>
     </article>
   );

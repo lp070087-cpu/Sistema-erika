@@ -171,6 +171,82 @@ export function precoUnitarioDaCompra(compra: Compra | null): number | null {
   return compra.valorTotal / compra.quantidade;
 }
 
+/**
+ * A COMPRA INFORMADA É USÁVEL? E SE NÃO, O QUE FALTA?
+ *
+ * ┌───────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO É DOMÍNIO, E NÃO UMA VALIDAÇÃO DE FORMULÁRIO          │
+ * │                                                                   │
+ * │ Porque a regra é do DADO, não da tela. Uma compra só é usável      │
+ * │ quando tem as duas pontas: quantidade e valor. Meia compra não é   │
+ * │ um dado incompleto — é um dado que `precoUnitarioDaCompra` recusa  │
+ * │ devolvendo `null`, e um `null` que ninguém explicou vira o preço   │
+ * │ unitário vazio numa ficha, sem nenhuma frase dizendo por quê.      │
+ * │                                                                   │
+ * │ Escrita aqui, a regra vale para o formulário do insumo, para o     │
+ * │ cadastro de insumo novo e para qualquer tela que venha a pedir     │
+ * │ uma compra — e pode ser conferida por um teste, que é o que uma    │
+ * │ validação dentro de um `.tsx` nunca pode.                          │
+ * └───────────────────────────────────────────────────────────────────┘
+ *
+ * A ordem das perguntas é a ordem do que ela digitou. Quem escreveu "5 kg" no
+ * campo da quantidade precisa ouvir "isso não é número" ANTES de ouvir "falta
+ * o valor pago" — senão vai procurar o erro no campo que está certo.
+ *
+ * `null` significa que a compra está boa — ou que não foi informada, que
+ * também não é erro: um insumo sem compra declarada é um insumo que usa o
+ * preço de referência.
+ */
+export type RecusaDeCompra =
+  | "QUANTIDADE_NAO_E_NUMERO"
+  | "VALOR_NAO_E_NUMERO"
+  | "FALTA_VALOR"
+  | "FALTA_QUANTIDADE";
+
+/**
+ * A recusa, como código. A frase fica na tela, porque é lá que se escreve
+ * para a Érika; aqui fica a REGRA, que é o que precisa ser conferível.
+ *
+ * `textoQuantidade` e `textoValor` chegam como ela digitou, e não como
+ * número: é o texto que distingue "não digitei" de "digitei algo inválido".
+ * Passar só os números lidos apagaria essa diferença e faria os dois casos
+ * receberem a mesma recusa.
+ */
+export function recusaDaCompra(
+  textoQuantidade: string,
+  quantidade: number | null,
+  textoValor: string,
+  valor: number | null
+): RecusaDeCompra | null {
+  const digitouQuantidade = textoQuantidade.trim() !== "";
+  const digitouValor = textoValor.trim() !== "";
+
+  if (digitouQuantidade && quantidade === null) return "QUANTIDADE_NAO_E_NUMERO";
+  if (digitouValor && valor === null) return "VALOR_NAO_E_NUMERO";
+  if (digitouQuantidade && !digitouValor) return "FALTA_VALOR";
+  if (digitouValor && !digitouQuantidade) return "FALTA_QUANTIDADE";
+  return null;
+}
+
+/**
+ * A MESMA RECUSA, EM PORTUGUÊS — PARA A TELA.
+ *
+ * Mora ao lado da regra de propósito: uma frase de recusa escrita na tela e
+ * uma regra escrita no domínio divergem no primeiro dia em que alguém ajusta
+ * uma das duas. Aqui, acrescentar um código novo a `RecusaDeCompra` sem
+ * escrever a frase não compila — o `Record` abaixo obriga.
+ */
+export const FRASE_DA_RECUSA: Record<RecusaDeCompra, string> = {
+  QUANTIDADE_NAO_E_NUMERO:
+    "A quantidade não é um número maior que zero. Confira a vírgula — é ela que separa os centavos.",
+  VALOR_NAO_E_NUMERO:
+    "O valor pago não é um número maior que zero. Confira a vírgula.",
+  FALTA_VALOR:
+    "Falta o valor pago. A quantidade sozinha não gera o preço unitário.",
+  FALTA_QUANTIDADE:
+    "Falta a quantidade comprada. O valor pago sozinho não gera o preço unitário.",
+};
+
 // ---------------------------------------------------------------------------
 // Transformação — as três etapas medidas
 // ---------------------------------------------------------------------------

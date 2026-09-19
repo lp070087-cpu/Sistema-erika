@@ -1481,7 +1481,6 @@ const ATACADO = "Atacado Bom Preço";
 
 /** Atalhos de peso, para as linhas com medição ficarem legíveis. */
 const kg = (peso: number): EtapaMedida => ({ peso, unidade: "kg" });
-const l = (peso: number): EtapaMedida => ({ peso, unidade: "L" });
 const maco = (peso: number): EtapaMedida => ({ peso, unidade: "maço" });
 
 export const INGREDIENTES: Ingrediente[] = [

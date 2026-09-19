@@ -36,6 +36,7 @@ import type {
   ClienteOperacao,
   Consultoria,
   Contrato,
+  Ficha,
   Tarefa,
 } from "@/lib/dados";
 
@@ -94,6 +95,35 @@ export type ContextoPlanilha = {
   contrato?: Contrato | null;
   tarefas?: readonly Tarefa[];
   acompanhamentos?: readonly Acompanhamento[];
+  /**
+   * As fichas técnicas deste cliente.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ POR QUE ESTE CAMPO FALTAVA, E POR QUE ISSO IMPORTAVA               │
+   * │                                                                    │
+   * │ `ModeloPlanilha.exige` já listava "fichas" como fonte válida — e   │
+   * │ os modelos `ficha-tecnica` e `custos-precificacao` a declaravam.   │
+   * │ Só que este tipo não tinha o campo, e `montarContexto` não as      │
+   * │ buscava: o nome existia no vocabulário e não existia no mundo.     │
+   * │                                                                    │
+   * │ É a mesma falta que o comentário de `exige` descreve, invertida:   │
+   * │ lá, declarar uma fonte que o contexto não carrega dá um card       │
+   * │ que promete e falha ao gerar. Aqui, um campo que o contexto não    │
+   * │ preenche dá um gerador que existe e nunca recebe dado.             │
+   * │                                                                    │
+   * │ Fechar isso agora, ANTES de escrever qualquer gerador de ficha, é  │
+   * │ o que impede o formato do arquivo de ser decidido em cima de um     │
+   * │ contexto estreito demais — e de a ficha técnica nascer como uma     │
+   * │ segunda base, editada em paralelo à tela de fichas.                 │
+   * └────────────────────────────────────────────────────────────────────┘
+   *
+   * O RECORTE É DO MODELO, COMO TODO O RESTO. A lista chega completa — de
+   * todos os clientes — e quem filtra é quem escreve a aba, pela mesma razão
+   * que `tarefas` e `acompanhamentos` chegam completas: a regra "nenhum dado
+   * de outro cliente entra nesta planilha" precisa morar em quem escreve a
+   * planilha, e não no carregador, que o terceiro modelo esqueceria.
+   */
+  fichas?: readonly Ficha[];
   /**
    * O que a consultora escreveu sobre este cliente, se escreveu.
    *

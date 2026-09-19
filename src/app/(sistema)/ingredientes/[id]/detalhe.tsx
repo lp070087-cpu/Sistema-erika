@@ -28,9 +28,13 @@ import type {
 } from "@/lib/dados";
 import {
   estadoDePrecoDaBiblioteca,
+  ingredienteDaSessao,
   ingredientesDaSessao,
+  insumoFoiExcluido,
 } from "@/lib/dados/demonstracao";
 import { EditorDePreco } from "../editor-preco";
+import { CalculadoraRendimento } from "./calculadora-rendimento";
+import { IdentidadeDoInsumo } from "./identidade-do-insumo";
 
 /**
  * O INSUMO — o que ele custa, o que ele rende, e onde ele entra.
@@ -101,6 +105,43 @@ const ROTULO_ETAPA_CURTO = {
 } as const;
 
 /** Um peso, com casas fixas. Ausente vira traço — nunca zero. */
+/**
+ * O CUSTO EFETIVO NO CABEÇALHO DA SEÇÃO — o número que ela veio buscar.
+ *
+ * Ele aparece no topo porque é a CONCLUSÃO da seção inteira: os pesos que ela
+ * digita abaixo existem para produzir este número. Deixá-lo só no rodapé faria
+ * a conta mais importante da tela ser a última coisa a ser lida.
+ *
+ * Quando não há peso medido depois da compra, ele mostra o traço — e não o
+ * preço de compra, que é o erro que faria o custo do prato sair menor do que
+ * é.
+ */
+function IndicadorDeCusto({
+  valor,
+  unidade,
+}: {
+  valor: number | null;
+  unidade: string | null;
+}) {
+  return (
+    <div className="text-right">
+      <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+        Custo efetivo
+      </p>
+      <p className="tabular font-display text-[1.5rem] leading-tight text-tinta">
+        {valor === null ? "—" : valorEmReais(valor)}
+      </p>
+      <p className="text-[0.75rem] text-[var(--tinta-fraca)]">
+        {valor === null
+          ? "falta um peso medido"
+          : unidade
+            ? `por ${unidade} do peso final`
+            : "por unidade do peso final"}
+      </p>
+    </div>
+  );
+}
+
 function peso(valor: number | null, unidade: string | null): string {
   if (valor === null) return "—";
   const n = valor.toFixed(CASAS_PESO).replace(".", ",");
@@ -152,6 +193,21 @@ export function DetalheDoIngrediente({
   */
   const daSessao = ingredientesDaSessao().find((i) => i.id === id) ?? null;
 
+  /*
+    ── EXCLUÍDO NÃO É O MESMO QUE NUNCA EXISTIU ────────────────────────────
+    Quando a exclusão acontece, o insumo continua no cenário que veio do
+    servidor — ele é uma prop, e tirá-lo de um array não sobrevive a um novo
+    render. A sessão então ANOTA que ele foi excluído, e esta linha é quem lê
+    a anotação.
+
+    Sem ela, abrir o endereço direto de um insumo recém-excluído mostraria a
+    ficha inteira, viva, de um dado que a Érika acabou de apagar. Com ela, a
+    tela diz o que aconteceu e oferece o caminho de volta.
+  */
+  if (insumoFoiExcluido(id)) {
+    return <NaoEncontrado excluido />;
+  }
+
   if (daSessao === null && doCenario === null) {
     return <NaoEncontrado />;
   }
@@ -180,8 +236,34 @@ export function DetalheDoIngrediente({
   const usos = doCenario?.usos ?? [];
   const precosDeClientes = doCenario?.precosDeClientes ?? [];
 
-  const derivada = derivarTransformacao(ingrediente.transformacao);
-  const unidadeDosPesos = derivada.unidade ?? ingrediente.unidade;
+  /*
+    ── O INSUMO COMO ELE ESTÁ AGORA ────────────────────────────────────────
+    `ingredienteDaSessao` é a sobreposição canônica: ela junta o que foi
+    cadastrado nesta sessão (nome, categoria, fornecedor, compra) ao que foi
+    pesado. É a MESMA função que a lista usa.
+
+    Ela é uma fonte só e tem dois leitores — esta tela e a biblioteca. Se cada
+    uma montasse a sua sobreposição, editar um nome apareceria no detalhe e não
+    na lista (ou o contrário), e a Érika veria dois valores para o mesmo
+    insumo sem saber qual é o certo.
+  */
+  const ingredienteComPesagens = ingredienteDaSessao(ingrediente);
+
+  /*
+    ── DAQUI PARA BAIXO, TUDO LÊ `ingredienteComPesagens` ──────────────────
+
+    Ele é a sobreposição mais completa: preço desta sessão (que veio em
+    `ingrediente`) MAIS o que foi cadastrado nesta sessão — nome, categoria,
+    fornecedor e compra.
+
+    Ler `ingrediente` numa seção e `ingredienteComPesagens` noutra era um
+    defeito silencioso: corrigir a quantidade comprada repintaria a
+    calculadora de rendimento e deixaria a seção "Compra" mostrando a
+    quantidade antiga, logo acima dela. Duas verdades sobre a mesma nota,
+    na mesma tela, sem nada explicando por quê.
+  */
+  const derivada = derivarTransformacao(ingredienteComPesagens.transformacao);
+  const unidadeDosPesos = derivada.unidade ?? ingredienteComPesagens.unidade;
 
   /*
     O PREÇO UNITÁRIO DA COMPRA é derivado, não digitado.
@@ -190,9 +272,8 @@ export function DetalheDoIngrediente({
     discordando sobre a mesma compra: o valor informado e o resultado da
     divisão. Derivando, só existe um.
   */
-  const precoUnitario = ingrediente.compra
-    ? precoUnitarioDaCompra(ingrediente.compra)
-    : null;
+  const compra = ingredienteComPesagens.compra;
+  const precoUnitario = compra ? precoUnitarioDaCompra(compra) : null;
 
   /*
     ── O CUSTO DO QUE SOBRA ────────────────────────────────────────────────
@@ -208,7 +289,8 @@ export function DetalheDoIngrediente({
     quilo limpo de um insumo que ainda vai encolher no fogo daria um número
     menor do que o real, com a mesma aparência de certo.
   */
-  const precoDaCompra = precoUnitario ?? ingrediente.precoAtual;
+  const precoDaCompra = precoUnitario ?? ingredienteComPesagens.precoAtual;
+
   const custos = custoPorEtapa(precoDaCompra, derivada);
 
   /*
@@ -231,7 +313,13 @@ export function DetalheDoIngrediente({
     (a, b) => b.em.getTime() - a.em.getTime()
   );
 
-  const t = ingrediente.transformacao;
+  /*
+    `t` é a transformação EFETIVA — a da sessão quando ela acabou de pesar,
+    a do cenário quando não. Os três painéis abaixo (pesos medidos, perdas e
+    rendimento, custo do que sobra) leem daqui, e é por isso que eles repintam
+    quando ela salva uma pesagem na calculadora: uma fonte só, quatro leitores.
+  */
+  const t = ingredienteComPesagens.transformacao;
 
   return (
     <div className="space-y-6">
@@ -245,10 +333,10 @@ export function DetalheDoIngrediente({
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
           <p className="text-[0.6875rem] font-semibold tracking-[0.16em] text-[var(--tinta-fraca)] uppercase">
-            {ingrediente.categoria}
+            {ingredienteComPesagens.categoria}
           </p>
           <h1 className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1.5 text-[1.75rem] leading-tight">
-            {ingrediente.nome}
+            {ingredienteComPesagens.nome}
             {daSessao !== null ? (
               <Etiqueta tom="dourado">cadastrado nesta sessão</Etiqueta>
             ) : null}
@@ -264,6 +352,15 @@ export function DetalheDoIngrediente({
 
         <div className="flex flex-wrap items-center gap-2">
           {historico.length > 1 ? <Etiqueta>{historico.length} registros</Etiqueta> : null}
+          {/*
+            A ORDEM DAS DUAS AÇÕES É A ORDEM DAS PERGUNTAS.
+            "Editar dados" corrige o CADASTRO — o nome, a categoria, o que a
+            nota dizia. "Atualizar preço" acrescenta um registro ao HISTÓRICO.
+            São operações diferentes, com consequências diferentes: a primeira
+            muda o insumo, a segunda muda o que ele custa a partir de hoje.
+            Empilhá-las na mesma linha faria parecer que são a mesma coisa.
+          */}
+          <IdentidadeDoInsumo ingrediente={ingredienteComPesagens} />
           <EditorDePreco
             ingrediente={ingrediente}
             precoVigente={ingrediente.precoAtual}
@@ -280,7 +377,7 @@ export function DetalheDoIngrediente({
         titulo="Quanto se compra, e por quanto"
         descricao="Os dois números que geram o preço unitário. Ele não é digitado — é a divisão do que se pagou pela quantidade que veio."
       >
-        {ingrediente.compra === null ? (
+        {compra === null ? (
           <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] bg-[rgba(242,236,226,0.45)] px-4 py-4">
             <p className="text-[0.875rem] leading-relaxed text-[var(--tinta-suave)]">
               A compra ainda não foi informada. Sem a quantidade comprada e o
@@ -290,22 +387,21 @@ export function DetalheDoIngrediente({
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
-            <CompraDetalhada compra={ingrediente.compra} precoUnitario={precoUnitario} />
+            <CompraDetalhada compra={compra} precoUnitario={precoUnitario} />
             <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie-areia)] px-4 py-4">
               <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
                 A conta
               </p>
               <p className="mt-2 text-[0.875rem] leading-relaxed text-[var(--tinta-suave)]">
-                {valorEmReais(ingrediente.compra.valorTotal)} ÷{" "}
+                {valorEmReais(compra.valorTotal)} ÷{" "}
                 <span className="tabular">
-                  {ingrediente.compra.quantidade.toString().replace(".", ",")}{" "}
-                  {ingrediente.compra.unidade}
+                  {compra.quantidade.toString().replace(".", ",")} {compra.unidade}
                 </span>{" "}
                 ={" "}
                 <strong className="font-semibold text-tinta">
                   {precoUnitario === null
                     ? "—"
-                    : `${valorEmReais(precoUnitario)} por ${ingrediente.compra.unidade}`}
+                    : `${valorEmReais(precoUnitario)} por ${compra.unidade}`}
                 </strong>
               </p>
               <p className="mt-2 text-[0.75rem] leading-relaxed text-[var(--tinta-fraca)]">
@@ -322,22 +418,42 @@ export function DetalheDoIngrediente({
         rotulo="Transformação"
         titulo="O que acontece entre a compra e o prato"
         descricao="Cada peso abaixo é uma medição feita na cozinha. Etapa sem medição aparece tracejada — o sistema não repete o peso da etapa anterior no lugar dela."
+        acoes={
+          <IndicadorDeCusto
+            valor={custoDoUtilizavel === null ? null : custoDoUtilizavel.valor}
+            unidade={unidadeDosPesos}
+          />
+        }
       >
-        <FluxoRendimentoIngrediente
-          derivada={derivada}
-          unidade={unidadeDosPesos}
-          rodape={
-            t.observacao ? (
-              <>
-                <span className="font-medium text-tinta">Anotação do preparo: </span>
-                {t.observacao}
-              </>
-            ) : null
-          }
+        {/*
+          ── A CALCULADORA ──────────────────────────────────────────────────
+          Ela vem ANTES do fluxo desenhado, e a ordem importa: o primeiro
+          bloco é onde se digita, o segundo é o que resultou. Invertido, ela
+          leria o resultado antes de saber onde corrigi-lo.
+        */}
+        <CalculadoraRendimento
+          ingredienteId={id}
+          nomeDoInsumo={ingredienteComPesagens.nome}
+          compra={ingredienteComPesagens.compra}
+          transformacao={ingredienteComPesagens.transformacao}
+          unidadeDaCompra={ingredienteComPesagens.unidade}
         />
 
         <div className="mt-6 border-t border-dashed border-[var(--linha-forte)] pt-5">
-          <div className="grid gap-6 lg:grid-cols-3">
+          <FluxoRendimentoIngrediente
+            derivada={derivada}
+            unidade={unidadeDosPesos}
+            rodape={
+              t.observacao ? (
+                <>
+                  <span className="font-medium text-tinta">Anotação do preparo: </span>
+                  {t.observacao}
+                </>
+              ) : null
+            }
+          />
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-3">
             <PesosDaEtapa
               titulo="Pesos medidos"
               pesos={[
@@ -408,7 +524,9 @@ export function DetalheDoIngrediente({
                 <Indicador
                   rotulo="Por unidade de compra"
                   valor={precoUnitario === null ? "—" : valorEmReais(precoUnitario)}
-                  unidade={precoUnitario === null ? undefined : ingrediente.unidade}
+                  unidade={
+                    precoUnitario === null ? undefined : (compra?.unidade ?? ingrediente.unidade)
+                  }
                   contexto="O que a nota diz, dividido pela quantidade."
                 />
                 <Indicador
@@ -449,13 +567,24 @@ export function DetalheDoIngrediente({
         {/*
           A MARCA DA REGRA QUE AINDA NÃO EXISTE.
 
-          Fica aqui, e não num rodapé: é neste ponto que a consultora poderia
-          esperar um fator de tabela, e é aqui que o sistema precisa dizer que
-          não inventa um.
+          ┌────────────────────────────────────────────────────────────────┐
+          │ O QUE MUDOU NESTE TEXTO, E POR QUE                            │
+          │                                                                │
+          │ A versão anterior dizia que o fator de correção "ainda não é   │
+          │ aplicado". Isso deixou de ser verdade pela metade: o fator      │
+          │ MEDIDO — a razão entre os dois pesos que ela pesou — agora      │
+          │ aparece na calculadora, porque ela pediu o número.              │
+          │                                                                │
+          │ O que continua não existindo é o fator de TABELA: o número que  │
+          │ vale ANTES de pesar, para prever quanto se vai perder. Esse o   │
+          │ sistema continua sem ter, e a nota precisa dizer isso — senão a │
+          │ Érika lê "fator de correção" na tela e conclui que a tabela     │
+          │ dela já está lá dentro.                                          │
+          └────────────────────────────────────────────────────────────────┘
         */}
         <RegraAConfirmar
           className="mt-5"
-          oQue="Estas contas saem só das pesagens feitas na cozinha. Se a sua metodologia tem fator de correção ou índice de cocção de referência — um número que vale antes de pesar — ele ainda não é aplicado, porque o sistema não escolhe por você."
+          oQue="Estas contas saem só das pesagens feitas na cozinha. O fator de correção que aparece acima é o que as suas balanças produziram — ele vale depois de medir. Se a sua metodologia tem um fator de tabela, um número de referência que valha antes de pesar, ele ainda não é aplicado, porque o sistema não escolhe por você."
         />
       </Secao>
 
@@ -653,8 +782,11 @@ export function DetalheDoIngrediente({
             </p>
             <div className="mt-3">
               <ListaDados colunas={1}>
-                <Dado rotulo="Categoria">{ingrediente.categoria}</Dado>
-                <Dado rotulo="Unidade">{ingrediente.unidade}</Dado>
+                <Dado rotulo="Categoria">{ingredienteComPesagens.categoria}</Dado>
+                <Dado rotulo="Fornecedor">
+                  {ingredienteComPesagens.fornecedor || "não informado"}
+                </Dado>
+                <Dado rotulo="Unidade">{ingredienteComPesagens.unidade}</Dado>
                 <Dado rotulo="Usado em">
                   {usos.length === 0
                     ? "nenhuma ficha ainda"
@@ -666,10 +798,10 @@ export function DetalheDoIngrediente({
                 </Dado>
               </ListaDados>
             </div>
-            {ingrediente.observacoes ? (
+            {ingredienteComPesagens.observacoes ? (
               <p className="mt-4 border-t border-dashed border-[var(--linha-forte)] pt-3.5 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
                 <span className="font-medium text-tinta">Observações: </span>
-                {ingrediente.observacoes}
+                {ingredienteComPesagens.observacoes}
               </p>
             ) : null}
           </Painel>
@@ -837,15 +969,24 @@ function LinhaDerivada({
  * servidor, antes de chegar aqui. Este bloco é a rede de segurança para o dia
  * em que o insumo sumir entre a montagem da página e a pintura.
  */
-function NaoEncontrado() {
+/**
+ * O INSUMO NÃO ESTÁ AQUI — e os dois motivos são diferentes.
+ *
+ * "Excluído" e "não encontrado" pedem ações diferentes de quem lê. No primeiro
+ * caso houve um ato dela, e a tela confirma que ele valeu; no segundo, o
+ * endereço é que está errado, e não há nada a confirmar. Dizer "não encontrado"
+ * depois de uma exclusão faria ela duvidar se a exclusão funcionou.
+ */
+function NaoEncontrado({ excluido = false }: { excluido?: boolean }) {
   return (
     <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] bg-[rgba(242,236,226,0.45)] px-6 py-10">
       <p className="text-[0.6875rem] font-semibold tracking-[0.16em] text-[var(--tinta-fraca)] uppercase">
-        Insumo não encontrado
+        {excluido ? "Insumo excluído" : "Insumo não encontrado"}
       </p>
       <p className="mt-2 max-w-[60ch] text-[0.9375rem] leading-relaxed text-[var(--tinta-suave)]">
-        Este insumo não está na biblioteca. Ele pode ter sido removido, ou o
-        endereço pode estar incompleto.
+        {excluido
+          ? "Este insumo foi excluído da biblioteca nesta sessão. As fichas que o usavam continuam existindo — nenhuma delas foi apagada junto."
+          : "Este insumo não está na biblioteca. Ele pode ter sido removido, ou o endereço pode estar incompleto."}
       </p>
       <Link
         href="/ingredientes"

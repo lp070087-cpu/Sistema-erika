@@ -58,11 +58,6 @@ function quantidade(valor: number | null, unidade: string | null): string {
   return `${valor.toFixed(CASAS_PESO).replace(".", ",")}${unidade ? ` ${unidade}` : ""}`;
 }
 
-function percentual(valor: number | null): string {
-  if (valor === null) return "—";
-  return `${valor.toFixed(CASAS_PERCENTUAL).replace(".", ",")}%`;
-}
-
 /**
  * O texto que diz POR QUE uma linha ficou de fora — em uma frase, por motivo.
  *

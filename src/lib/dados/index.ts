@@ -184,6 +184,7 @@ export {
   CASAS_CUSTO,
   CASAS_PERCENTUAL,
   CASAS_PESO,
+  FRASE_DA_RECUSA,
   UNIDADES_DE_PESO,
   custoDaQuantidade,
   custoPorEtapa,
@@ -191,18 +192,103 @@ export {
   ehUnidadeDePeso,
   mesmaBase,
   precoUnitarioDaCompra,
+  recusaDaCompra,
 } from "./custos";
 
 export type {
   CustoDeQuantidade,
   CustoPorEtapa,
   IndicadoresTransformacao,
+  RecusaDeCompra,
   TransformacaoDerivada,
 } from "./custos";
 
 export { lerQuantidade, pesarFicha, resolverItem, resumoDaFicha, somarFicha } from "./custos-ficha";
 
 export type { ItemResolvido, PesoDaFicha, ResumoCustoFicha } from "./custos-ficha";
+
+// --- A calculadora de rendimento -------------------------------------------
+//
+// `calcularRendimento` monta as LINHAS que a tela e a planilha mostram: a
+// perda de cada etapa, o aproveitamento, o fator de correção medido e o custo
+// efetivo final — com a conta que produziu cada número escrita ao lado. Ela
+// não calcula nada novo; ordena e rotula o que `./custos` já calculava.
+
+export { calcularRendimento, resumoDeRendimento } from "./rendimento";
+
+export type { CalculoDeRendimento, EtapaDoFluxo, LinhaDeRendimento } from "./rendimento";
+
+// --- O vocabulário de unidades do cadastro ---------------------------------
+//
+// `UNIDADES_COMUNS` é a lista que os formulários oferecem, e ela é mais larga
+// que `UNIDADES_DE_PESO`: cabem "maço", "cx" e "dúzia" porque é assim que ela
+// compra. Somar e dividir continua sendo só com as quatro de peso.
+
+export { UNIDADES_COMUNS } from "./unidades";
+
+export type { UnidadeComum } from "./unidades";
+
+// --- Leitura e escrita de número -------------------------------------------
+
+export {
+  arredondarParaExibir,
+  dataDoCampo,
+  dataParaCampo,
+  leituraDeVolta,
+  lerNumero,
+  lerPeso,
+  numero,
+  numeroFixo,
+  paraCampo,
+  textoParaCampo,
+  variacaoPercentual,
+} from "./numeros";
+
+// --- Indicadores comerciais (paramétricos, nunca fixos) --------------------
+//
+// Nenhuma regra comercial da metodologia está fixada aqui: margem de
+// segurança, CMV alvo e markup alvo chegam por parâmetro, e a ausência de
+// qualquer um deles devolve `null` em vez de um valor padrão.
+
+export {
+  PARAMETROS_VAZIOS,
+  custoComMargem,
+  indicadoresDeVenda,
+  markupEmTexto,
+  pendenciasComerciais,
+  precoQueOAlvoExige,
+  precosDosDoisAlvos,
+  quadroComercial,
+} from "./indicadores-comerciais";
+
+export type {
+  IndicadoresDeVenda,
+  ParametrosComerciais,
+  PrecoSugerido,
+  QuadroComercial,
+} from "./indicadores-comerciais";
+
+// --- A camada de edição da sessão ------------------------------------------
+//
+// Enquanto o banco não está conectado, é aqui que uma alteração sobrevive à
+// troca de tela. O que estas funções gravam não é persistência — é o que faz
+// a edição ser verificável agora e trocável por repositório depois.
+
+export {
+  ehInsumoDaSessao,
+  excluirFicha,
+  excluirIngrediente,
+  fichaFoiExcluida,
+  fichasVisiveis,
+  ingredienteDaSessao,
+  insumoFoiExcluido,
+  limparDemonstracao,
+  salvarCadastroDoIngrediente,
+  salvarTransformacao,
+  semExcluidos,
+  temAlteracoes,
+  transformacaoDaSessao,
+} from "./demonstracao";
 
 export type {
   FichaDoIngrediente,

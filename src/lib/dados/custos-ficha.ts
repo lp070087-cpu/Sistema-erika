@@ -47,22 +47,35 @@ import type {
 /**
  * Lê a quantidade escrita na ficha.
  *
- * Aceita o que a cozinha escreve. Recusa — com `null` — o que não é número:
- * "a gosto", "o quanto baste", "1 punhado". A recusa é a resposta certa,
- * porque "a gosto" não tem preço unitário que multiplique: qualquer número
- * que o sistema produzisse ali seria invenção disfarçada de cálculo.
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ESTA FUNÇÃO MUDOU DE CASA                                    │
+ * │                                                                      │
+ * │ Ela nasceu aqui, com leitor próprio, e o editor de preço da          │
+ * │ biblioteca tinha outro — parecidos o bastante para ninguém notar, e   │
+ * │ diferentes nos casos de borda. "1.200" era lido como mil e duzentos    │
+ * │ num campo e como um vírgula dois no outro.                            │
+ * │                                                                      │
+ * │ A função agora mora em `./numeros`, junto com o resto da leitura      │
+ * │ numérica, e continua sendo exportada daqui porque dez telas a          │
+ * │ importam deste caminho. Trocar o import em dez arquivos só para       │
+ * │ mudar o endereço de uma função seria mexer em dez lugares para não     │
+ * │ resolver nada.                                                        │
+ * │                                                                      │
+ * │ O que a ficha ganha com a mudança é a única coisa que importava: a     │
+ * │ MESMA resposta que os outros campos do sistema dão para a mesma        │
+ * │ digitação.                                                            │
+ * └──────────────────────────────────────────────────────────────────────┘
  *
- * Aceita vírgula e ponto, e não aceita separador de milhar junto com
- * decimal — "1.200,50" é ambíguo o bastante para valer a recusa, e o campo
- * da ficha mostra o formato esperado.
+ * O import e a reexportação são dois comandos porque são coisas diferentes:
+ * o import traz o nome para uso DENTRO deste arquivo (o `resolverItem`
+ * abaixo chama a função); a reexportação é o que mantém o caminho antigo
+ * funcionando para quem importava daqui. Só a reexportação não cria
+ * vínculo local nenhum — e a falta dele quebra na primeira linha que usar
+ * a função, que é exatamente o que aconteceu.
  */
-export function lerQuantidade(texto: string): number | null {
-  const limpo = texto.trim();
-  if (limpo === "") return null;
-  if (!/^[0-9]+([.,][0-9]+)?$/.test(limpo)) return null;
-  const n = Number(limpo.replace(",", "."));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
+import { lerQuantidade } from "./numeros";
+
+export { lerQuantidade };
 
 // ---------------------------------------------------------------------------
 // O item da ficha, resolvido

@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Botao, BotaoLink } from "@/components/ui/botao";
 import { Campo, CampoSelecao } from "@/components/ui/campo";
 import { Gaveta, useGaveta } from "@/components/ui/gaveta";
+import { ComercialDaFicha } from "./comercial-da-ficha";
+import type { ControleComercial } from "./comercial-da-ficha";
+import { IdentidadeDaFicha } from "./identidade-da-ficha";
 import { Dado, ListaDados } from "@/components/ui/dados";
 import { Etiqueta } from "@/components/ui/indicador";
 import { LegendaDeCusto, PainelCustoERendimento } from "@/components/ui/painel-custo";
@@ -26,7 +29,6 @@ import {
   Tabela,
 } from "@/components/ui/tabela";
 import { useDemonstracao } from "@/components/ui/use-demonstracao";
-import { cn } from "@/lib/utils/cn";
 import {
   ACAO_DO_ESTADO_ITEM,
   CASAS_PESO,
@@ -36,6 +38,9 @@ import {
   TOM_SITUACAO_FICHA,
   dataCurta,
   desdeQuando,
+  markupEmTexto,
+  numeroFixo,
+  quadroComercial,
   resolverItem,
   resumoDaFicha,
   pesarFicha,
@@ -49,18 +54,23 @@ import type {
   IngredienteDoCliente,
   ItemFicha,
   ItemResolvido,
+  ParametrosComerciais,
+  PesoDaFicha,
+  QuadroComercial,
+  ResumoCustoFicha,
   SituacaoCalculo,
 } from "@/lib/dados";
+import { PARAMETROS_VAZIOS } from "@/lib/dados";
 import {
   estadoDePrecoDaBiblioteca,
   fichaDaSessao,
-  fichaDaSessaoNova,
   fichasDaSessao,
   ingredientesDaSessao,
   precosDeClienteDaSessao,
   salvarCabecalhoDaFicha,
   salvarItensDaFicha,
 } from "@/lib/dados/demonstracao";
+import type { CabecalhoDeFicha } from "@/lib/dados/demonstracao";
 import { NovoIngrediente } from "../../ingredientes/novo";
 
 /**
@@ -185,6 +195,16 @@ export function DetalheDaFicha({
   const adicionar = useGaveta();
 
   /*
+    A PONTE PARA A GAVETA COMERCIAL.
+
+    A gaveta mora no cabeçalho, junto das outras ações; a seção que FALA sobre
+    preço fica lá embaixo, depois do custo. Sem esta referência, quem chega na
+    seção lendo "o preço de venda ainda não foi declarado" teria de subir a
+    tela e achar o botão certo entre quatro.
+  */
+  const comercialRef = useRef<ControleComercial>(null);
+
+  /*
     ── QUEM É ESTA FICHA ───────────────────────────────────────────────────
 
     A ordem é: primeiro a ficha criada nesta sessão, depois o cenário. Uma
@@ -289,6 +309,26 @@ export function DetalheDaFicha({
   const historico = [...ficha.historico].sort((a, b) => b.em.getTime() - a.em.getTime());
   const responsavel = historico[0]?.quem ?? "";
 
+  /*
+    ── O QUADRO COMERCIAL ──────────────────────────────────────────────────
+
+    Os dois campos que alimentam este quadro vêm do cabeçalho da ficha, que é
+    onde eles moram desde sempre — `precoVenda` e `parametros` foram
+    declarados junto com o store de sessão. O que faltava era a tela.
+
+    O custo que entra é `resumo.custoTotal`, e ele é `null` enquanto houver
+    linha fora da soma. Isso não é um detalhe de implementação: um CMV
+    calculado sobre um piso seria MENOR que o real, e um número otimista é pior
+    do que um número ausente — ninguém confere um número bom.
+  */
+  const parametros: ParametrosComerciais = ficha.parametros ?? PARAMETROS_VAZIOS;
+  const precoDeVenda = ficha.precoVenda ?? null;
+  const comercial = quadroComercial(
+    resumo.completo ? resumo.custoTotal : null,
+    precoDeVenda,
+    parametros
+  );
+
   // -------------------------------------------------------------------------
   // Escrita
   // -------------------------------------------------------------------------
@@ -377,6 +417,83 @@ export function DetalheDaFicha({
     );
   }
 
+  /**
+   * Grava o cabeçalho, com a frase do que mudou vindo de quem sabe.
+   *
+   * `IdentidadeDaFicha` compara o rascunho com o que estava gravado e escreve
+   * a frase: "Ficha alterada: nome, modo de preparo (6 passos)". É lá que a
+   * comparação pode ser feita campo a campo, porque é lá que os campos estão.
+   */
+  function salvarCabecalho(alteracao: CabecalhoDeFicha, oQue: string) {
+    /*
+      ── A FRASE E A GRAVAÇÃO SAEM DO MESMO OBJETO ─────────────────────────
+      `registrar` monta a linha de histórico a partir de `ficha.historico`, que
+      é o estado ANTES desta gravação. Chamar `salvarCabecalhoDaFicha` primeiro
+      e `registrar` depois está certo: o store mescla, então a linha nova
+      encontra as antigas. Invertendo, a frase descreveria uma alteração que
+      ainda não estava lá.
+    */
+    salvarCabecalhoDaFicha(ficha.id, alteracao);
+    registrar(oQue);
+  }
+
+  /**
+   * O PREÇO DE VENDA E OS PARÂMETROS — UMA GRAVAÇÃO, UMA LINHA DE HISTÓRICO.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ POR QUE OS DOIS SÃO GRAVADOS JUNTOS, E NÃO EM DUAS CHAMADAS        │
+   * │                                                                    │
+   * │ A gaveta mostra os quatro campos ao mesmo tempo e grava os dois     │
+   * │ grupos com um clique. Duas chamadas a `registrar` custariam duas    │
+   * │ linhas de histórico — e a segunda apagaria a primeira, porque       │
+   * │ `registrar` monta a lista a partir de `ficha.historico`, que veio   │
+   * │ da renderização e ainda não conhece a linha que a primeira          │
+   * │ acabou de escrever.                                                │
+   * │                                                                    │
+   * │ O resultado seria o defeito mais difícil de notar: ela digita o     │
+   * │ preço, informa o CMV alvo, salva, e o histórico registra só uma das │
+   * │ duas coisas. A outra sumiu sem erro nenhum na tela.                 │
+   * │                                                                    │
+   * │ Com uma gravação só, não há duas listas para reconciliar.           │
+   * └────────────────────────────────────────────────────────────────────┘
+   *
+   * A frase nomeia cada campo e o valor que passou a valer. "Parâmetros
+   * alterados" não serviria: daqui a três meses ela abriria a ficha, veria a
+   * linha e não saberia se o que mudou foi a margem, o CMV ou o markup — e um
+   * histórico que não diz o que mudou não é histórico.
+   *
+   * Campo deixado em branco aparece como "limpo": apagar uma decisão é uma
+   * alteração, e a mais fácil de fazer sem perceber.
+   */
+  function salvarComercial(valor: number | null, novos: ParametrosComerciais) {
+    const partes: string[] = [];
+
+    const descrever = (
+      rotulo: string,
+      antes: number | null | undefined,
+      depois: number | null | undefined
+    ) => {
+      if ((antes ?? null) === (depois ?? null)) return;
+      partes.push(
+        depois === null || depois === undefined
+          ? `${rotulo} limpo`
+          : `${rotulo} ${String(depois).replace(".", ",")}`
+      );
+    };
+
+    descrever("preço de venda", precoDeVenda, valor);
+    descrever("margem de segurança", parametros.margemSegurancaPct, novos.margemSegurancaPct);
+    descrever("CMV alvo", parametros.cmvAlvoPct, novos.cmvAlvoPct);
+    descrever("markup alvo", parametros.markupAlvo, novos.markupAlvo);
+
+    salvarCabecalhoDaFicha(ficha.id, { precoVenda: valor, parametros: novos });
+    registrar(
+      partes.length === 0
+        ? "Preço e parâmetros comerciais reabertos e salvos sem alteração."
+        : `Preço e parâmetros comerciais: ${partes.join(", ")}.`
+    );
+  }
+
   // -------------------------------------------------------------------------
 
   return (
@@ -419,11 +536,26 @@ export function DetalheDaFicha({
           <Etiqueta tom={TOM_SITUACAO_FICHA[ficha.situacao]}>
             {ROTULO_SITUACAO_FICHA[ficha.situacao]}
           </Etiqueta>
+          {/*
+            A ORDEM DAS AÇÕES É A ORDEM DAS PERGUNTAS.
+
+            "Editar ficha" mexe no que a ficha É — nome, cliente, passos.
+            "Editar rendimento" e "Parâmetros comerciais" mexem no que ela
+            PRODUZ. E "Ver cliente" não mexe em nada, então vai por último.
+          */}
+          <IdentidadeDaFicha ficha={ficha} clientes={doCenario.clientes} aoSalvar={salvarCabecalho} />
           <EditarRendimento
             porcoes={ficha.rendimentoPorcoes}
             porcaoGramas={ficha.porcaoGramas}
             totalAtual={resumo.completo ? resumo.custoTotal : null}
             aoSalvar={salvarRendimento}
+          />
+          <ComercialDaFicha
+            ref={comercialRef}
+            parametros={parametros}
+            precoVenda={precoDeVenda}
+            custoMedido={resumo.completo ? resumo.custoTotal : null}
+            aoSalvar={salvarComercial}
           />
           {cliente ? (
             <BotaoLink href={`/clientes/${cliente.id}`} variante="secundario" tamanho="sm">
@@ -505,6 +637,30 @@ export function DetalheDaFicha({
               </span>
             )}
           </Dado>
+          {/*
+            O PREÇO DE VENDA TAMBÉM APARECE AQUI, E NÃO SÓ LÁ EMBAIXO.
+
+            A seção "Preço e margem" cruza custo e preço e é onde o assunto se
+            aprofunda. Mas a identificação é o bloco que ela lê correndo, e um
+            preço que só existe depois de rolar a tela some da leitura rápida.
+
+            Duas aparições do MESMO campo lido do MESMO lugar não são duas
+            verdades: é o mesmo número em dois pontos da página.
+          */}
+          <Dado rotulo="Preço de venda">
+            {precoDeVenda === null ? (
+              <span className="text-[var(--tinta-fraca)]">não declarado</span>
+            ) : (
+              <>
+                <span className="tabular">{valorEmReais(precoDeVenda)}</span>
+                <span className="mt-0.5 block text-[0.75rem] text-[var(--tinta-fraca)]">
+                  {comercial.venda !== null
+                    ? `CMV de ${percentualTexto(comercial.venda.cmvPct)}`
+                    : "preço declarado"}
+                </span>
+              </>
+            )}
+          </Dado>
         </ListaDados>
       </div>
 
@@ -530,12 +686,35 @@ export function DetalheDaFicha({
 
         {/*
           A MARCA DA REGRA QUE FALTA — no ponto exato onde ela faria diferença.
-          Depois do custo do prato é onde a consultora esperaria um preço de
-          venda, e é aqui que o sistema precisa dizer que não inventa um.
+
+          O TEXTO ANTERIOR DIZIA QUE ESTES NÚMEROS NÃO ERAM CALCULADOS. Isso
+          deixou de ser verdade: o preço de venda, o CMV e o markup passaram a
+          ser aritmética sobre valores declarados, e a margem de segurança
+          passou a ser aplicada quando ela existe. Manter a frase antiga seria
+          a tela negando o que ela mesma mostra duas seções abaixo.
+
+          A frase nova diz o que continua em aberto — a ESCOLHA. O sistema
+          calcula o que os números dela implicam; não decide quais deveriam ser.
         */}
         <RegraAConfirmar
           className="mt-4"
-          oQue="O custo é soma e divisão sobre os números declarados. Preço de venda, CMV alvo, markup e margem ainda não são calculados: dependem de como a sua metodologia forma preço."
+          oQue="O custo é soma e divisão sobre os números declarados. O preço de venda, o CMV e o markup são calculados a partir de valores que você informa — o sistema não escolhe um preço nem um alvo por você."
+        />
+      </Secao>
+
+      {/* ═══ PREÇO E MARGEM ════════════════════════════════════════════════ */}
+      <Secao
+        rotulo="Preço e margem"
+        titulo="O que a venda deste prato implica"
+        descricao="Tudo aqui sai de dois números: o custo medido, que veio da composição, e o preço de venda, que é uma decisão sua. Nenhum alvo foi sugerido pelo sistema."
+      >
+        <QuadroDeVenda
+          quadro={comercial}
+          resumo={resumo}
+          porcoes={ficha.rendimentoPorcoes}
+          pesoFinal={peso}
+          aoEditarPreco={() => comercialRef.current?.abrirPreco()}
+          aoEditarParametros={() => comercialRef.current?.abrirParametros()}
         />
       </Secao>
 
@@ -589,7 +768,6 @@ export function DetalheDaFicha({
         ) : (
           <Composicao
             resolvidos={resolvidos}
-            indice={indice}
             unidadeDoPeso={unidadeDoPeso}
             peso={peso}
             aoAlterar={alterarItem}
@@ -771,14 +949,12 @@ export function DetalheDaFicha({
  */
 function Composicao({
   resolvidos,
-  indice,
   unidadeDoPeso,
   peso,
   aoAlterar,
   aoRemover,
 }: {
   resolvidos: readonly ItemResolvido[];
-  indice: ReadonlyMap<string, Ingrediente>;
   unidadeDoPeso: string | null;
   peso: ReturnType<typeof pesarFicha>;
   aoAlterar: (indiceDaLinha: number, mudanca: Partial<ItemFicha>) => void;
@@ -1479,6 +1655,11 @@ function AdicionarIngrediente({
   aoFechar: () => void;
   ingredientes: readonly Ingrediente[];
   precos: ReadonlyMap<string, IngredienteDoCliente>;
+  /**
+   * O índice por id — e não é enfeite: é por ele que a linha do que foi
+   * escolhido se resolve (`escolhidoId` é um id, e o que se mostra é o
+   * objeto). Sem ele o campo mostra o id escolhido em vez do nome.
+   */
   indice: ReadonlyMap<string, Ingrediente>;
   jaNaFicha: ReadonlySet<string>;
   aoAdicionar: (entrada: {
@@ -1777,6 +1958,266 @@ function ContaDaNovaLinha({
       </p>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// O quadro de venda
+// ---------------------------------------------------------------------------
+
+/**
+ * O QUE A VENDA DESTE PRATO IMPLICA — a seção que cruza custo e preço.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ A DIVISÃO QUE ESTA SEÇÃO FAZ, E QUE É O PONTO INTEIRO                │
+ * │                                                                      │
+ * │ CUSTO é medição. Sai da composição, dos pesos e dos preços da         │
+ * │ biblioteca. Ninguém decide nada: é soma e divisão sobre o que foi      │
+ * │ pesado e comprado. Onde falta medição, falta custo — e a seção diz     │
+ * │ qual falta.                                                            │
+ * │                                                                      │
+ * │ PREÇO é decisão. Nenhum número desta seção foi escolhido pelo          │
+ * │ sistema. O preço de venda é o que ela declarou; o CMV e o markup são   │
+ * │ CONSEQUÊNCIAS aritméticas desse preço; a margem e os alvos são o que   │
+ * │ ela informou, e enquanto não informar eles não existem.                │
+ * │                                                                      │
+ * │ ┌────────────────────────────────────────────────────────────────┐   │
+ * │ │ POR QUE A SEÇÃO NÃO MOSTRA UM "PREÇO SUGERIDO" EM DESTAQUE     │   │
+ * │ │                                                                │   │
+ * │ │ Mostrar seria fácil: uma multiplicação por três e um número     │   │
+ * │ │ grande no meio da tela. E ela leria como recomendação — seria   │   │
+ * │ │ o sistema opinando sobre o preço dela, com a autoridade de um   │   │
+ * │ │ número de tela.                                                 │   │
+ * │ │                                                                │   │
+ * │ │ O que existe é mais estreito e mais honesto: "aplicando o SEU   │   │
+ * │ │ alvo de 28%, o preço teria de ser X". O alvo é dela, a conta é  │   │
+ * │ │ do sistema, e a responsabilidade fica onde estava.              │   │
+ * │ └────────────────────────────────────────────────────────────────┘   │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function QuadroDeVenda({
+  quadro,
+  resumo,
+  porcoes,
+  pesoFinal,
+  aoEditarPreco,
+  aoEditarParametros,
+}: {
+  quadro: QuadroComercial;
+  resumo: ResumoCustoFicha;
+  porcoes: number | null;
+  pesoFinal: PesoDaFicha;
+  aoEditarPreco: () => void;
+  aoEditarParametros: () => void;
+}) {
+  const custoFechado = resumo.completo;
+
+  /*
+    ── O CUSTO POR PORÇÃO E POR QUILO NO MESMO NÚMERO DE VENDA ─────────────
+
+    Um preço de venda é POR PORÇÃO, porque é assim que o prato é vendido. O
+    custo por porção existe quando há rendimento declarado. Quando não há, o
+    sistema não divide: uma porção suposta daria um custo por porção com a
+    mesma aparência de um custo por porção certo.
+  */
+  const custoPorPorcao = custoFechado ? resumo.custoPorPorcao : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        {/* ─── O CUSTO, QUE É MEDIÇÃO ──────────────────────────────────── */}
+        <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie-areia)] px-5 py-4">
+          <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+            Custo medido
+          </p>
+          <p className="mt-2 font-display text-[1.75rem] leading-none text-tinta">
+            {custoFechado ? valorEmReais(resumo.custoTotal) : "—"}
+          </p>
+          <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+            {custoFechado ? (
+              <>
+                <span className="tabular">{resumo.itensSomados}</span>{" "}
+                {resumo.itensSomados === 1 ? "ingrediente somado" : "ingredientes somados"} ·{" "}
+                <span className="tabular">{porcoes ?? "—"}</span>{" "}
+                {porcoes === 1 ? "porção" : "porções"}
+              </>
+            ) : resumo.vazio ? (
+              "A composição ainda não tem linha nenhuma para somar."
+            ) : (
+              `Há ${resumo.itensFora} de ${resumo.itensSomados + resumo.itensFora} linhas fora da soma. Este total é um piso, não um custo.`
+            )}
+          </p>
+        </div>
+
+        {/* ─── O PREÇO, QUE É DECISÃO ─────────────────────────────────── */}
+        <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie-areia)] px-5 py-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+              Preço de venda
+            </p>
+            <Botao variante="linha" tamanho="sm" onClick={aoEditarPreco}>
+              {quadro.precoVenda === null ? "Informar" : "Alterar"}
+            </Botao>
+          </div>
+          <p className="mt-2 font-display text-[1.75rem] leading-none text-tinta">
+            {quadro.precoVenda === null ? "—" : valorEmReais(quadro.precoVenda)}
+          </p>
+          <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+            {quadro.precoVenda === null
+              ? "Ainda não declarado. Sem preço, não há CMV nem markup — os dois só existem em cima de um preço."
+              : "Declarado por você. O sistema não sugere preço: ele mostra o que este preço implica."}
+          </p>
+        </div>
+      </div>
+
+      {/* ─── O CRUZAMENTO ──────────────────────────────────────────────── */}
+      {quadro.venda !== null ? (
+        <ListaDados colunas={3}>
+          <Dado rotulo="CMV">
+            <span className="tabular text-[1.125rem]">{percentualTexto(quadro.venda.cmvPct)}</span>
+            <span className="mt-0.5 block text-[0.75rem] text-[var(--tinta-fraca)]">
+              do preço de venda é custo de insumo
+            </span>
+          </Dado>
+          <Dado rotulo="Markup">
+            <span className="tabular text-[1.125rem]">
+              {markupEmTexto(quadro.venda.markup)}
+            </span>
+            <span className="mt-0.5 block text-[0.75rem] text-[var(--tinta-fraca)]">
+              o preço é este múltiplo do custo
+            </span>
+          </Dado>
+          <Dado rotulo="Sobra por porção">
+            <span className="tabular text-[1.125rem]">
+              {valorEmReais(quadro.venda.sobraReais)}
+            </span>
+            <span className="mt-0.5 block text-[0.75rem] text-[var(--tinta-fraca)]">
+              {percentualTexto(quadro.venda.sobraPct)} do preço — antes dos outros
+              custos da casa
+            </span>
+          </Dado>
+        </ListaDados>
+      ) : null}
+
+      {/*
+        ── O CUSTO QUE O CMV USOU ───────────────────────────────────────────
+        Quando a margem de segurança existe, o CMV acima foi calculado sobre o
+        custo COM a margem, e não sobre o medido. Os dois apareceriam quase
+        iguais na tela, e o CMV com margem é de 5% a 10% maior. Dizer qual foi
+        usado é o que impede a leitura errada de um número certo.
+      */}
+      {quadro.margemAplicadaPct !== null && quadro.custoComMargem !== null ? (
+        <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+          Os indicadores acima usam o custo{" "}
+          <strong className="font-semibold text-tinta">
+            {valorEmReais(quadro.custoComMargem)}
+          </strong>
+          , que é o custo medido com {numeroFixo(quadro.margemAplicadaPct, 2)}% de margem de
+          segurança — e não o medido puro. A margem existe porque parte do custo ainda vai
+          aparecer: calcular o CMV sobre o custo medido daria um número otimista.
+        </p>
+      ) : null}
+
+      {/* ─── OS PREÇOS QUE OS ALVOS EXIGEM ─────────────────────────────── */}
+      {quadro.precosAlvo.length > 0 ? (
+        <div className="rounded-[var(--raio)] border border-[var(--linha)] px-5 py-4">
+          <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+            Aplicando os seus alvos, o preço teria de ser
+          </p>
+          <ul className="mt-3 divide-y divide-[var(--linha)]">
+            {quadro.precosAlvo.map((p) => (
+              <li
+                key={p.origem}
+                className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-2.5 first:pt-0 last:pb-0"
+              >
+                <span className="text-[0.875rem] text-[var(--tinta-suave)]">
+                  {p.origem === "CMV_ALVO"
+                    ? `com o CMV alvo de ${numeroFixo(p.alvo, 2)}%`
+                    : `com o markup alvo de ${markupEmTexto(p.alvo)}`}
+                </span>
+                <span className="tabular text-[1rem] font-semibold text-tinta">
+                  {valorEmReais(p.valor)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {quadro.precosAlvo.length > 1 ? (
+            <p className="mt-3 border-t border-[var(--linha)] pt-3 text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
+              Os dois caminhos dão preços diferentes. O sistema não escolhe entre eles — quem
+              decide qual dos dois é o da casa é você.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* ─── O QUE FALTA PARA ESTA SEÇÃO FECHAR ────────────────────────── */}
+      {quadro.pendencias.length > 0 ? (
+        <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] bg-[rgba(242,236,226,0.5)] px-5 py-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+              O que ainda falta
+            </p>
+            <Botao variante="linha" tamanho="sm" onClick={aoEditarParametros}>
+              Informar
+            </Botao>
+          </div>
+          <p className="mt-2 text-[0.875rem] leading-relaxed text-[var(--tinta-suave)]">
+            {quadro.pendencias.length === 1
+              ? "Falta uma definição para esta seção ficar completa: "
+              : "Faltam definições para esta seção ficar completa: "}
+            <strong className="font-semibold text-tinta">
+              {listar(quadro.pendencias)}
+            </strong>
+            . O sistema deixa em branco em vez de supor.
+          </p>
+        </div>
+      ) : null}
+
+      {/* ─── PESO FINAL, QUANDO EXISTE ─────────────────────────────────── */}
+      {/*
+        O PESO É MEDIÇÃO, E POR ISSO ELE VEM DEPOIS DO PREÇO E ROTULADO.
+        Sem a etapa declarada, o número não diz de que momento ele é — o quilo
+        comprado e o quilo pronto são pesos diferentes do mesmo prato. Sem
+        etapa, ele não aparece: dizer "o prato sai com 4 kg" sem dizer de
+        quando seria pior do que não dizer nada.
+      */}
+      {pesoFinal.total !== null &&
+      pesoFinal.unidade !== null &&
+      pesoFinal.etapa !== null &&
+      custoFechado ? (
+        <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+          Somando os pesos na etapa <strong className="font-semibold text-tinta">
+            {ROTULO_ETAPA_PESO[pesoFinal.etapa]}
+          </strong>
+          , a ficha tem{" "}
+          <span className="tabular">{pesoTexto(pesoFinal.total, pesoFinal.unidade)}</span> —{" "}
+          <span className="tabular">
+            {valorEmReais(resumo.custoTotal / pesoFinal.total)}
+          </span>{" "}
+          por {pesoFinal.unidade}. Isto é medição; o preço acima é decisão.
+        </p>
+      ) : null}
+
+      {custoPorPorcao !== null && quadro.precoVenda !== null ? (
+        <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+          Por porção: custo de{" "}
+          <span className="tabular">{valorEmReais(custoPorPorcao)}</span> e venda de{" "}
+          <span className="tabular">{valorEmReais(quadro.precoVenda)}</span> —{" "}
+          uma diferença de{" "}
+          <span className="tabular">
+            {valorEmReais(quadro.precoVenda - custoPorPorcao)}
+          </span>{" "}
+          por porção.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Uma lista em português: "a, b e c". Sem serial comma, que não é daqui. */
+function listar(itens: readonly string[]): string {
+  if (itens.length === 0) return "";
+  if (itens.length === 1) return itens[0] ?? "";
+  return `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
 }
 
 // ---------------------------------------------------------------------------

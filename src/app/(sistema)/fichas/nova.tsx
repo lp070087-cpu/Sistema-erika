@@ -6,7 +6,6 @@ import { Botao } from "@/components/ui/botao";
 import { Campo, CampoSelecao } from "@/components/ui/campo";
 import { Gaveta } from "@/components/ui/gaveta";
 import { Aviso } from "@/components/ui/superficie";
-import { Dado, ListaDados } from "@/components/ui/dados";
 import { RegraAConfirmar } from "@/components/ui/metodologia";
 import { criarFicha } from "@/lib/dados/demonstracao";
 import type { EtapaPeso, Ficha, Ingrediente, ItemFicha } from "@/lib/dados";

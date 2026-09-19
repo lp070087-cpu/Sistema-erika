@@ -59,13 +59,17 @@
 "use client";
 
 import type {
+  Cliente,
   Compra,
+  EventoHistorico,
   Ficha,
   Ingrediente,
   IngredienteDoCliente,
   ItemFicha,
   PrecoIngrediente,
+  Transformacao,
 } from "./tipos-operacao";
+import type { ParametrosComerciais } from "./indicadores-comerciais";
 
 // ---------------------------------------------------------------------------
 // O estado
@@ -100,6 +104,21 @@ type EstadoPreco = {
  * └────────────────────────────────────────────────────────────────────┘
  */
 export type CabecalhoDeFicha = {
+  nome?: string;
+  categoria?: string;
+  /*
+    O CLIENTE DA FICHA É EDITÁVEL, E ISSO MERECE UMA NOTA.
+
+    Não é o mesmo tipo de campo que o nome: trocá-lo não muda um texto, muda
+    DE ONDE VÊM OS PREÇOS. O mesmo insumo pode ter preço próprio por cliente,
+    então a troca recalcula o custo total sem que nenhum ingrediente tenha
+    saído da ficha.
+
+    Ele entra aqui porque a situação é real — ficha cadastrada sob o cliente
+    errado — e a alternativa seria refazer a ficha inteira, com os ingredientes
+    e os pesos todos por cima. O que a tela faz é avisar antes de salvar.
+  */
+  clienteId?: string;
   rendimentoPorcoes?: number | null;
   porcaoGramas?: number | null;
   observacoes?: string;
@@ -107,6 +126,21 @@ export type CabecalhoDeFicha = {
   finalizacao?: string[];
   atualizadaEm?: Date;
   historico?: Ficha["historico"];
+  /*
+    OS DOIS CAMPOS COMERCIAIS.
+
+    `precoVenda` é FATO DECLARADO: alguém decidiu vender aquele prato por
+    aquele preço, e o sistema só registra. `parametros` é DECISÃO DE
+    MÉTODO, e por isso o tipo dele é o mesmo objeto parametrizável da
+    camada comercial — sem valor de partida, sem campo obrigatório.
+
+    Os dois moram no cabeçalho porque são propriedades da FICHA, e não do
+    ingrediente: o mesmo insumo entra em um prato vendido por R$ 12 e em
+    outro vendido por R$ 40, e a margem de segurança de uma casa pode ser
+    diferente da de outra.
+  */
+  precoVenda?: number | null;
+  parametros?: ParametrosComerciais;
 };
 
 /**
@@ -123,6 +157,325 @@ let fichasNovas: Ficha[] = [];
 let alteracoesDeFicha = new Map<string, ItemFicha[]>();
 let comprasInformadas = new Map<string, Compra>();
 let cabecalhosDeFicha = new Map<string, CabecalhoDeFicha>();
+
+/*
+  ── OS TRÊS MAPAS DA EDIÇÃO DE INSUMO ─────────────────────────────────
+
+  `identidades` guarda o que se edita SEM consequência de cálculo: nome,
+  categoria, unidade, fornecedor, observação, ativo.
+  `transformacoes` guarda os pesos medidos.
+  `excluidos` guarda o que foi apagado nesta sessão.
+
+  ┌────────────────────────────────────────────────────────────────────┐
+  │ POR QUE "EXCLUÍDO" E NÃO "REMOVER DA LISTA"                        │
+  │                                                                    │
+  │ A lista de insumos que a tela mostra é montada no SERVIDOR, e chega │
+  │ aqui como prop. Apagar um item de um array que veio por prop não    │
+  │ sobrevive à próxima renderização do servidor — o insumo reaparece.  │
+  │                                                                    │
+  │ Por isso o store não apaga: ele ANOTA o que foi apagado, e quem     │
+  │ exibe filtra. É a mesma lógica da sobreposição de preço, aplicada   │
+  │ à ausência em vez de à presença.                                   │
+  │                                                                    │
+  │ A consequência é declarada na tela, e é real: um insumo apagado     │
+  │ nesta sessão continua nas fichas que o usam — porque a exclusão de  │
+  │ um insumo usado por uma ficha é uma decisão de dados que precisa    │
+  │ de banco para ser feita direito, e o sistema não a simula.          │
+  └────────────────────────────────────────────────────────────────────┘
+*/
+let identidades = new Map<string, Partial<Ingrediente>>();
+let transformacoes = new Map<string, Transformacao>();
+let insumosExcluidos = new Set<string>();
+let fichasExcluidas = new Set<string>();
+
+/*
+  ── O CADASTRO DO CLIENTE, E A MESMA SEPARAÇÃO ────────────────────────
+
+  `cadastrosDeCliente` guarda só o que se CORRIGE num cadastro: nome
+  fantasia, responsável, tipo de negócio, modalidade, situação, cidade,
+  porte, equipe declarada, WhatsApp, e-mail e a queixa declarada.
+
+  `contratoDoCliente` guarda a data de início.
+
+  ┌────────────────────────────────────────────────────────────────────┐
+  │ POR QUE A DATA DE INÍCIO MORA SOZINHA                               │
+  │                                                                    │
+  │ Os outros campos são dados que a consultora CORRIGE — o WhatsApp    │
+  │ digitado errado, o responsável que mudou, o porte que ela mesma     │
+  │ declarou por telefone. Ela dá e ela tira.                           │
+  │                                                                    │
+  │ O início do atendimento é de outra natureza: é o começo do          │
+  │ relacionamento. Mexer nele não corrige um texto, REFAZ a história   │
+  │ — a carteira inteira mostra "desde quando" a partir dele, e a       │
+  │ data de conversão do lead partiu dele.                              │
+  │                                                                    │
+  │ Ele é editável porque a data real às vezes é outra (o combinado     │
+  │ verbal foi no dia 2, o cadastro no dia 9) — mas ele entra sozinho   │
+  │ numa gravação própria, com nome próprio, para não se confundir com  │
+  │ os campos de correção na hora de auditar o que foi mexido.          │
+  └────────────────────────────────────────────────────────────────────┘
+*/
+let cadastrosDeCliente = new Map<string, DadosDoCadastro>();
+let inicioDoAtendimento = new Map<string, Date>();
+
+/**
+ * OS ACONTECIMENTOS DESTA SESSÃO.
+ *
+ * ┌────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE UMA ALTERAÇÃO PRECISA DEIXAR LINHA NO HISTÓRICO             │
+ * │                                                                    │
+ * │ A aba Histórico do cliente é a resposta para "o que foi feito       │
+ * │ neste ano?". Se corrigir o cadastro não deixasse linha, ela          │
+ * │ mostraria um cliente com o nome novo e nenhuma explicação de         │
+ * │ quando ele mudou — e a única forma de descobrir seria comparar       │
+ * │ com o que ela lembra de ter digitado.                                │
+ * │                                                                    │
+ * │ Uma alteração sem data e sem registro não é verificável. É a        │
+ * │ mesma razão pela qual a ficha guarda a linha dela.                  │
+ * │                                                                    │
+ * │ ┌──────────────────────────────────────────────────────────────┐   │
+ * │ │ O QUE ESTAS LINHAS NÃO SÃO                                    │   │
+ * │ │                                                              │   │
+ * │ │ Não são registro de auditoria permanente. Vivem na sessão,     │   │
+ * │ │ como todo o resto daqui: recarregar a página as apaga junto    │   │
+ * │ │ com o dado que elas descrevem. É por isso que a tela do         │   │
+ * │ │ histórico diz que elas são desta sessão, e não as mistura       │   │
+ * │ │ com os acontecimentos do cenário sem distinguir.                │   │
+ * │ └──────────────────────────────────────────────────────────────┘   │
+ * └────────────────────────────────────────────────────────────────────┘
+ */
+let eventosDaSessao: EventoHistorico[] = [];
+
+/**
+ * Anota um acontecimento desta sessão.
+ *
+ * `tipo` é obrigatório e vem do mesmo vocabulário do cenário — um tipo
+ * inventado aqui apareceria no histórico sem rótulo, porque o mapa de
+ * rótulos é fechado sobre `TipoEvento`.
+ */
+export function registrarEventoDaSessao(
+  clienteId: string,
+  tipo: EventoHistorico["tipo"],
+  descricao: string
+): void {
+  eventosDaSessao = [
+    {
+      /*
+        O id carrega o instante. Dois acontecimentos no mesmo milissegundo
+        teriam o mesmo id, e a chave de lista do React reclamaria — o
+        contador no fim resolve, e não custa consulta nenhuma.
+      */
+      id: `demo-evento-${clienteId}-${Date.now()}-${eventosDaSessao.length}`,
+      clienteId,
+      tipo,
+      descricao,
+      em: new Date(),
+    },
+    ...eventosDaSessao,
+  ];
+  avisar();
+}
+
+/** Os acontecimentos desta sessão, do mais recente para o mais antigo. */
+export function eventosDeSessaoDoCliente(clienteId: string): readonly EventoHistorico[] {
+  return eventosDaSessao.filter((e) => e.clienteId === clienteId);
+}
+
+/**
+ * O HISTÓRICO DO CLIENTE — os acontecimentos desta sessão no topo dos outros.
+ *
+ * O `clienteId` é argumento próprio, e não lido do primeiro evento. Quando o
+ * cliente não tiver nenhum acontecimento no cenário — o caso de quem foi
+ * cadastrado à mão e nunca teve diagnóstico nem ficha —, a lista chega vazia
+ * e não haveria de onde tirar o id. A alteração que ela acabou de fazer
+ * ficaria de fora do histórico exatamente no cliente que mais precisa dele.
+ */
+export function historicoDoClienteDaSessao(
+  clienteId: string,
+  eventos: readonly EventoHistorico[]
+): readonly EventoHistorico[] {
+  return [...eventosDeSessaoDoCliente(clienteId), ...eventos];
+}
+
+/**
+ * OS CAMPOS DE CADASTRO QUE A CONSULTORA CORRIGE.
+ *
+ * Não é uma cópia de `Cliente` com tudo opcional: `id`, `origem` e
+ * `leadOrigemId` ficam DE FORA de propósito. O primeiro é a chave que liga
+ * a ficha ao cliente — editá-lo quebraria a ligação em silêncio. Os outros
+ * dois registram de onde aquele cliente veio, e mudá-los seria reescrever a
+ * história da aquisição, não corrigir um dado.
+ *
+ * `ultimaAtividadeEm` também não está aqui: é consequência do que aconteceu,
+ * não campo.
+ */
+export type DadosDoCadastro = Partial<
+  Pick<
+    Cliente,
+    | "nomeFantasia"
+    | "nomeContato"
+    | "email"
+    | "whatsapp"
+    | "tipoNegocio"
+    | "porte"
+    | "cidade"
+    | "situacao"
+    | "modalidade"
+    | "funcionariosDeclarados"
+    | "problemaDeclarado"
+  >
+>;
+
+/** Insumo que existe no cenário, mais tudo que foi editado nesta sessão. */
+export function ingredienteDaSessao(ingrediente: Ingrediente): Ingrediente {
+  const identidade = identidades.get(ingrediente.id);
+  const transformacao = transformacoes.get(ingrediente.id);
+  const compra = comprasInformadas.get(ingrediente.id);
+
+  if (identidade === undefined && transformacao === undefined && compra === undefined) {
+    return ingrediente;
+  }
+
+  return {
+    ...ingrediente,
+    ...(identidade ?? {}),
+    ...(transformacao === undefined ? {} : { transformacao }),
+    ...(compra === undefined ? {} : { compra }),
+  };
+}
+
+/** Um insumo que só existe na sessão? (cadastrado agora, ainda não no banco) */
+export function ehInsumoDaSessao(ingredienteId: string): boolean {
+  return ingredientesNovos.some((i) => i.id === ingredienteId);
+}
+
+/**
+ * Grava um campo do cadastro do insumo.
+ *
+ * Recebe um OBJETO PARCIAL e mescla. Editar o nome não pode apagar o
+ * fornecedor que foi corrigido um minuto antes — e é isso que uma
+ * substituição do objeto inteiro faria, sem aviso.
+ */
+export function salvarCadastroDoIngrediente(
+  ingredienteId: string,
+  alteracao: Partial<Ingrediente>
+): void {
+  const anterior = identidades.get(ingredienteId) ?? {};
+  identidades.set(ingredienteId, { ...anterior, ...alteracao });
+
+  /*
+    Um insumo cadastrado nesta sessão é atualizado NA PRÓPRIA LISTA, e não
+    por sobreposição: ele não existe no repositório, então não há cenário
+    para sobrepor. Sem esta linha, editar o nome de um insumo recém-criado
+    apareceria no detalhe e não na lista — duas telas mostrando o mesmo
+    insumo com nomes diferentes.
+  */
+  ingredientesNovos = ingredientesNovos.map((i) =>
+    i.id === ingredienteId ? { ...i, ...alteracao } : i
+  );
+
+  avisar();
+}
+
+/**
+ * Grava os pesos medidos da transformação — a CALCULADORA DE RENDIMENTO.
+ *
+ * ┌────────────────────────────────────────────────────────────────────┐
+ * │ O QUE ESTA FUNÇÃO NÃO FAZ: VALIDAR                                │
+ * │                                                                    │
+ * │ Ela não recusa peso final maior que o inicial — e isso é           │
+ * │ deliberado. Arroz, massa e legume seco GANHAM peso ao cozinhar: a   │
+ * │ água absorvida entra na panela e sai no prato. Tratar ganho como    │
+ * │ erro faria o sistema proibir uma medição verdadeira.                │
+ * │                                                                    │
+ * │ Também não recusa peso negativo nem zero — quem recusa é            │
+ * │ `lerPeso`, na leitura do campo, antes de chegar aqui. Duas camadas  │
+ * │ validando o mesmo criaria a possibilidade de aceitarem coisas       │
+ * │ diferentes.                                                        │
+ * │                                                                    │
+ * │ O que ela faz é GUARDAR a medição como ela foi: os três pesos, a    │
+ * │ unidade de cada um e a observação de quem pesou. A conta sai        │
+ * │ depois, em `derivarTransformacao`, que é função pura.               │
+ * └────────────────────────────────────────────────────────────────────┘
+ */
+export function salvarTransformacao(
+  ingredienteId: string,
+  transformacao: Transformacao
+): void {
+  transformacoes.set(ingredienteId, transformacao);
+  ingredientesNovos = ingredientesNovos.map((i) =>
+    i.id === ingredienteId ? { ...i, transformacao } : i
+  );
+  avisar();
+}
+
+/** A transformação editada nesta sessão, se houver. */
+export function transformacaoDaSessao(ingredienteId: string): Transformacao | null {
+  return transformacoes.get(ingredienteId) ?? null;
+}
+
+/**
+ * Apaga um insumo — nesta sessão.
+ *
+ * ┌────────────────────────────────────────────────────────────────────┐
+ * │ O QUE A EXCLUSÃO AQUI NÃO FAZ, E POR QUE ISSO É DITO NA TELA        │
+ * │                                                                    │
+ * │ Ela não remove o insumo das fichas que o usam. Uma ficha apontando   │
+ * │ para um insumo inexistente mostraria "sem preço" em vez de "o        │
+ * │ insumo foi apagado" — e a consultora procuraria o preço por meia    │
+ * │ hora.                                                              │
+ * │                                                                    │
+ * │ A exclusão de verdade precisa decidir o que acontece com as fichas  │
+ * │ — bloquear, avisar, manter o histórico — e essa decisão depende de   │
+ * │ perguntar a ela, não de o sistema escolher. Até então, a exclusão    │
+ * │ nesta sessão é o que ela é: o insumo sai das listas e das buscas, e  │
+ * │ o que já o usava continua funcionando.                             │
+ * └────────────────────────────────────────────────────────────────────┘
+ */
+export function excluirIngrediente(ingredienteId: string): void {
+  insumosExcluidos.add(ingredienteId);
+  ingredientesNovos = ingredientesNovos.filter((i) => i.id !== ingredienteId);
+  identidades.delete(ingredienteId);
+  transformacoes.delete(ingredienteId);
+  comprasInformadas.delete(ingredienteId);
+  avisar();
+}
+
+export function insumoFoiExcluido(ingredienteId: string): boolean {
+  return insumosExcluidos.has(ingredienteId);
+}
+
+/** A lista do cenário, sem o que foi apagado nesta sessão. */
+export function semExcluidos<
+  T extends { id: string },
+>(itens: readonly T[]): readonly T[] {
+  return itens.filter((i) => !insumosExcluidos.has(i.id));
+}
+
+/**
+ * Apaga uma ficha — nesta sessão.
+ *
+ * Mesma regra do insumo, com uma consequência a mais que a tela declara: o
+ * registro de uma ficha que já foi entregue ao cliente é histórico. Apagar
+ * da lista é uma coisa; dizer que o trabalho nunca existiu é outra. Aqui só
+ * a primeira acontece.
+ */
+export function excluirFicha(fichaId: string): void {
+  fichasExcluidas.add(fichaId);
+  fichasNovas = fichasNovas.filter((f) => f.id !== fichaId);
+  alteracoesDeFicha.delete(fichaId);
+  cabecalhosDeFicha.delete(fichaId);
+  avisar();
+}
+
+export function fichaFoiExcluida(fichaId: string): boolean {
+  return fichasExcluidas.has(fichaId);
+}
+
+/** As fichas do cenário, sem as apagadas, com as edições aplicadas. */
+export function fichasVisiveis(fichas: readonly Ficha[]): readonly Ficha[] {
+  return fichas.filter((f) => !fichasExcluidas.has(f.id)).map(fichaDaSessao);
+}
 
 /** Sobe a cada escrita. É o que o React observa para saber que mudou. */
 let versao = 0;
@@ -163,6 +516,13 @@ export function limparDemonstracao(): void {
   alteracoesDeFicha = new Map();
   comprasInformadas = new Map();
   cabecalhosDeFicha = new Map();
+  identidades = new Map();
+  transformacoes = new Map();
+  insumosExcluidos = new Set();
+  fichasExcluidas = new Set();
+  cadastrosDeCliente = new Map();
+  inicioDoAtendimento = new Map();
+  eventosDaSessao = [];
   avisar();
 }
 
@@ -175,7 +535,14 @@ export function temAlteracoes(): boolean {
     fichasNovas.length > 0 ||
     alteracoesDeFicha.size > 0 ||
     comprasInformadas.size > 0 ||
-    cabecalhosDeFicha.size > 0
+    cabecalhosDeFicha.size > 0 ||
+    identidades.size > 0 ||
+    transformacoes.size > 0 ||
+    insumosExcluidos.size > 0 ||
+    fichasExcluidas.size > 0 ||
+    cadastrosDeCliente.size > 0 ||
+    inicioDoAtendimento.size > 0 ||
+    eventosDaSessao.length > 0
   );
 }
 
@@ -449,6 +816,83 @@ export function salvarCabecalhoDaFicha(
     ...alteracao,
   });
   avisar();
+}
+
+// ---------------------------------------------------------------------------
+// Cliente — cadastro e início do atendimento
+// ---------------------------------------------------------------------------
+
+/** O cliente completo — cenário mais o que foi corrigido nesta sessão. */
+export function clienteDaSessao(cliente: Cliente): Cliente {
+  const cadastro = cadastrosDeCliente.get(cliente.id);
+  const inicio = inicioDoAtendimento.get(cliente.id);
+
+  if (cadastro === undefined && inicio === undefined) return cliente;
+
+  return {
+    ...cliente,
+    ...(cadastro ?? {}),
+    ...(inicio === undefined ? {} : { iniciadoEm: inicio }),
+  };
+}
+
+/**
+ * Grava o cadastro do cliente, MESCLANDO com o que já havia.
+ *
+ * Mesma regra de `salvarCabecalhoDaFicha`, e pelo mesmo motivo: os campos
+ * são salvos por ações diferentes — a situação muda numa gaveta, o telefone
+ * noutra. Substituir o objeto inteiro faria corrigir o telefone apagar a
+ * situação mudada cinco minutos antes, e o rastro disso é uma perda
+ * silenciosa de trabalho que a tela não teria como explicar.
+ */
+export function salvarCadastroDoCliente(
+  clienteId: string,
+  alteracao: DadosDoCadastro
+): void {
+  cadastrosDeCliente.set(clienteId, {
+    ...(cadastrosDeCliente.get(clienteId) ?? {}),
+    ...alteracao,
+  });
+  avisar();
+}
+
+/**
+ * Corrige a data de início do atendimento.
+ *
+ * Separado de `salvarCadastroDoCliente` de propósito. As duas gravações são
+ * de naturezas diferentes — uma corrige um texto, a outra mexe no começo da
+ * história — e quem for auditar o que a sessão mexeu precisa conseguir
+ * distingui-las sem abrir o valor.
+ */
+export function salvarInicioDoAtendimento(clienteId: string, em: Date): void {
+  inicioDoAtendimento.set(clienteId, em);
+  avisar();
+}
+
+/** O cadastro foi mexido nesta sessão? A tela pergunta para poder avisar. */
+export function cadastroDoClienteFoiAlterado(clienteId: string): boolean {
+  return cadastrosDeCliente.has(clienteId) || inicioDoAtendimento.has(clienteId);
+}
+
+/**
+ * A CARTEIRA INTEIRA — cenário mais as correções desta sessão.
+ *
+ * Existe porque a lista e o detalhe precisam contar a MESMA história. Se
+ * cada um aplicasse a sobreposição por conta própria, o dia em que um
+ * esquecesse faria a carteira mostrar um nome e o cliente abrir com outro.
+ *
+ * Trabalha sobre `LinhaCliente` porque é o que a lista carrega: aplicar a
+ * sobreposição ao cliente de dentro da linha é exatamente o que faz o nome
+ * corrigido subir para a carteira sem tocar em nada mais.
+ */
+export function carteiraDaSessao<
+  L extends { cliente: Cliente },
+>(linhas: readonly L[]): readonly L[] {
+  if (cadastrosDeCliente.size === 0 && inicioDoAtendimento.size === 0) {
+    return linhas;
+  }
+
+  return linhas.map((l) => ({ ...l, cliente: clienteDaSessao(l.cliente) }));
 }
 
 // ---------------------------------------------------------------------------

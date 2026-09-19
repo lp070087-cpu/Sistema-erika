@@ -9,7 +9,7 @@ ela descreve, e o que não foi executado está dito como não executado.
 Esta fase não recomeçou nada. As Fases 0, 1 e 2 permanecem como estavam: nenhum
 arquivo foi reescrito, nenhuma migration foi criada, nenhum banco foi conectado.
 
-> **Nota de leitura.** Este documento foi escrito em três passagens. As Seções 1
+> **Nota de leitura.** Este documento foi escrito em quatro passagens. As Seções 1
 > a 6 descrevem o que a fase entregou antes da interrupção por erro de execução.
 > A **Seção 7-A** descreve o refinamento concluído na primeira retomada — linguagem
 > interna fora da tela, microinterações e responsividade. A **Seção 7-B** descreve
@@ -17,6 +17,18 @@ arquivo foi reescrito, nenhuma migration foi criada, nenhum banco foi conectado.
 > limpeza do Dashboard, desduplicação do aviso de demonstração e os ajustes de
 > contêiner e de ponto de quebra. A **Seção 9** foi reescrita a cada retomada,
 > porque o ambiente de verificação mudou.
+>
+> **Na quarta passagem — a fase funcional — duas seções foram reescritas, e não
+> acrescentadas.** A **Seção 8** afirmava que nenhuma fórmula existia; com o motor
+> de rendimento e o fator de correção medido, isso deixou de ser verdade, e agora
+> ela separa o que passou a ser **calculado** (aritmética sobre peso e preço
+> informados) do que continua **esperando resposta** (margem, CMV alvo, markup
+> alvo, preço sugerido). A **Seção 9-A** é nova e registra as conferências da
+> calculadora — inclusive as duas sabotagens que provaram que elas sabem falhar.
+> A **Seção 9-B** registra a limpeza dos avisos do `eslint`, que deixou o projeto
+> em zero erros e zero avisos, e o erro de tipo que essa limpeza quase introduziu.
+> A Central de Planilhas ganhou uma prévia ligada ao mesmo código que escreve o
+> arquivo, e o contexto de planilha passou a carregar as fichas técnicas.
 
 ---
 
@@ -598,25 +610,75 @@ lado para fora. Uma linha de correção em vez de uma reforma.
 
 ---
 
-## 8. Regras gastronômicas que continuam esperando resposta
+## 8. Regras gastronômicas — o que passou a ser calculado, e o que continua esperando
 
-Nenhuma fórmula foi implementada. Não existe CMV, markup, preço de venda, índice
-de cocção, fator de correção nem margem em lugar nenhum do código — nem como
-campo, nem como valor padrão, nem como sugestão.
+> **Esta seção foi reescrita.** Ela dizia, até a fase funcional, que "nenhuma
+> fórmula foi implementada" e que não existia "fator de correção em lugar nenhum
+> do código". Isso deixou de ser verdade, e uma seção de limitações que
+> subestima o que o sistema faz é tão perigosa quanto uma que exagera: ela faz
+> alguém reimplementar o que já existe, ou duvidar de um número correto.
 
-| Ponto | O que falta |
-| --- | --- |
-| 4 | Como se calcula o custo de um prato a partir dos ingredientes |
-| 5 | Fichas técnicas: rendimento, fator de correção e perda |
-| 6 | Índice de cocção — o que entra e o que sai do cálculo |
-| 7 | Critério de preço e markup: por prato, por praça ou por casa |
-| 9 | Como o peso e a medida entram na conta, e com quantas casas |
-| 11 | Peso de cada etapa da consultoria para medir andamento |
-| 19 | Se custo é por porção, por quilo ou pelos dois |
+### 8-A. O que É calculado, e por que isto não é metodologia
 
-Enquanto essas respostas não chegarem, os cards correspondentes ficam
-"aguardando definição" e as planilhas que dependeriam delas listam em vermelho o
-que não foi calculado. Nenhum número de aparência correta foi colocado no lugar.
+Estas contas existem agora, e cada uma é aritmética sobre valores que a própria
+Érika informou — não há tabela, nem valor de partida, nem alvo:
+
+| Conta | Fórmula | Onde |
+| --- | --- | --- |
+| Preço do quilo comprado | `valorTotal ÷ quantidade` | `custos.ts` |
+| Perda na limpeza (peso e %) | `bruto − limpo`; `÷ bruto × 100` | `custos.ts` |
+| Rendimento da limpeza | `limpo ÷ bruto × 100` | `custos.ts` |
+| Perda no preparo (peso e %) | `limpo − preparado`; `÷ limpo × 100` | `custos.ts` |
+| Rendimento do preparo | `preparado ÷ limpo × 100` | `custos.ts` |
+| Rendimento total | `peso final ÷ bruto × 100` | `custos.ts` |
+| **Fator de correção medido** | `bruto ÷ limpo` | `rendimento.ts` |
+| Custo do quilo limpo | `preço do quilo × fator` | `custos.ts` |
+| **Custo efetivo final** | `valorTotal ÷ peso final` | `custos.ts` |
+| Custo de uma quantidade da ficha | preço unitário × quantidade | `custos.ts` |
+
+A distinção que sustenta a lista: **somar, subtrair, dividir dois pesos medidos e
+multiplicar por um preço é aritmética.** O que continua **não** existindo é o
+número que exigiria uma decisão profissional dela — e esses são os da seção 8-B.
+
+Duas regras de método foram respeitadas deliberadamente:
+
+**O ganho de peso não é erro.** Arroz, massa e legume seco ganham peso ao
+cozinhar. Um peso final maior que o inicial aparece como "Ganho", com o valor em
+módulo e sem sinal de menos — e o rendimento passa de 100%. O sistema não recusa
+a medição nem a corrige.
+
+**Ausência não vira zero.** Sem pesagem, o rendimento é traço, não "0%". Sem
+compra declarada, o rendimento sai e o custo não. Unidade incompatível (kg com L)
+para o cálculo e diz por quê, em vez de produzir um número que mistura massa e
+volume.
+
+### 8-B. O que continua esperando resposta
+
+| Ponto | O que falta | Por que a aritmética não resolve |
+| --- | --- | --- |
+| 4 | O que entra no custo de um prato | Quais itens contam — e se algum não conta — é decisão dela |
+| 6 | Índice de cocção como **índice de referência** | O medido já sai das pesagens; um valor de tabela seria metodologia |
+| 7 | Critério de preço e markup: por prato, por praça ou por casa | Define a que agrupamento a margem se aplica |
+| 9 | Com quantas casas arredondar **na apresentação** | O sistema arredonda só ao exibir; a regra de exibição é dela |
+| 5 | Se a ficha traz custo por porção, por quilo, ou os dois | Muda a coluna da planilha |
+| 11 | Peso de cada etapa da consultoria para medir andamento | Não é conta de cozinha |
+| 19 | Idem ao 5, no nível do relatório | Idem |
+
+**E as três que nunca foram propostas como cálculo e continuam fora:**
+
+- **Margem de segurança** — não existe. Não há 5% em lugar nenhum do código, nem
+  como padrão, nem como sugestão, nem como campo pré-preenchido.
+- **CMV alvo, markup alvo e margem alvo** — os tipos aceitam os três como
+  parâmetro informado, e nenhum traz valor de partida. Sem ela informar, ficam
+  ausentes — e ausente é o estado normal, não ficha incompleta.
+- **Preço de venda sugerido** — não existe. O dado é `precoVenda` **declarado**:
+  o sistema registra o preço que ela decidiu, e calcula CMV e markup **a partir
+  dele**. Nunca o contrário.
+
+Enquanto as respostas de 8-B não chegarem, os cards correspondentes ficam
+"aguardando definição" e a planilha de custos e precificação diz, no motivo do
+card, que é a sua regra de margem que falta — e não o cálculo. Nenhum número de
+aparência correta foi colocado no lugar.
 
 ---
 
@@ -627,12 +689,14 @@ Executado neste ambiente, em cada retomada:
 - `tsc --noEmit` — **exit 0, sem erros**, contra o `node_modules` real (com o
   `exceljs` resolvido, não mais a checagem com stub). Rodado ao fim de cada bloco
   de alteração, inclusive depois do último arquivo mexido no acabamento visual.
-- `npm run lint` — **exit 0, 0 erros**. Sem cache o comando estoura o limite de
-  tempo do shell e devolve código 124 (tempo esgotado), que **não é falha de
-  lint**; com `--cache` a execução completa cabe. Resultado: 7 avisos
-  `no-unused-vars`, todos em código anterior e **fora do escopo desta fase** —
-  `fichas/[id]/detalhe.tsx` (3), `fichas/nova.tsx` (2), `painel-custo.tsx` (1) e
-  `mock/operacao.ts` (1).
+- `npm run lint` — **exit 0, 0 erros, 0 avisos** (verificado na fase funcional).
+  Na retomada anterior sem cache o comando estourava o limite de tempo do shell e
+  devolvia código 124 (tempo esgotado), que **não é falha de lint**; nesta rodada
+  a execução completa do projeto coube dentro do limite. Então restavam 7 avisos
+  `no-unused-vars`: 5 em código anterior (`fichas/[id]/detalhe.tsx` 1,
+  `fichas/nova.tsx` 2, `painel-custo.tsx` 1, `mock/operacao.ts` 1) e 1
+  `jsx-a11y/no-autofocus` com diretiva órfã em `edicao.tsx`. **Os seis foram
+  resolvidos, porque esta fase abriu todos aqueles arquivos** — ver §9-B.
 - Os avisos `no-unused-vars` **causados por esta fase** foram corrigidos na
   origem: a remoção das faixas deixou `Etiqueta` importada sem uso em quatro
   telas (`acompanhamentos`, `contratos/novo`, `fichas`, `processos`) e deixou
@@ -666,6 +730,87 @@ ou de JSX para reportar — a execução parou antes. **É limitação de ambien
 resultado de código**, e o build **continua precisando ser confirmado no
 Windows**, como nas fases anteriores.
 
+### 9-A. As conferências da calculadora de rendimento
+
+O briefing desta fase proibiu instalar um framework de teste só para esta
+retomada. Em vez de um framework, existe um arquivo: **`scripts/conferir-rendimento.mjs`**,
+rodado por `npm run conferir:rendimento`, **sem dependência nova**.
+
+Ele compila os sete módulos puros do cálculo (`custos`, `numeros`, `rendimento`,
+`tipos-operacao`, `perguntas`, `indicadores-comerciais`, `tipos`) com o `tsc` que
+já está no projeto, num diretório **fora** do projeto, e roda as conferências
+contra o JavaScript gerado. Nada é escrito em `src/` nem em `dist/`.
+
+Resultado: **42/42 conferências passaram** (exit 0).
+
+O que elas cobrem — e todas as conferências usam os valores que o briefing
+declarou como esperados:
+
+| Caso | Conferido |
+| --- | --- |
+| Perda nas duas etapas (5 kg, R$ 50 → 4,5 → 4,0) | preço R$ 10,00/kg · perda 0,500 kg (10,0%) · limpeza 90,0% · fator 1,1111 · preparo 88,9% · total 80,0% · **custo efetivo R$ 12,50/kg** |
+| **Ganho de peso** (1 kg seco → 1,2 kg cozido) | total 120,0% · perda total negativa · custo R$ 6,67/kg · rótulo vira "Ganho total" · valor sem sinal de menos |
+| Ausência total | nenhuma linha com NaN/Infinity/undefined · rendimento nulo · todas as linhas com traço |
+| Peso zero | zero etapas medidas · nenhuma divisão por zero |
+| Unidades incompatíveis (kg × L) | sinaliza · não inventa rendimento |
+| Compra inválida | os quatro códigos de recusa, com frase escrita para cada |
+| Balança em g, compra em kg | 4500 g → 4,500 kg · mesmo rendimento |
+
+**A conferência foi provada capaz de falhar.** Um teste que nunca falhou não é
+prova de nada, e este projeto já foi enganado por instrumento antes. Duas
+sabotagens foram introduzidas de propósito no código de produção e desfeitas em
+seguida:
+
+1. `valorTotal / quantidade` trocado por `valorTotal * quantidade` → **3 falhas**:
+   preço saiu 250,00 em vez de 10,00 e o custo efetivo 312,50 em vez de 12,50.
+2. Detecção de ganho forçada para `false` → **2 falhas**: o rótulo saiu "Perda
+   total" em vez de "Ganho total".
+
+Com o código restaurado, **42/42 voltaram a passar**. Os três arquivos envolvidos
+foram conferidos byte a byte depois do teste, por `diff`, contra as cópias
+originais — **idênticos**. Nenhum resíduo da sabotagem ficou no projeto.
+
+- `tsc --noEmit` — **exit 0**, ao fim de cada bloco de alteração.
+- `eslint` (nos diretórios `planilhas`/`lib/planilhas` e no script novo) —
+  **exit 0, 0 erros**.
+
+> **Aviso pré-existente, não desta fase:** `src/app/(sistema)/fichas/[id]/detalhe.tsx`
+> acusava `'indice' is defined but never used`. Era anterior a esta retomada, e na
+> retomada anterior ficou de pé — corrigir aviso não é motivo para mexer em arquivo
+> que a fase não precisou abrir. Ficou resolvido em §9-B, quando a fase funcional
+> abriu esse arquivo de qualquer maneira.
+
+### 9-B. A limpeza dos avisos — e o que ela quase estragou
+
+Os seis avisos que sobravam do `eslint` foram resolvidos nesta fase. A regra da
+fase anterior continua valendo ("não faça grandes refatorações só para corrigir
+avisos"), e por isso nenhum deles virou refatoração: cada um foi uma linha, num
+arquivo que a fase funcional **já havia aberto**.
+
+| Arquivo | Aviso | O que era de fato |
+| --- | --- | --- |
+| `components/ui/edicao.tsx` | diretiva `eslint-disable` órfã | O `autoFocus` é deliberado e o ESLint **concorda** — a diretiva suprimia um aviso que a config do projeto não emite. A diretiva saiu e ficou um comentário explicando o foco. |
+| `components/ui/painel-custo.tsx` | `'percentual' is defined but never used` | Função **morta**: uma linha de horário e nada mais. Removida. |
+| `app/(sistema)/fichas/nova.tsx` | `'Dado'`, `'ListaDados'` | Import sem uso. Removido. |
+| `lib/dados/mock/operacao.ts` | `'l' is assigned a value but never used` | Atalho de peso para litros que ninguém chamou. Removido. |
+| `app/(sistema)/fichas/[id]/detalhe.tsx` | `'indice' is defined but never used` | **O caso que engana.** |
+
+O último merece registro, porque quase virou defeito. O arquivo tem **dois**
+componentes que recebem uma prop chamada `indice`: `Composicao` e
+`AdicionarIngrediente`. No primeiro ela é código morto — sobrou de uma versão em
+que a linha resolvia o ingrediente pelo mapa, e hoje isso já vem pronto em
+`resolvidos`. No segundo ela é **viva**: a linha 1670 resolve o ingrediente
+escolhido (`indice.get(escolhidoId)`), e sem ela a gaveta mostraria o id em vez
+do nome.
+
+O aviso aponta para uma posição, e a posição caiu no primeiro. Removê-la dos
+**dois** é o atalho óbvio — e o `tsc` pegou na hora, com
+`Cannot find name 'indice'` na linha 1670. A prop viva foi restaurada com um
+comentário dizendo por que existe, e a morta saiu. **É o segundo motivo pelo qual
+o `typecheck` roda depois de cada correção de aviso, e não só no fim.**
+
+Resultado: `eslint .` — **exit 0, 0 erros, 0 avisos**; `tsc --noEmit` — **exit 0**.
+
 Nenhuma migration, nenhum `git`, nenhum push e nenhum deploy foram executados.
 Nenhuma pasta fora de `/sistema-erika` foi alterada.
 
@@ -673,9 +818,10 @@ Nenhuma pasta fora de `/sistema-erika` foi alterada.
 
 ## 10. Próximos pontos que dependem dela
 
-1. **As sete regras gastronômicas acima.** É o que destrava os quatro modelos de
-   planilha que faltam, o bloco de resultado da consultoria e o módulo de
-   precificação inteiro.
+1. **As regras de método de §8-B** (pontos 4, 5, 6, 7, 9, 11 e 19). É o que
+   destrava os quatro modelos de planilha que faltam, o bloco de resultado da
+   consultoria e o módulo de precificação inteiro. Note que o cálculo do custo já
+   existe — o que falta é a regra de margem, que é dela.
 2. **Onde o arquivo do contrato vai morar.** A área de documento existe e o
    estado do aceite também; o que falta é a decisão de onde o PDF fica guardado.
 3. **Se o aceite precisa de validade jurídica.** A resposta muda o que a tela
@@ -690,7 +836,48 @@ Nenhuma pasta fora de `/sistema-erika` foi alterada.
    `binaries.prisma.sh` nem `registry.npmjs.org` —, e não código. O `typecheck` e
    o `lint` passaram aqui (ver §9).
 
-Nada nesta fase depende de resposta dela. O que dependeria — as sete regras
-gastronômicas acima — está fora do escopo declarado desta retomada: nenhuma
-fórmula de peso bruto, peso líquido, fator de correção, cocção, rendimento, custo
-real, CMV, markup ou margem foi implementada, e o Neon segue não conectado.
+### 10-A. O caminho exato para ligar o Neon
+
+A ordem abaixo é a ordem das dependências, e nenhum passo pode ser pulado: cada um
+é pré-requisito verificável do seguinte.
+
+1. **Criar o banco no Neon** e obter duas URLs — a com *pooling* (porta 6543, para
+   o runtime) e a direta (porta 5432, para migrations).
+2. **`DATABASE_URL` e `DIRECT_URL` no `.env.local`** — hoje o arquivo tem
+   exatamente três chaves (`AUTH_SECRET`, `AUTH_EMAIL`, `AUTH_PASSWORD_HASH`) e
+   nenhuma delas é de banco. Este passo é dela: não há credencial a inventar.
+3. **Escrever os modelos no `prisma/schema.prisma`** para as entidades que a
+   operação já usa (`Cliente`, `Consultoria`, `Tarefa`, `Acompanhamento`, `Ficha`,
+   `ItemFicha`, `Ingrediente`, `IngredienteDoCliente`, `PrecoIngrediente`,
+   `Compra`, `Transformacao`, `Processo`, `Contrato`, `ParcelaContrato`). Hoje o
+   schema tem **só os modelos de autenticação** (`User`, `Account`, `Session`,
+   `VerificationToken`, `AuditLog`, `AppSetting`) e **não existe a pasta
+   `prisma/migrations/`**.
+4. **Gerar a migration de forma ADITIVA** — `prisma migrate dev --create-only`,
+   revisar o SQL e só então aplicar. Nunca `migrate reset`, nunca `db push`
+   destrutivo: o schema de autenticação já pode estar em uso.
+5. **Escrever `repositorioOperacaoPrisma`** implementando a interface
+   `RepositorioOperacao` que já existe em `src/lib/dados/repositorio-operacao.ts`.
+   Nenhuma tela precisa mudar: todas importam `obterRepositorioOperacao()`.
+6. **Trocar uma linha** em `src/lib/dados/index.ts` — a que hoje devolve
+   `repositorioOperacaoMock` — por uma escolha condicional, do mesmo jeito que
+   `persistenciaConfigurada()` já está escrita para a entrada.
+7. **Migrar a escrita.** Hoje o que ela edita em tela (preço, histórico de preço,
+   cadastro de insumo, compra, transformação, cabeçalho de ficha, itens de ficha,
+   cadastro de cliente) vive em `src/lib/dados/demonstracao.ts`, que é
+   **memória de módulo**: some ao recarregar. É essa camada que precisa ganhar
+   implementação de banco, e é aí que entra a interface
+   `RepositorioOperacaoEscrita`, já declarada ao lado do repositório com os sete
+   métodos que ela exige.
+
+**Enquanto os sete passos não existirem juntos, ligar o banco produziria telas
+vazias** — que é pior do que telas que dizem, em voz alta, que o dado vive nesta
+sessão. É exatamente o motivo pelo qual o `demonstracao.ts` e as telas declaram
+isso: não há promessa falsa a desfazer quando a ligação acontecer.
+
+A persistência real segue sendo o passo que falta, e o parágrafo que aqui estava
+("nenhuma fórmula de ... foi implementada") **deixou de ser verdade na fase
+funcional** — ver §8-A. O que ele queria dizer continua valendo para a metade de
+método: **CMV alvo, markup alvo, margem e preço sugerido continuam não existindo
+em lugar nenhum do código**, porque dependem dos pontos 4 a 7 e 19. O que existe
+agora é a aritmética sobre o que ela mede, que é a outra metade.

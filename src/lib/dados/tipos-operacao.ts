@@ -44,6 +44,7 @@
  */
 
 import type { BlocoChave } from "./perguntas";
+import type { ParametrosComerciais } from "./indicadores-comerciais";
 import type { LeadStatus, OrigemLead, TipoServico } from "./tipos";
 
 // ---------------------------------------------------------------------------
@@ -403,6 +404,36 @@ export type Ficha = {
   atualizadaEm: Date;
   /** Histórico de alterações da ficha — o que mudou e quando. */
   historico: Array<{ em: Date; oQue: string; quem: string }>;
+
+  /*
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ OS DOIS CAMPOS COMERCIAIS — E POR QUE ELES NÃO CONTRARIAM A REGRA  │
+    │ DESTE ARQUIVO                                                      │
+    │                                                                    │
+    │ A regra lá em cima é sobre NÚMERO CALCULADO. Não existe `cmv`, não │
+    │ existe `custoTotal`, não existe `margem` — e continua não         │
+    │ existindo: o CMV desta ficha é uma divisão feita na leitura, e não │
+    │ um campo.                                                          │
+    │                                                                    │
+    │ Estes dois são outra coisa, e é a distinção inteira:               │
+    │                                                                    │
+    │   `precoVenda` é FATO DECLARADO. Alguém decidiu vender o prato por │
+    │   aquele preço, e o sistema registra o que foi decidido. Ele não   │
+    │   tem como recalcular isso a partir de nada.                       │
+    │                                                                    │
+    │   `parametros` é DECISÃO DE MÉTODO: a margem da casa, o CMV alvo,  │
+    │   o markup alvo. É o critério profissional dela, informado — e     │
+    │   nenhum dos três traz valor de partida, porque o sistema não      │
+    │   escolhe a metodologia de ninguém.                                │
+    │                                                                    │
+    │ Os dois são opcionais e ausentes por padrão. Ficha sem preço de    │
+    │ venda e sem parâmetro é o estado normal, não uma ficha incompleta: │
+    │ significa "ainda não decidimos", e o sistema mostra a ausência em  │
+    │ vez de supor um número.                                            │
+    └────────────────────────────────────────────────────────────────────┘
+  */
+  precoVenda?: number | null;
+  parametros?: ParametrosComerciais;
 };
 
 // ---------------------------------------------------------------------------

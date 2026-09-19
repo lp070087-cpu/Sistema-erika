@@ -1,4 +1,9 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type {
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from "react";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -56,6 +61,71 @@ export function Campo({ label, ajuda, erro, obrigatorio, className, id, ...props
         aria-invalid={erro ? true : undefined}
         aria-describedby={ajuda || erro ? `${campoId}-msg` : undefined}
         className={cn(baseCampo, erro && "border-red-700/60", className)}
+        {...props}
+      />
+      {erro ? (
+        <p id={`${campoId}-msg`} className="mt-1.5 text-[0.8125rem] text-red-800">
+          {erro}
+        </p>
+      ) : ajuda ? (
+        <p id={`${campoId}-msg`} className="mt-1.5 text-[0.8125rem] text-[var(--tinta-fraca)]">
+          {ajuda}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export interface CampoTextoProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: string;
+  ajuda?: string;
+  erro?: string;
+  obrigatorio?: boolean;
+}
+
+/**
+ * CAMPO DE TEXTO LONGO — o irmão de `Campo` para o que não cabe numa linha.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELE EXISTE AGORA                                              │
+ * │                                                                      │
+ * │ Observação de ficha, modo de preparo, contexto de um número medido:   │
+ * │ são textos de três parágrafos, e um `<input>` de uma linha os          │
+ * │ transformaria numa barra de rolagem horizontal. A ficha já exibe      │
+ * │ observação e não tinha como EDITÁ-LA sem virar uma tela de exceção.    │
+ * │                                                                      │
+ * │ Cada tela vinha escrevendo o próprio `<textarea>` à mão — e os três    │
+ * │ escritos à mão já divergiam entre si em borda, foco e altura de linha. │
+ * │ Aqui ele nasce com a MESMA moldura do `Campo`, que é o que faz um      │
+ * │ formulário parecer um formulário só.                                   │
+ * │                                                                      │
+ * │ `resize-y` e não `resize`: crescer para os lados estoura a coluna da   │
+ * │ gaveta e desalinha o resto; crescer para baixo só empurra o que vem    │
+ * │ depois, que é o que ela quer quando o texto é longo.                   │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function CampoTexto({
+  label,
+  ajuda,
+  erro,
+  obrigatorio,
+  className,
+  id,
+  rows = 4,
+  ...props
+}: CampoTextoProps) {
+  const campoId = id ?? props.name;
+  return (
+    <div className="w-full">
+      <RotuloCampo htmlFor={campoId} obrigatorio={obrigatorio}>
+        {label}
+      </RotuloCampo>
+      <textarea
+        id={campoId}
+        rows={rows}
+        aria-invalid={erro ? true : undefined}
+        aria-describedby={ajuda || erro ? `${campoId}-msg` : undefined}
+        className={cn(baseCampo, "resize-y leading-relaxed", erro && "border-red-700/60", className)}
         {...props}
       />
       {erro ? (

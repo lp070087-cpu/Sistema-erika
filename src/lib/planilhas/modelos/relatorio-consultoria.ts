@@ -56,6 +56,12 @@ import {
 import type { ContextoPlanilha } from "../tipos";
 import { ABAS_RELATORIO } from "../modelos";
 import {
+  ordenarAcompanhamentosDoRelatorio,
+  ordenarTarefasDoRelatorio,
+  recorteDoCliente,
+  situacaoDoPrazo,
+} from "../relatorio";
+import {
   ESTILO_CELULA,
   ESTILO_NOTA,
   ESTILO_PENDENCIA,
@@ -82,16 +88,18 @@ export function escreverRelatorioConsultoria(wb: Workbook, ctx: ContextoPlanilha
   const subtitulo = subtituloDoArquivo(ctx);
 
   /*
-    Tarefas e acompanhamentos chegam como listas do repositório — filtrar por
-    cliente é responsabilidade DESTE arquivo, e não de quem chama. Se o filtro
-    ficasse em quem chama, o segundo modelo a esquecê-lo gravaria dado de um
-    cliente na planilha de outro. Filtro do lado de dentro não tem como ser
-    esquecido.
+    O RECORTE VEM DE `../relatorio`, e não de um `filter` escrito aqui.
+
+    Estas três decisões — quais linhas entram, em que ordem saem e como a
+    distância até o prazo é escrita — precisam ser IDÊNTICAS às que a prévia
+    da Central de Planilhas mostra na tela. Enquanto moravam neste arquivo, a
+    tela não tinha como mostrá-las sem reescrevê-las, e a prévia passaria a
+    divergir do arquivo no dia em que uma das duas mudasse.
+
+    Aqui elas continuam morando do lado de dentro — o segundo modelo a
+    esquecer o filtro não tem como esquecer, porque não escreve o próprio.
   */
-  const tarefas = (ctx.tarefas ?? []).filter((t) => t.clienteId === ctx.cliente.id);
-  const acompanhamentos = (ctx.acompanhamentos ?? []).filter(
-    (a) => a.clienteId === ctx.cliente.id
-  );
+  const { tarefas, acompanhamentos } = recorteDoCliente(ctx);
 
   escreverResumo(wb.addWorksheet(ABAS_RELATORIO[0]), ctx, tarefas, subtitulo, ctx.geradoEm);
   escreverTarefas(wb.addWorksheet(ABAS_RELATORIO[1]), tarefas, subtitulo, ctx.geradoEm);
@@ -280,14 +288,40 @@ function escreverResumo(
   // Fica na aba de resumo, e não só na INFORMAÇÕES, porque é a aba que vai
   // ser lida. Uma nota no fim de uma aba que ninguém abre não é aviso: é
   // arquivo morto.
+  //
+  // ┌────────────────────────────────────────────────────────────────────┐
+  // │ ESTA NOTA JÁ DISSE OUTRA COISA, E A OUTRA COISA DEIXOU DE SER VERDADE│
+  // │                                                                    │
+  // │ Ela afirmava que o sistema não calcula custo, CMV, preço de venda,  │
+  // │ índice de cocção nem fator de correção, porque essas contas         │
+  // │ dependeriam de regras ainda não definidas. Isso era verdade quando  │
+  // │ foi escrito e não é mais: a ficha técnica calcula o custo da receita │
+  // │ a partir do preço de cada ingrediente, o CMV e o markup a partir do  │
+  // │ preço de venda informado, e o fator de correção a partir das         │
+  // │ PESAGENS dela — limpeza e cocção medidas, não tabeladas.             │
+  // │                                                                    │
+  // │ O que continua verdadeiro é a razão de fundo, e ela é outra: este    │
+  // │ relatório não traz custo porque custo é propriedade da FICHA, não do │
+  // │ relacionamento com o cliente. A mesma casa vende dois pratos com     │
+  // │ custos que não têm nada a ver um com o outro, e somá-los aqui daria  │
+  // │ um número que não corresponde a nada.                                │
+  // └────────────────────────────────────────────────────────────────────┘
   linha = escreverRotuloBloco(aba, linha, "SOBRE ESTA PLANILHA", colunas);
   linha = escreverNota(
     aba,
     linha,
     "Gerada pelo Sistema Érika Bruna a partir dos dados registrados no sistema. Os valores e " +
-      "datas aqui são os que estão no cadastro — nada foi recalculado, corrigido ou estimado. " +
-      "O sistema não calcula CMV, preço de venda, margem, índice de cocção nem fator de correção: " +
-      "essas contas dependem de regras que ainda não foram definidas, e não são inventadas aqui.",
+      "datas aqui são os que estão no cadastro — nada foi recalculado, corrigido ou estimado.",
+    colunas
+  );
+  linha = escreverNota(
+    aba,
+    linha,
+    "Este relatório não traz custo, CMV nem preço de venda, e não é por falta de cálculo: essas " +
+      "contas são de cada PRATO, e moram na ficha técnica do prato — não no retrato do cliente. " +
+      "O que o sistema não faz, em lugar nenhum, é escolher o número por você: o custo usa os " +
+      "preços e as pesagens que você registrou, e onde o número dependeria de uma decisão sua " +
+      "ele fica em branco até você informá-lo.",
     colunas
   );
   linha = escreverNota(
@@ -331,25 +365,8 @@ function escreverTarefas(
     return;
   }
 
-  /*
-    Ordenação: abertas primeiro, por prazo crescente; concluídas por último.
-    É a ordem em que a lista seria lida em voz alta, respondendo à pergunta
-    "o que eu tenho que fazer?".
-  */
-  const ordenadas = [...tarefas].sort((a, b) => {
-    const aConcluida = a.status === "CONCLUIDA" ? 1 : 0;
-    const bConcluida = b.status === "CONCLUIDA" ? 1 : 0;
-    if (aConcluida !== bConcluida) return aConcluida - bConcluida;
-
-    /*
-      Tarefa sem prazo vai para o FIM do bloco, não para o começo. Se o
-      `null` fosse tratado como zero, uma tarefa sem data apareceria como a
-      mais urgente de todas — e a lista abriria com algo que não tem prazo.
-    */
-    const aPrazo = a.prazo?.getTime() ?? Number.POSITIVE_INFINITY;
-    const bPrazo = b.prazo?.getTime() ?? Number.POSITIVE_INFINITY;
-    return aPrazo - bPrazo;
-  });
+  // A ordem vem de `../relatorio`, a mesma que a prévia da tela usa.
+  const ordenadas = ordenarTarefasDoRelatorio(tarefas);
 
   congelar(aba, 4);
 
@@ -396,63 +413,6 @@ function escreverTarefas(
   );
 }
 
-/**
- * A distância até o prazo, em palavras.
- *
- * Conta dias de CALENDÁRIO no fuso de São Paulo, e não diferença de
- * milissegundos dividida por 24h. A diferença importa: um prazo registrado
- * às 21h de hoje fica a menos de 24 horas de distância de agora, mas é
- * amanhã — e "vence hoje" para um prazo de amanhã é o tipo de erro que faz
- * alguém perder uma entrega.
- */
-function situacaoDoPrazo(tarefa: Tarefa, agora: Date): string {
-  if (tarefa.status === "CONCLUIDA") {
-    return tarefa.concluidaEm ? `concluída em ${dataCurta(tarefa.concluidaEm)}` : "concluída";
-  }
-  if (!tarefa.prazo) return "sem prazo";
-
-  const dias = diasDeCalendario(tarefa.prazo, agora);
-
-  if (dias === 0) return "vence hoje";
-  if (dias === 1) return "vence amanhã";
-  if (dias > 1) return `em ${dias} dias`;
-  if (dias === -1) return "venceu ontem";
-  return `vencida há ${Math.abs(dias)} dias`;
-}
-
-/**
- * Dias de calendário entre duas datas, ignorando a hora.
- *
- * Depois de reduzir cada data ao seu dia, a subtração não tem como errar por
- * uma hora — que é o problema clássico quando se comparam instantes e o
- * horário de verão entra no meio.
- */
-function diasDeCalendario(depois: Date, antes: Date): number {
-  const umDia = 86400000;
-  return Math.round((inicioDoDiaUTC(depois) - inicioDoDiaUTC(antes)) / umDia);
-}
-
-/**
- * O dia em que a data cai em São Paulo, expresso como meia-noite UTC.
- *
- * O fuso é explícito porque sem ele uma data registrada às 21h em São Paulo
- * já é o dia seguinte em UTC — e um prazo "que vence hoje" apareceria como
- * "venceu ontem". O mesmo cuidado foi tomado no cálculo de atraso de parcela,
- * e os dois precisam concordar: são a mesma pergunta feita em duas telas.
- *
- * `en-CA` formata como "2026-03-17", que `Date.parse` lê como meia-noite UTC.
- * É a normalização que se quer, sem montar a data campo a campo.
- */
-function inicioDoDiaUTC(d: Date): number {
-  const partes = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-  return Date.parse(partes);
-}
-
 // ---------------------------------------------------------------------------
 // ABA 3 — ACOMPANHAMENTOS
 // ---------------------------------------------------------------------------
@@ -485,7 +445,7 @@ function escreverAcompanhamentos(
     return;
   }
 
-  const ordenados = [...acompanhamentos].sort((a, b) => b.data.getTime() - a.data.getTime());
+  const ordenados = ordenarAcompanhamentosDoRelatorio(acompanhamentos);
 
   congelar(aba, 4);
 
@@ -577,20 +537,38 @@ function escreverInformacoes(
   // Em vermelho, e não em nota de rodapé cinza. É a parte do arquivo que
   // protege a Érika de mandar para um cliente um documento que PARECE ter
   // custo e não tem.
+  //
+  // ┌────────────────────────────────────────────────────────────────────┐
+  // │ ESTA LISTA ENCOLHEU, E ENCOLHEU PORQUE O SISTEMA ANDOU               │
+  // │                                                                    │
+  // │ Ela tinha quatro linhas, e três delas diziam que a conta dependia de │
+  // │ uma metodologia que ninguém tinha respondido. Duas dessas contas     │
+  // │ passaram a existir — o custo da receita e o fator de correção — e a  │
+  // │ terceira (CMV e markup) existe a partir de um preço de venda que a   │
+  // │ consultora informa. Manter as frases antigas faria este arquivo      │
+  // │ dizer, sobre uma ficha que a Érika pode abrir no sistema, que ela    │
+  // │ não existe.                                                          │
+  // │                                                                    │
+  // │ O que sobrou é a única linha que continua verdadeira: este relatório │
+  // │ não traz custo porque custo é do PRATO, e ele fala do cliente. E o   │
+  // │ resto da lista agora mora onde a pergunta é feita — na aba da ficha  │
+  // │ técnica, quando ela existir.                                         │
+  // └────────────────────────────────────────────────────────────────────┘
   linha = escreverRotuloBloco(aba, linha, "O QUE ESTA PLANILHA NÃO CALCULA", colunas);
-  for (const texto of [
-    "CMV — depende de decidir o que entra no custo, e isso ainda não foi definido.",
-    "Preço de venda e markup — dependem da margem alvo, que ainda não foi definida.",
-    "Índice de cocção e fator de correção — dependem da metodologia de perda e limpeza.",
-    "Margem por prato — depende de todas as decisões acima.",
-  ]) {
-    linha = escreverPendencia(aba, linha, texto, colunas);
-  }
+  linha = escreverPendencia(
+    aba,
+    linha,
+    "Custo, CMV e preço de venda — são de cada PRATO, e moram na ficha técnica dele. Somar o " +
+      "custo de dois pratos num relatório de cliente daria um número que não corresponde a nada.",
+    colunas
+  );
   linha = escreverNota(
     aba,
     linha,
-    "Estas colunas não aparecem em nenhuma aba deste arquivo, de propósito. Quando as regras " +
-      "forem definidas, elas passam a existir — e até lá o sistema não mostra número inventado.",
+    "Estas colunas não aparecem em nenhuma aba deste arquivo, de propósito. Não é ausência de " +
+      "cálculo: é o cálculo estar no lugar certo. A ficha técnica calcula o custo do prato a " +
+      "partir dos preços e das pesagens registrados, e o sistema não mostra número inventado em " +
+      "lugar nenhum.",
     colunas
   );
   linha += 1;
@@ -612,11 +590,15 @@ function escreverInformacoes(
   linha += 1;
 
   // ── O QUE AINDA DEPENDE DE DECISÃO ─────────────────────────────────────
+  //
+  // Cabeçalho e conteúdo foram reescritos junto com o bloco de cima, e pelo
+  // mesmo motivo: "como o custo de um prato é apurado" deixou de ser pergunta
+  // aberta quando a ficha passou a apurá-lo. Uma lista de pendências que
+  // pergunta o que já foi respondido ensina a consultora a não ler a lista.
   linha = escreverRotuloBloco(aba, linha, "O QUE AINDA DEPENDE DE VOCÊ", colunas);
   for (const texto of [
-    "Como o custo de um prato é apurado — quais itens entram e como a perda é tratada.",
-    "Qual margem é a alvo, e se ela muda por tipo de prato ou de serviço.",
-    "Se a ficha técnica deve trazer custo por porção, e como ele é rateado.",
+    "Qual margem de segurança usar — o sistema tem o campo, e não tem o número.",
+    "Se a margem muda por tipo de prato ou de serviço, e a partir de que porte.",
     "Quais planilhas você usa hoje no dia a dia, para o sistema nascer parecido com o que você já faz.",
   ]) {
     linha = escreverPendencia(aba, linha, texto, colunas);

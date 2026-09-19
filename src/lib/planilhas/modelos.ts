@@ -18,16 +18,17 @@
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ A DIFERENÇA ENTRE "EM PREPARAÇÃO" E "AGUARDANDO DEFINIÇÃO"           │
+ * │ A DIFERENÇA ENTRE OS DOIS ESTADOS QUE NÃO GERAM ARQUIVO              │
  * │                                                                      │
- * │ Os dois aparecem como "não está pronto", e são coisas opostas:        │
+ * │ Os dois aparecem como "ainda não sai", e são coisas opostas — e a     │
+ * │ diferença é sobre QUEM destrava:                                     │
  * │                                                                      │
- * │   EM_PREPARACAO        falta TRABALHO DE PROGRAMAÇÃO. Esperar resolve │
- * │                        sozinho; nada depende da Érika.                │
+ * │   EM_PREPARACAO        destrava sozinha, com tempo. Nada depende dela.│
  * │                                                                      │
- * │   AGUARDANDO_DEFINICAO falta uma DECISÃO DELA. O sistema poderia ser  │
- * │                        programado hoje e produziria uma planilha com  │
- * │                        número inventado.                              │
+ * │   AGUARDANDO_DEFINICAO destrava com uma RESPOSTA. Ela poderia ser     │
+ * │                        gerada hoje e sairia com número inventado,     │
+ * │                        porque o número depende de uma regra que ela   │
+ * │                        ainda não escreveu.                            │
  * │                                                                      │
  * │ Distinguir os dois na tela é o que impede a Érika de esperar por algo │
  * │ que ela mesma trava — ou de achar que precisa responder uma pergunta  │
@@ -66,7 +67,7 @@ export const MODELOS: readonly ModeloPlanilha[] = [
       "As fichas de preparo do cliente, com ingredientes, quantidades e modo de fazer.",
     estado: "EM_PREPARACAO",
     motivo:
-      "Falta decidir como o custo entra na ficha. Sem essa decisão, o sistema consegue exportar ingredientes e quantidades, mas a coluna de custo ficaria vazia ou inventada — e as duas hipóteses são piores do que esperar.",
+      "As fichas já existem no sistema, com ingredientes, pesos e custo calculado. O que ainda não está fechado é o formato do arquivo: quantas colunas a ficha merece e como abrir o detalhe de cada item sem transformar a aba numa grade ilegível.",
     abas: ["Fichas", "Itens", "Informações"],
     exige: ["fichas"],
     pendencias: ["4", "5"],
@@ -78,7 +79,7 @@ export const MODELOS: readonly ModeloPlanilha[] = [
       "O cardápio organizado por praça — entradas, principais, sobremesas — com o responsável e o turno de cada preparo.",
     estado: "EM_PREPARACAO",
     motivo:
-      "Depende de fechar a estrutura de praças e turnos, que hoje muda de cliente para cliente e ainda não tem um padrão. Depois disso, é trabalho de programação.",
+      "A lista de pratos depende de a praça e o turno existirem no cadastro, e hoje eles ainda não existem: a mesma informação muda de nome de um cliente para outro, e o sistema não tem onde guardá-la.",
     abas: ["Pratos por praça", "Processos", "Informações"],
     /*
       `exige` vazio, e não ["processos"]: a lista de `exige` descreve o que o
@@ -96,7 +97,7 @@ export const MODELOS: readonly ModeloPlanilha[] = [
       "A planilha de custo e preço de venda, com CMV, markup e margem por prato.",
     estado: "AGUARDANDO_DEFINICAO",
     motivo:
-      "É a planilha que mais depende de você. Cada coluna dela é uma regra da sua metodologia: o que entra no custo, como a perda é tratada, qual margem é a alvo. O sistema não inventa nenhuma das três.",
+      "É a planilha que mais depende de você. O sistema já calcula o custo da receita a partir dos preços e das pesagens, e já calcula CMV e markup a partir de um preço de venda. O que ainda não existe é a sua regra: qual margem é a alvo, e a partir de que porta ela muda.",
     abas: ["Resumo de custos", "Ingredientes", "Precificação", "Informações"],
     /*
       Só `fichas`: ingrediente também ainda não está no contexto de planilha.
@@ -112,7 +113,7 @@ export const MODELOS: readonly ModeloPlanilha[] = [
       "As ações combinadas com o cliente, com responsável, prazo, prioridade e situação de cada uma.",
     estado: "EM_PREPARACAO",
     motivo:
-      "O plano de ação já existe dentro do sistema. Falta definir o formato do arquivo e como agrupar as ações por etapa da jornada.",
+      "O plano de ação já existe dentro do sistema. Falta definir como agrupar as ações no arquivo — por etapa da jornada, por responsável, ou as duas coisas em abas separadas.",
     abas: ["Plano de ação", "Por responsável", "Informações"],
     exige: ["consultoria"],
     pendencias: ["11"],

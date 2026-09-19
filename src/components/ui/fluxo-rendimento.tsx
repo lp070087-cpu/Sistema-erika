@@ -61,6 +61,37 @@ function percentual(valor: number | null): string {
   return `${valor.toFixed(CASAS_PERCENTUAL).replace(".", ",")}%`;
 }
 
+/**
+ * A FRASE DA DIFERENÇA — e a razão de ela existir como função.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O DEFEITO QUE ESTA FUNÇÃO CORRIGE                                     │
+ * │                                                                      │
+ * │ A versão anterior escrevia sempre `perdeu ${peso(ind.perdaX)}`. Para   │
+ * │ o arroz — 1 kg seco que vira 1,2 kg cozido — isso produzia, na tela:   │
+ * │                                                                      │
+ * │        Preparo: 1,200 kg                                              │
+ * │        perdeu -0,200 kg (-20,0%)                                      │
+ * │                                                                      │
+ * │ Três erros numa linha de nove palavras. O número está em módulo       │
+ * │ errado de sinal, o percentual é negativo, e a frase diz "perdeu"       │
+ * │ sobre um peso que AUMENTOU. Quem lê conclui que digitou errado e       │
+ * │ conserta o dado — apagando uma medição correta, que é o pior desfecho  │
+ * │ possível para um sistema que existe para registrar medições.           │
+ * │                                                                      │
+ * │ O motor está certo: `perda()` devolve a subtração como ela é. Quem     │
+ * │ estava errado era a frase.                                            │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function diferenca(valor: number | null, valorPct: number | null, unidade: string | null): string | null {
+  if (valor === null) return null;
+  const ganho = valor < 0;
+  const magnitude = Math.abs(valor);
+  const verbo = ganho ? "ganhou" : "perdeu";
+  const sufixo = valorPct === null ? "" : ` (${percentual(Math.abs(valorPct))})`;
+  return `${verbo} ${peso(magnitude, unidade)}${sufixo}`;
+}
+
 // ---------------------------------------------------------------------------
 
 type Etapa = {
@@ -70,6 +101,8 @@ type Etapa = {
   valor: string;
   /** O que aconteceu entre esta etapa e a anterior. */
   rotuloPerda: string | null;
+  /** `true` quando `rotuloPerda` fala de ganho — a cor muda, a frase não. */
+  ganho: boolean;
   /** Explicação curta do que a etapa é. */
   nota: string;
   /** `false` quando o peso desta etapa não foi medido. */
@@ -99,6 +132,7 @@ function montarEtapas(ind: IndicadoresTransformacao, unidade: string | null): Et
       rotulo: "Compra",
       valor: peso(ind.bruto, unidade),
       rotuloPerda: null,
+      ganho: false,
       nota: "Como o insumo chega, antes de qualquer perda.",
       medido: ind.bruto !== null,
     },
@@ -106,12 +140,8 @@ function montarEtapas(ind: IndicadoresTransformacao, unidade: string | null): Et
       chave: "LIMPEZA",
       rotulo: "Limpeza",
       valor: peso(ind.limpo, unidade),
-      rotuloPerda:
-        ind.perdaLimpeza !== null
-          ? `perdeu ${peso(ind.perdaLimpeza, unidade)}${
-              ind.perdaLimpezaPct !== null ? ` (${percentual(ind.perdaLimpezaPct)})` : ""
-            }`
-          : null,
+      rotuloPerda: diferenca(ind.perdaLimpeza, ind.perdaLimpezaPct, unidade),
+      ganho: (ind.perdaLimpeza ?? 0) < 0,
       nota: "Casca, aparas e partes descartadas.",
       medido: temLimpeza,
     },
@@ -119,13 +149,18 @@ function montarEtapas(ind: IndicadoresTransformacao, unidade: string | null): Et
       chave: "PREPARO",
       rotulo: "Preparo",
       valor: peso(ind.preparado, unidade),
-      rotuloPerda:
-        ind.perdaPreparo !== null
-          ? `perdeu ${peso(ind.perdaPreparo, unidade)}${
-              ind.perdaPreparoPct !== null ? ` (${percentual(ind.perdaPreparoPct)})` : ""
-            }`
-          : null,
-      nota: "Água que sai no fogo, gordura que escorre.",
+      rotuloPerda: diferenca(ind.perdaPreparo, ind.perdaPreparoPct, unidade),
+      ganho: (ind.perdaPreparo ?? 0) < 0,
+      /*
+        ── A NOTA MUDA QUANDO O PESO CRESCE ─────────────────────────────
+        "Água que sai no fogo" é verdade para um assado e mentira para o
+        arroz, que faz o contrário: entra água. A nota fixa contradiria o
+        número logo acima dela, e o número é o que ela mediu na balança.
+      */
+      nota:
+        (ind.perdaPreparo ?? 0) < 0
+          ? "Absorveu líquido: o peso final é maior que o inicial."
+          : "Água que sai no fogo, gordura que escorre.",
       medido: temPreparo,
     },
     {
@@ -133,9 +168,12 @@ function montarEtapas(ind: IndicadoresTransformacao, unidade: string | null): Et
       rotulo: "Resultado",
       valor: percentual(ind.rendimentoFinalPct),
       rotuloPerda:
-        ind.perdaTotal !== null
-          ? `perda total de ${peso(ind.perdaTotal, unidade)}`
-          : null,
+        ind.perdaTotal === null
+          ? null
+          : (ind.perdaTotal ?? 0) < 0
+            ? `ganho total de ${peso(Math.abs(ind.perdaTotal), unidade)}`
+            : `perda total de ${peso(ind.perdaTotal, unidade)}`,
+      ganho: (ind.perdaTotal ?? 0) < 0,
       nota: "Quanto do peso comprado virou produto utilizável.",
       medido: ind.rendimentoFinalPct !== null,
     },
@@ -250,7 +288,13 @@ export function FluxoRendimentoIngrediente({
               <span
                 className={cn(
                   "tabular mt-1.5 text-[0.75rem] leading-snug",
-                  e.chave === "RESULTADO" ? "text-oliva" : "text-[#8a6d1f]"
+                  /*
+                    A COR SEGUE O SINAL, e não a etapa. Ela procura perda na
+                    tela: pintar de âmbar um "ganhou 0,200 kg" mandaria o olho
+                    para o lugar errado, e num sistema de custo o olho vai aonde
+                    a cor aponta.
+                  */
+                  e.ganho ? "text-oliva" : "text-[#8a6d1f]"
                 )}
               >
                 {e.rotuloPerda}
