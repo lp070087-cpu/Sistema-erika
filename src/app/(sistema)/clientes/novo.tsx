@@ -133,7 +133,7 @@ export function NovoCliente() {
       >
         {revisando ? (
           <div className="space-y-5">
-            <Aviso tom="atencao" titulo="Dados de demonstração não são salvos ao recarregar">
+            <Aviso tom="atencao" titulo="Nada é salvo ao recarregar">
               <p>
                 Nada foi gravado. O sistema ainda não tem banco conectado — se
                 você recarregar esta página, o cliente que acabou de preencher
@@ -253,7 +253,7 @@ export function NovoCliente() {
               </p>
               <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
                 <strong className="font-semibold text-tinta">
-                  Dados de demonstração não são salvos ao recarregar.
+                  Nada é salvo ao recarregar.
                 </strong>{" "}
                 O cadastro funciona para você ver como seria, mas depende do
                 banco de dados — que ainda não está conectado. Ao recarregar a

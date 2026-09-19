@@ -243,7 +243,7 @@ export function NovaConsultoria({
               </p>
               <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
                 <strong className="font-semibold text-tinta">
-                  Dados de demonstração não são salvos ao recarregar.
+                  Nada é salvo ao recarregar.
                 </strong>{" "}
                 A consultoria não é criada de verdade enquanto o banco não
                 estiver conectado.

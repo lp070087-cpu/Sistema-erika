@@ -148,7 +148,7 @@ export default async function PaginaImprimirRelatorio({
 
         <p className="mt-6 border border-dashed border-dourado/70 bg-[rgba(201,165,78,0.09)] px-3.5 py-2.5 text-[0.75rem] leading-relaxed text-[var(--tinta-suave)]">
           <span className="font-semibold tracking-[0.1em] text-[#8a6d1f] uppercase">
-            Demonstração ·{" "}
+            Exemplo de formato ·{" "}
           </span>
           Este documento é um exemplo gerado com dados fictícios, para mostrar o
           formato de entrega. Os estabelecimentos citados não existem.

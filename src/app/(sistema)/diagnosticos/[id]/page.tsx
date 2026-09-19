@@ -5,7 +5,6 @@ import { CabecalhoPagina, Rotulo } from "@/components/ui/rotulo";
 import { Etiqueta, Indicador } from "@/components/ui/indicador";
 import { Aviso, Painel, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { ListaSinais } from "@/components/ui/sinais";
 import { ResumoDiagnostico } from "@/components/ui/resumo-diagnostico";
 import {
@@ -126,8 +125,6 @@ export default async function PaginaDiagnostico({ params }: Props) {
           )
         }
       />
-
-      <FaixaDemonstracao oQue="Este diagnóstico é de demonstração — as respostas foram escritas para a tela poder ser avaliada e não vêm de nenhum cliente." />
 
       {/* Números objetivos ------------------------------------------------ */}
       <Secao

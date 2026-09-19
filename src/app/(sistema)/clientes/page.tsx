@@ -3,7 +3,6 @@ import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { EstadoVazio, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { BarraFiltros } from "@/components/ui/filtros";
 import { ListaResponsiva } from "@/components/ui/lista-responsiva";
 import type { ColunaLista } from "@/components/ui/lista-responsiva";
@@ -181,13 +180,10 @@ export default async function PaginaClientes({ searchParams }: Props) {
         descricao="Quem está sendo atendido agora, em que modalidade, desde quando — e quando foi a última vez que alguma coisa se moveu. É o ponto de entrada para o histórico completo de cada um."
         acoes={
           <div className="flex flex-wrap items-center gap-3">
-            <Etiqueta tom="oliva">Demonstração</Etiqueta>
             <NovoCliente />
           </div>
         }
       />
-
-      <FaixaDemonstracao oQue="Estes cinco clientes são inventados para demonstração. Nenhum nome, e-mail ou telefone aqui corresponde a uma empresa real, e nenhum veio de cliente da consultoria." />
 
       <Secao
         rotulo={`${filtradas.length} de ${linhas.length}`}

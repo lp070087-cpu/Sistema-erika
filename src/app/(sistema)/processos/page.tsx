@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CabecalhoPagina } from "@/components/ui/rotulo";
-import { Etiqueta } from "@/components/ui/indicador";
 import { EstadoVazio, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { BarraFiltros } from "@/components/ui/filtros";
 import { ListaResponsiva } from "@/components/ui/lista-responsiva";
 import type { ColunaLista } from "@/components/ui/lista-responsiva";
@@ -208,7 +206,6 @@ export default async function PaginaProcessos({ searchParams }: Props) {
         descricao="Os fluxos de finalização de cada cozinha, praça por praça: a ordem dos passos, quem executa e o tempo que a equipe declarou. É o que faz o prato sair igual nos dois turnos."
         acoes={
           <div className="flex flex-wrap items-center gap-3">
-            <Etiqueta tom="oliva">Demonstração</Etiqueta>
             <NovoProcesso
               clientes={clientes.map((c) => ({ id: c.id, nome: c.nomeFantasia }))}
               pratosDoCliente={pratosDoCliente}
@@ -217,8 +214,6 @@ export default async function PaginaProcessos({ searchParams }: Props) {
           </div>
         }
       />
-
-      <FaixaDemonstracao oQue="As praças, os passos e os tempos desta tela são inventados para demonstração. Os tempos são o que a equipe fictícia declarou — o sistema não cronometra nada." />
 
       <Secao
         rotulo={`${filtrados.length} de ${processos.length}`}

@@ -4,7 +4,6 @@ import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso, Painel, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { DecisoesQueFaltam } from "@/components/ui/metodologia";
 import {
   ROTULO_SITUACAO_DOCUMENTO,
@@ -127,8 +126,6 @@ export default async function PaginaRelatorios() {
         acoes={<Etiqueta tom="oliva">Prévia</Etiqueta>}
       />
 
-      <FaixaDemonstracao oQue="Os documentos e as datas desta tela são inventados para demonstração. Nenhum arquivo real está anexado — não existe armazenamento de arquivo no sistema nesta fase." />
-
       {/* ── O QUE JÁ EXISTE ────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Contagem rotulo="Documentos" valor={documentos.length} />
@@ -248,7 +245,7 @@ export default async function PaginaRelatorios() {
           A lista mostra o registro, a data e a situação — tudo o que existe de
           fato. O arquivo em si não existe ainda: o sistema não tem
           armazenamento de arquivo neste momento, e criar um improvisado só
-          para a demonstração seria pior do que não ter, porque a Érika sairia
+          para esta versão seria pior do que não ter, porque a Érika sairia
           daqui achando que documento é anexável.
         </p>
         <p className="mt-2.5">

@@ -107,7 +107,7 @@ export function GavetasDeTarefas({
       )
     );
     setAviso(
-      `“${t.titulo}” foi marcada como concluída — na demonstração. Ao recarregar a página, ela volta para a gaveta de origem.`
+      `“${t.titulo}” foi marcada como concluída — nesta sessão. Ao recarregar a página, ela volta para a gaveta de origem.`
     );
   }
 
@@ -115,13 +115,13 @@ export function GavetasDeTarefas({
     setTarefas((atuais) =>
       atuais.map((x) => (x.id === t.id ? { ...x, status: "A_FAZER", concluidaEm: null } : x))
     );
-    setAviso(`“${t.titulo}” voltou para a lista de abertas — na demonstração.`);
+    setAviso(`“${t.titulo}” voltou para a lista de abertas — nesta sessão.`);
   }
 
   function salvarNova() {
     if (!rascunho || !rascunho.titulo.trim()) return;
     setTarefas((atuais) => [rascunho, ...atuais]);
-    setAviso(`A tarefa “${rascunho.titulo}” entrou na lista — na demonstração.`);
+    setAviso(`A tarefa “${rascunho.titulo}” entrou na lista — nesta sessão.`);
     setRascunho(null);
   }
 
@@ -311,7 +311,7 @@ export function GavetasDeTarefas({
         aberta={rascunho !== null}
         aoFechar={() => setRascunho(null)}
         titulo="Nova tarefa"
-        descricao="O que precisa ser feito, por quem e até quando. Fica na demonstração: nada é gravado."
+        descricao="O que precisa ser feito, por quem e até quando. Fica nesta sessão: nada é gravado."
         acoes={
           <>
             <Botao variante="linha" tamanho="sm" onClick={() => setRascunho(null)}>

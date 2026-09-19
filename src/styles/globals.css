@@ -62,8 +62,38 @@
 :root {
   color-scheme: light;
 
-  --tinta-suave: rgba(14, 26, 20, 0.66);
-  --tinta-fraca: rgba(14, 26, 20, 0.42);
+  /*
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ AS DUAS TINTAS SECUNDÁRIAS, E POR QUE ELAS SUBIRAM                 │
+    │                                                                    │
+    │ Havia um problema de leitura em bloco, e não um texto específico:   │
+    │ descrição de seção, rótulo de campo, data, legenda de tabela e nota │
+    │ de rodapé usam estas duas variáveis, e todas puxavam para o claro   │
+    │ demais sobre o creme. Numa tela com vinte dessas linhas, o olho     │
+    │ cansa antes de chegar ao fim.                                      │
+    │                                                                    │
+    │ O contraste medido contra `--superficie-solida` (#faf7f1):          │
+    │                                                                    │
+    │   --tinta-suave  0.66 → 0.76   ·  ~7,4:1  (antes ~5,3:1)            │
+    │   --tinta-fraca  0.42 → 0.58   ·  ~4,6:1  (antes ~2,9:1)            │
+    │                                                                    │
+    │ A `fraca` era a que mais incomodava e é a que mais subiu: em 0.42   │
+    │ ela ficava ABAIXO de 4,5:1, o mínimo para texto pequeno. Rótulo de  │
+    │ 11px em caixa alta naquele tom não se lia — se adivinhava.          │
+    │                                                                    │
+    │ Os dois valores continuam distintos, com quase 20 pontos de alfa     │
+    │ entre eles: a hierarquia de três níveis (tinta cheia, suave, fraca)  │
+    │ permanece legível como hierarquia. Escurecer a `fraca` até o nível   │
+    │ da `suave` teria resolvido o contraste e apagado a hierarquia — que  │
+    │ é o outro jeito de uma tela ficar ilegível.                        │
+    │                                                                    │
+    │ As linhas NÃO subiram: `--linha` e `--linha-forte` delimitam área,  │
+    │ não carregam texto. Aumentá-las junto só deixaria a tela mais       │
+    │ gradeada.                                                          │
+    └────────────────────────────────────────────────────────────────────┘
+  */
+  --tinta-suave: rgba(14, 26, 20, 0.76);
+  --tinta-fraca: rgba(14, 26, 20, 0.58);
   --linha: rgba(14, 26, 20, 0.14);
   --linha-forte: rgba(14, 26, 20, 0.24);
   --linha-clara: rgba(250, 247, 241, 0.16);
@@ -83,7 +113,32 @@
   --espaco-secao: clamp(1.5rem, 2.5vw, 2.5rem);
   --altura-topo: 60px;
   --largura-menu: 252px;
-  --largura-conteudo: 1320px;
+
+  /*
+    O TETO DO CONTEÚDO.
+
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ POR QUE 1320px VIRARAM 2000px                                      │
+    │                                                                    │
+    │ Com 1320px, um monitor de 1920px deixava quase 350px de vazio de    │
+    │ cada lado — e a sidebar já ocupa 252px à esquerda. O resultado era   │
+    │ a impressão de sistema pequeno flutuando no meio de uma tela grande: │
+    │ as tabelas de ficha apertavam colunas enquanto sobrava espaço ao     │
+    │ lado delas.                                                         │
+    │                                                                    │
+    │ 2000px é o teto, não a largura. Em 1920 o container preenche tudo o  │
+    │ que existe depois da sidebar e das margens; a partir de ~2500px ele  │
+    │ para de crescer, e aí as margens laterais viram a moldura da página. │
+    │ Sem teto nenhum, uma linha de texto numa tela ultrawide passaria de  │
+    │ 2500px e viraria ilegível — é o mesmo defeito de antes, invertido.   │
+    └────────────────────────────────────────────────────────────────────┘
+  */
+  --largura-conteudo: 2000px;
+
+  /* A margem lateral da página, do celular ao monitor grande. Uma variável
+     só, para o respiro crescer junto com a tela sem ninguém repetir
+     `px-4 sm:px-6 lg:px-8` em cada casca. */
+  --margem-conteudo: clamp(1rem, 1.2vw + 0.5rem, 2.75rem);
 }
 
 /* ---------------------------------------------------------------------------
@@ -243,7 +298,7 @@ em.destaque {
   width: 100%;
   max-width: var(--largura-conteudo);
   margin-inline: auto;
-  padding-inline: clamp(1rem, 3vw, 2rem);
+  padding-inline: var(--margem-conteudo);
 }
 
 /* ---------------------------------------------------------------------------
@@ -371,7 +426,7 @@ em.destaque {
 }
 
 /* ---------------------------------------------------------------------------
-   Impressão — base para a ficha técnica da Fase 5.
+   Impressão — base para a ficha técnica e para o relatório de cliente.
    --------------------------------------------------------------------------- */
 @media print {
   body {
@@ -381,5 +436,27 @@ em.destaque {
 
   .nao-imprimir {
     display: none !important;
+  }
+
+  /*
+    O TETO DO CONTEÚDO NÃO PODE VALER NO PAPEL.
+
+    `--largura-conteudo` subiu para 2000px porque um monitor de 1920 deixava
+    meia tela vazia. O mesmo número, numa folha A4, é o contrário de útil: a
+    página tem ~794px de largura, e o container de 2000px não encolhe por
+    conta própria dentro de um `article` de 820px — ele apenas reparte o
+    espaço com quem está ao lado, e o que sobra para o texto vira uma coluna
+    estreita no canto da folha.
+
+    O `.conteudo` é a barra de ação (que não imprime) e a própria folha. Com o
+    teto neutralizado aqui, a folha volta a ocupar a largura da página e o
+    relatório impresso sai como o cliente o recebia antes.
+
+    `--margem-conteudo` vai junto: 2,75rem de margem lateral em papel é papel
+    desperdiçado, e a margem do documento já vem do próprio `article`.
+  */
+  :root {
+    --largura-conteudo: none;
+    --margem-conteudo: 0;
   }
 }

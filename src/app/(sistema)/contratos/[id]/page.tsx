@@ -5,7 +5,6 @@ import { CabecalhoPagina, Rotulo } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso, EstadoVazio, Painel, Secao } from "@/components/ui/superficie";
 import { Dado, ListaDados } from "@/components/ui/dados";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { LinhaDoTempo } from "@/components/ui/linha-do-tempo";
 import { CronogramaParcelas } from "./cronograma";
 import { AreaDocumento } from "./documento";
@@ -128,8 +127,6 @@ export default async function PaginaContrato({ params }: Props) {
           </Etiqueta>
         }
       />
-
-      <FaixaDemonstracao oQue="Este contrato é inventado para demonstração, e o valor não tem nenhuma relação com o que a Érika cobra. O sistema não emite cobrança nem confirma pagamento com banco — o que está registrado aqui foi digitado por alguém." />
 
       {/* ── CABEÇALHO FACTUAL ──────────────────────────────────────────── */}
       <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-5 py-5">
@@ -343,7 +340,7 @@ export default async function PaginaContrato({ params }: Props) {
 
       <Aviso tom="atencao" titulo="O que não é real aqui">
         <p>
-          Este contrato é de demonstração. As ações desta tela —{" "}
+          Este contrato é um exemplo, e as ações desta tela —{" "}
           <strong className="font-semibold text-tinta">registrar pagamento</strong>,{" "}
           <strong className="font-semibold text-tinta">enviar ao cliente</strong> e{" "}
           <strong className="font-semibold text-tinta">registrar aceite</strong> — mostram como o

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { EstadoVazio, Secao } from "@/components/ui/superficie";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import {
   ROTULO_MODALIDADE,
   ROTULO_TIPO_ACOMPANHAMENTO,
@@ -83,10 +82,7 @@ export default async function PaginaTarefas() {
         rotulo="Operação"
         titulo="Tarefas"
         descricao="O dia de trabalho: o que atrasou, o que é de hoje, o que vem à frente e onde a consultora precisa estar. Tarefas e compromissos juntos, porque é assim que a manhã dela começa."
-        acoes={<Etiqueta tom="oliva">Demonstração</Etiqueta>}
       />
-
-      <FaixaDemonstracao oQue="As tarefas, compromissos e acompanhamentos desta tela são inventados para demonstração. Concluir ou criar tarefas aqui não grava nada: ao recarregar, o estado original volta." />
 
       {/* Contagens do topo. São contagens — número que se confere abrindo a
           gaveta logo abaixo — e não indicadores de produtividade. */}

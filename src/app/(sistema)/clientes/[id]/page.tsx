@@ -5,7 +5,6 @@ import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso } from "@/components/ui/superficie";
 import { Abas } from "@/components/ui/abas";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { Dado, ListaDados } from "@/components/ui/dados";
 import {
   ROTULO_MODALIDADE,
@@ -85,6 +84,8 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
     contratos,
     eventos,
     tarefas,
+    ingredientes,
+    precosDoCliente,
   ] = await Promise.all([
     operacao.consultoriaDoCliente(id),
     operacao.listarAcoesDoCliente(id),
@@ -95,6 +96,21 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
     operacao.listarContratosDoCliente(id),
     operacao.listarEventos(id),
     operacao.listarTarefas(),
+    /*
+      A biblioteca inteira de insumos, e não só os que este cliente usa.
+
+      A aba de fichas precisa dos DOIS: os insumos que já entram nas fichas
+      dele, para calcular o custo, e a biblioteca completa, para poder montar
+      uma ficha nova sem sair daqui. Buscar só os usados obrigaria a criar a
+      ficha na biblioteca geral e voltar.
+    */
+    operacao.listarIngredientes(),
+    /*
+      Os preços DESTE cliente. Vêm separados dos da biblioteca porque o custo
+      de uma ficha usa o preço do cliente dono dela — e um preço de outro
+      cliente entrando aqui daria um custo errado com aparência de certo.
+    */
+    operacao.mapaDePrecosDoCliente(id),
   ]);
 
   // O diagnóstico de origem, quando o cliente veio de um lead. Sem ele a
@@ -128,7 +144,14 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
       <AbaDiagnostico cliente={cliente} lead={leadOrigem} diagnostico={diagnostico} />
     ),
     consultoria: <AbaConsultoria cliente={cliente} consultoria={consultoria} acoes={acoes} />,
-    fichas: <AbaFichas cliente={cliente} fichas={fichas} />,
+    fichas: (
+      <AbaFichas
+        cliente={cliente}
+        fichas={fichas}
+        ingredientes={ingredientes}
+        precosDoCliente={precosDoCliente}
+      />
+    ),
     processos: <AbaProcessos cliente={cliente} processos={processos} />,
     acompanhamentos: (
       <AbaAcompanhamentos cliente={cliente} acompanhamentos={acompanhamentos} />
@@ -189,8 +212,6 @@ export default async function PaginaCliente({ params, searchParams }: Props) {
           </Etiqueta>
         }
       />
-
-      <FaixaDemonstracao oQue="Este cliente, suas fichas, processos e acompanhamentos são inventados para demonstração. Nenhuma empresa, pessoa ou telefone aqui existe, e nada nesta tela foi gravado em banco." />
 
       {/* Os seis campos exigidos pela Seção 3 — todos fato, nenhum cálculo. */}
       <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-5 py-5">

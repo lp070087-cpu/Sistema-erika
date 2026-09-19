@@ -208,7 +208,7 @@ export function AbaConsultoria({
               ? "1 ação ainda em aberto."
               : `${emAberto.length} ações ainda em aberto.`}{" "}
             Mover o status acontece na tela da consultoria — é lá que a
-            demonstração mostra que a alteração não é gravada.
+            alteração é feita, e a tela avisa que nada é gravado.
           </p>
         ) : null}
       </Secao>

@@ -5,7 +5,6 @@ import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso, Painel, Secao } from "@/components/ui/superficie";
 import { Dado, ListaDados } from "@/components/ui/dados";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import {
   ROTULO_MODALIDADE,
   obterRepositorioOperacao,
@@ -86,8 +85,6 @@ export default async function PaginaProcesso({ params }: Props) {
           </div>
         }
       />
-
-      <FaixaDemonstracao oQue="Esta praça, seus passos e os tempos declarados são inventados para demonstração. Nenhum número aqui foi medido pelo sistema." />
 
       <div className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-5 py-5">
         <ListaDados colunas={3}>

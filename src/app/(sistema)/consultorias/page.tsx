@@ -3,7 +3,6 @@ import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { EstadoVazio, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { BarraFiltros } from "@/components/ui/filtros";
 import { ListaResponsiva } from "@/components/ui/lista-responsiva";
 import type { ColunaLista } from "@/components/ui/lista-responsiva";
@@ -192,7 +191,6 @@ export default async function PaginaConsultorias({ searchParams }: Props) {
         descricao="Cada trabalho em andamento, com o status que a consultora atribuiu, o último contato e a próxima ação combinada. O status não muda sozinho: quem decide em que ponto o trabalho está é ela."
         acoes={
           <div className="flex flex-wrap items-center gap-3">
-            <Etiqueta tom="oliva">Demonstração</Etiqueta>
             <NovaConsultoria
               clientes={linhas.map((l) => ({
                 id: l.cliente.id,
@@ -202,8 +200,6 @@ export default async function PaginaConsultorias({ searchParams }: Props) {
           </div>
         }
       />
-
-      <FaixaDemonstracao oQue="As cinco consultorias desta tela são inventadas para demonstração, com clientes, datas e ações fictícias." />
 
       <Secao
         rotulo={`${filtradas.length} de ${linhas.length}`}

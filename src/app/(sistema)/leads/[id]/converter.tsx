@@ -39,7 +39,7 @@ import type {
  * │     que vem do diagnóstico do que a consultora completa agora;        │
  * │  2. DIZ, antes do clique, exatamente o que vai acontecer — inclusive  │
  * │     que nada é gravado;                                               │
- * │  3. AO CONFIRMAR, mostra a confirmação marcada como demonstração,     │
+ * │  3. AO CONFIRMAR, mostra a confirmação dizendo que nada foi gravado,  │
  * │     com o caminho para onde o cliente iria.                           │
  * │                                                                      │
  * │ O terceiro passo é o que evita a pior experiência possível: a         │
@@ -102,7 +102,7 @@ export function ConverterEmCliente({
   function confirmar() {
     setConvertido(true);
     setAviso(
-      `A conversão de “${lead.nomeFantasia}” foi demonstrada, mas nada foi gravado: o sistema ainda não tem banco conectado. O lead continua na fila e nenhum cliente foi criado.`
+      `A conversão de “${lead.nomeFantasia}” foi simulada, e nada foi gravado: o sistema ainda não tem banco conectado. O lead continua na fila e nenhum cliente foi criado.`
     );
   }
 
@@ -123,13 +123,13 @@ export function ConverterEmCliente({
         onClick={() => setAberta(true)}
         disabled={convertido}
       >
-        {convertido ? "Conversão demonstrada" : "Converter em cliente"}
+        {convertido ? "Conversão simulada" : "Converter em cliente"}
       </Botao>
 
       <Gaveta
         aberta={aberta}
         aoFechar={fechar}
-        titulo={convertido ? "Demonstração concluída" : "Converter em cliente"}
+        titulo={convertido ? "Conversão simulada" : "Converter em cliente"}
         descricao={
           convertido
             ? "Nada foi gravado. Veja abaixo o que teria acontecido."
@@ -160,7 +160,7 @@ export function ConverterEmCliente({
         {convertido ? (
           /* ---- Confirmação: honesta sobre o que NÃO aconteceu ---------- */
           <div className="space-y-5">
-            <Aviso tom="atencao" titulo="Demonstração — nada foi gravado">
+            <Aviso tom="atencao" titulo="Nada foi gravado">
               <p>
                 A conversão foi simulada para que se possa avaliar como o
                 fluxo funcionaria. Nenhum cliente foi criado, o lead
@@ -351,7 +351,7 @@ export function ConverterEmCliente({
                   <span className="font-medium text-tinta">Convertido</span>.
                 </li>
                 <li className="text-[var(--tinta-fraca)]">
-                  · Nesta demonstração, nenhum dos três acontece de verdade.
+                  · Nenhum dos três acontece de verdade: nada é gravado.
                 </li>
               </ul>
             </div>

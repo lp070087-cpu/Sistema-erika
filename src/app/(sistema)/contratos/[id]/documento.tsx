@@ -284,7 +284,7 @@ export function AreaDocumento({
             <p>
               {estado === "NAO_ENVIADO"
                 ? "Nenhum documento foi anexado a este contrato. Quando o PDF for gerado e enviado, ele fica guardado nesta área."
-                : "Este contrato tem documento associado no cenário de demonstração, mas o arquivo não existe de verdade — não há PDF para abrir, imprimir ou baixar."}
+                : "Este contrato tem documento associado no cenário de exemplo, mas o arquivo não existe de verdade — não há PDF para abrir, imprimir ou baixar."}
             </p>
           </Aviso>
 

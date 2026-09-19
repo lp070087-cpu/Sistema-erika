@@ -301,8 +301,7 @@ export default async function PaginaConfiguracoes() {
         <p className="mt-5 max-w-[70ch] text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
           O endereço do site e o do formulário são publicados separadamente.
           Enquanto o sistema não estiver publicado, o formulário abre pelo
-          próprio sistema, em modo de demonstração — e o que a pessoa
-          responde não é gravado.
+          próprio sistema, e o que a pessoa responde não é gravado.
         </p>
       </Secao>
 
@@ -349,7 +348,7 @@ export default async function PaginaConfiguracoes() {
               Dados
             </dt>
             <dd className="mt-1 text-[0.9375rem] text-tinta">
-              Demonstração — nenhum dado real
+              Cenário de exemplo — nenhum dado gravado
             </dd>
           </div>
         </dl>

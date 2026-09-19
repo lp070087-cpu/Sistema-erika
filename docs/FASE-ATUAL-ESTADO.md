@@ -9,11 +9,14 @@ ela descreve, e o que não foi executado está dito como não executado.
 Esta fase não recomeçou nada. As Fases 0, 1 e 2 permanecem como estavam: nenhum
 arquivo foi reescrito, nenhuma migration foi criada, nenhum banco foi conectado.
 
-> **Nota de leitura.** Este documento foi escrito em duas passagens. As Seções 1
+> **Nota de leitura.** Este documento foi escrito em três passagens. As Seções 1
 > a 6 descrevem o que a fase entregou antes da interrupção por erro de execução.
-> A **Seção 7-A** descreve o refinamento concluído depois da retomada — linguagem
-> interna fora da tela, microinterações e responsividade. A **Seção 9** foi
-> reescrita na retomada, porque o ambiente de verificação mudou.
+> A **Seção 7-A** descreve o refinamento concluído na primeira retomada — linguagem
+> interna fora da tela, microinterações e responsividade. A **Seção 7-B** descreve
+> o acabamento visual final: largura do sistema, contraste dos textos secundários,
+> limpeza do Dashboard, desduplicação do aviso de demonstração e os ajustes de
+> contêiner e de ponto de quebra. A **Seção 9** foi reescrita a cada retomada,
+> porque o ambiente de verificação mudou.
 
 ---
 
@@ -221,6 +224,19 @@ de São Paulo ele já está no dia seguinte, e cumprimentaria com "Bom dia" quem
 está fechando a cozinha. A data entra como argumento para que o HTML do servidor
 e o do navegador digam a mesma palavra.
 
+**O que saiu do Dashboard depois — e por quê.** A tela ainda carregava elementos
+que falavam do sistema para quem o construiu: a etiqueta e a faixa de
+demonstração, o "Mapa do sistema" com os dezenove módulos e o estado de cada um,
+o bloco "Como ler esta fase", os marcadores "No ar", "Em preparação" e "Em breve"
+quando usados só como estado interno, e explicações de implementação. O critério
+aplicado foi um só: *isto é linguagem de quem usa, ou de quem construiu?* Saiu
+tudo que era o segundo caso. O que ficou — resumo, diagnósticos, clientes,
+consultorias, tarefas, fichas, contratos, atenção, parcelas e vencimentos,
+acompanhamentos, atividade recente e atalhos — está descrito em §7-B.3.
+
+Nada de arquitetura ou rota foi apagado para esconder esses textos: o campo
+`estado` continua em `navegacao.ts` decidindo o peso visual do item no menu.
+
 ---
 
 ## 6. O que permanece demonstrativo
@@ -228,12 +244,16 @@ e o do navegador digam a mesma palavra.
 Tudo o que é dado. Nenhum banco foi conectado.
 
 Os clientes, consultorias, contratos, leads, fichas, ingredientes, processos,
-acompanhamentos e tarefas continuam vivendo em `src/lib/dados/mock/`. A faixa de
-demonstração aparece em todas as telas novas.
+acompanhamentos e tarefas continuam vivendo em `src/lib/dados/mock/`. O aviso de
+demonstração aparece **uma vez**, no rodapé da casca — não mais repetido em cada
+tela. O motivo da mudança está em §7-B.4.
 
 **A divisão honesta na Central de Planilhas:** o arquivo é real, os dados dentro
 dele são de demonstração. É uma combinação que confunde se não for dita, e está
-dita — na faixa do topo e no aviso do fim da tela.
+dita — no rodapé da casca, que fecha dizendo que **as planilhas exportadas são
+.xlsx de verdade gerados a partir deste cenário**. Era o ponto que só a faixa do
+topo de `/planilhas` esclarecia; com a faixa fora, a ressalva passou para a frase
+do rodapé, que agora distingue explicitamente o dado do arquivo.
 
 O botão "Novo contrato" em `/contratos` é visual e preparatório: ele não finge
 gravar. Um formulário que aceita o preenchimento e descarta em silêncio seria
@@ -417,6 +437,165 @@ esquecido, e o custo de mantê-lo é uma função de quatro linhas. Com isso, to
 tela que fala de bloqueio de metodologia usa hoje **uma lista, um vocabulário e
 um lugar só** para tirar um item quando a Érika responder.
 
+## 7-B. O acabamento visual final
+
+Esta é a terceira passagem pelo documento. As duas anteriores foram: a construção
+das fases e a retomada que tirou a linguagem de obra do texto. Esta tratou de
+**largura, contraste, densidade e o que ainda parecia bastidor**.
+
+Nada de arquitetura foi tocado: nenhuma rota saiu, nenhum módulo foi
+reconstruído, a identidade (creme, verde escuro, oliva, tipografia editorial,
+sidebar) não foi redesenhada. As alterações são de token, de casca e de texto.
+
+### 7-B.1 Largura — o container e a margem
+
+O problema não era o tamanho do conteúdo, era o **teto** dele: `--largura-conteudo`
+valia 1320px. Num monitor de 1920px isso deixava quase 350px vazios de cada lado,
+e a sidebar já ocupa 252px à esquerda. O sistema parecia pequeno, flutuando no
+meio da tela, enquanto as tabelas de ficha apertavam colunas com espaço sobrando
+ao lado delas.
+
+- `--largura-conteudo`: **1320px → 2000px**. É teto, não largura: em 1920 o
+  container preenche o que existe depois da sidebar e das margens; a partir de
+  ~2500px ele para de crescer e as margens viram a moldura da página. Sem teto
+  nenhum, uma linha de texto em tela ultrawide passaria de 2500px — o mesmo
+  defeito de antes, invertido.
+- `--margem-conteudo`: token novo, `clamp(1rem, 1.2vw + 0.5rem, 2.75rem)`. Uma
+  variável só, em vez de `px-4 sm:px-6 lg:px-8` repetido em cada casca.
+- **A barra de topo passou a usar os mesmos dois tokens.** Ela tinha `px-4
+  sm:px-6` fixos e a página abaixo usava `--margem-conteudo`; numa tela larga os
+  dois desalinhavam, e o menu, o sino e o nome ficavam ~20px à esquerda da
+  primeira palavra do título. Agora barra, conteúdo e rodapé leem o mesmo token
+  e o mesmo teto — o alinhamento virou consequência de uma variável, não de três
+  números combinados à mão.
+- **Sem scroll horizontal global.** O `body` não ganhou overflow novo; o que
+  cresceu foi o teto do container, e as tabelas continuam rolando dentro do
+  próprio `overflow-x-auto`.
+
+O teto de 2000px, porém, **não pode valer no papel**: uma folha A4 tem ~794px, e
+um container de 2000px não encolhe sozinho dentro de um `article` de 820px — ele
+divide o espaço com quem está ao lado e o texto vira uma coluna estreita no canto.
+Por isso o `@media print` de `globals.css` neutraliza `--largura-conteudo` e
+`--margem-conteudo`. A regressão foi encontrada antes de sair: o relatório
+impresso continua saindo como o cliente o recebia.
+
+### 7-B.2 Contraste — as duas tintas secundárias
+
+Não era um texto específico, era leitura em bloco. Descrição de seção, rótulo de
+campo, data, legenda de tabela e nota de rodapé usam as mesmas duas variáveis, e
+todas puxavam para o claro demais sobre o creme. Numa tela com vinte dessas
+linhas, o olho cansa antes do fim.
+
+- `--tinta-suave`: **0.66 → 0.76** (≈5,3:1 → ≈7,4:1 contra `--superficie-solida`)
+- `--tinta-fraca`: **0.42 → 0.58** (≈2,9:1 → ≈4,6:1)
+
+A `fraca` era a que mais incomodava e é a que mais subiu: em 0.42 ela ficava
+**abaixo de 4,5:1**, o mínimo para texto pequeno — rótulo de 11px em caixa alta
+naquele tom não se lia, se adivinhava. As duas continuam distintas, com ~18
+pontos de alfa entre elas: a hierarquia de três níveis permanece legível *como*
+hierarquia. Escurecer a `fraca` até o nível da `suave` teria resolvido o
+contraste e apagado a hierarquia — que é o outro jeito de uma tela ficar ilegível.
+
+**As linhas não subiram.** `--linha` e `--linha-forte` delimitam área e não
+carregam texto; aumentá-las junto só deixaria a tela mais gradeada. Nenhuma cor
+da paleta da marca foi alterada.
+
+### 7-B.3 O Dashboard, e o que saiu de dentro dele
+
+O critério foi um só: **isto é linguagem de quem usa, ou de quem construiu?**
+Saiu tudo que era o segundo caso.
+
+Removidos da tela: a etiqueta `Demonstração`, a faixa de demonstração, o "Mapa do
+sistema" com os 19 módulos e o estado de cada um, o bloco "Como ler esta fase", e
+os marcadores de status interno "No ar", "Em preparação" e "Em breve" quando
+usados só como estado de obra. Também saíram as explicações de implementação.
+
+**Nada de arquitetura ou rota foi apagado para esconder esses textos.** O campo
+`estado` continua em `navegacao.ts` decidindo o peso visual do item; o que saiu
+foi a frase escrita na tela, não o dado.
+
+Ficou, e continua organizado: resumo, diagnósticos, clientes, consultorias,
+tarefas, fichas, contratos, itens que precisam de atenção, parcelas e
+vencimentos, acompanhamentos, atividade recente e atalhos.
+
+Duas coisas que merecem registro por serem decisões, não faxina:
+
+- **A ressalva sobre "Variação de custo no período" ficou, em prosa.** O campo
+  depende de definir o que entra na conta do custo, e por isso fica **fora da
+  soma em vez de aparecer como zero**. Zero seria um número errado com aparência
+  de certo — a mesma regra que o resto do sistema segue desde a Fase 2.
+- **Seis descrições de seção foram encurtadas.** Elas eram justificativas
+  ("Nenhuma delas é nota, média ou projeção — são coisas que se podem contar") e
+  cabem no comentário do código, não ao lado de um número que a consultora já
+  entende. Também foi trocado o atalho "1 modelo disponível" por "Exportar em
+  Excel": o primeiro descreve o catálogo, o segundo diz o que o clique faz.
+
+### 7-B.4 O aviso de demonstração, dito uma vez
+
+Vinte e duas telas traziam a própria faixa dizendo, com outras palavras, que os
+dados eram inventados. Lida no dia a dia, a repetição não informa — **ela apaga o
+próprio aviso**: quem vê a mesma tarja na primeira e na vigésima tela para de ler
+na terceira.
+
+A informação foi concentrada numa linha discreta no rodapé da casca, em
+`shell.tsx`. A honestidade não foi reduzida, foi **desduplicada**. É o lugar onde
+ela continua verdadeira (clientes, contratos, fichas e diagnósticos são cenário
+de exemplo; as planilhas, não — são .xlsx de verdade gerados a partir do cenário)
+e continua encontrável por quem for avaliar o sistema com um cliente do lado.
+
+Onde a remoção teria apagado informação real, ela não foi feita: as telas
+mantêm os avisos do tipo "nada é gravado nesta sessão" e "volta ao estado inicial
+ao recarregar". Esses são sobre **perda de dado**, não sobre a fase de construção
+do programa.
+
+`components/ui/faixa-demonstracao.tsx` ficou **sem nenhum consumidor** e **não foi
+apagado**, pela mesma razão do `AvisoMetodologia` em 7-A.4: apagar componente
+compartilhado é a faxina que quebra um arquivo esquecido, e o custo de mantê-lo é
+uma função de poucas linhas.
+
+### 7-B.5 Contêineres que escondiam o próprio botão
+
+Dois contêineres flex de rolagem não tinham `min-h-0`. Sem ele, um filho flex se
+recusa a encolher abaixo do próprio conteúdo — e o resultado não é um detalhe de
+layout: **é o botão de salvar saindo da tela**.
+
+- `components/ui/gaveta.tsx` — o corpo da gaveta: sem `min-h-0`, a gaveta de
+  ficha empurrava o rodapé com a ação primária para fora do quadro.
+- `components/layout/barra-lateral.tsx` — o menu de dezessete itens empurrava a
+  assinatura do rodapé para fora numa janela de altura média.
+
+É a mesma correção nos dois lugares, e é o tipo de defeito que não aparece em
+tela grande nem em tela pequena: aparece só na altura intermediária.
+
+### 7-B.6 A zona morta entre 1024px e 1280px
+
+A tabela de composição da ficha tem **onze colunas** e só virava cartões a partir
+de `xl` (1280px). Entre 1024px e 1280px — notebook de 13", justamente o modo de
+trabalho descrito na Fase 0 — ela era uma tabela de onze colunas apertada numa
+tela que não comporta. O ponto de quebra passou de `xl` para `lg`, que é o
+breakpoint que o resto do sistema já usa. Três ocorrências.
+
+### 7-B.7 Linguagem de bastidor, no texto que sobrou
+
+Uma varredura de vocabulário trocou termos que descrevem **a construção do
+programa** por termos que descrevem **o que a pessoa faz**, em 22 arquivos.
+Exemplos: "sessão de trabalho" em vez de termos de implementação no lugar de
+`QUEM`, e textos de rodapé que falavam de "modo de demonstração" reescritos para
+o que a tela faz e não faz hoje.
+
+Onde não havia o que trocar, o texto saiu — não foi substituído por sinônimo.
+
+### 7-B.8 Auditoria de componentes, antes de mexer
+
+O acabamento de cards foi conferido primeiro e refeito depois, e não o contrário:
+os cards do sistema já compartilhavam **um raio, um token de borda, uma escala de
+padding e um gap**. Não havia o que redesenhar.
+
+A única intervenção foi um `min-w-0` no título de contrato do Dashboard que
+trunca. Sem ele, um filho flex com `truncate` não encolhe abaixo do próprio
+conteúdo, porque `min-width: auto` é o padrão — e o título empurrava a coluna ao
+lado para fora. Uma linha de correção em vez de uma reforma.
+
 ---
 
 ## 8. Regras gastronômicas que continuam esperando resposta
@@ -443,14 +622,27 @@ que não foi calculado. Nenhum número de aparência correta foi colocado no lug
 
 ## 9. Verificação
 
-Executado neste ambiente, na retomada:
+Executado neste ambiente, em cada retomada:
 
-- `npx tsc --noEmit` — **exit 0, sem erros**. Agora contra o `node_modules` real,
-  com o `exceljs` resolvido: não é mais a checagem com stub. Rodado depois de
-  cada bloco de alteração, inclusive o último.
+- `tsc --noEmit` — **exit 0, sem erros**, contra o `node_modules` real (com o
+  `exceljs` resolvido, não mais a checagem com stub). Rodado ao fim de cada bloco
+  de alteração, inclusive depois do último arquivo mexido no acabamento visual.
+- `npm run lint` — **exit 0, 0 erros**. Sem cache o comando estoura o limite de
+  tempo do shell e devolve código 124 (tempo esgotado), que **não é falha de
+  lint**; com `--cache` a execução completa cabe. Resultado: 7 avisos
+  `no-unused-vars`, todos em código anterior e **fora do escopo desta fase** —
+  `fichas/[id]/detalhe.tsx` (3), `fichas/nova.tsx` (2), `painel-custo.tsx` (1) e
+  `mock/operacao.ts` (1).
+- Os avisos `no-unused-vars` **causados por esta fase** foram corrigidos na
+  origem: a remoção das faixas deixou `Etiqueta` importada sem uso em quatro
+  telas (`acompanhamentos`, `contratos/novo`, `fichas`, `processos`) e deixou
+  `cn` importada sem uso em `shell.tsx`. Os cinco imports saíram.
 - Confirmação por busca, antes de apagar arquivo: nenhuma referência no projeto a
   `src/app/(sistema)/planilhas/modelos.ts` nem a
   `src/app/(sistema)/contratos/novo.tsx`.
+- Confirmação por busca, depois de tirar a faixa: **zero** ocorrências de
+  `FaixaDemonstracao` fora do próprio arquivo do componente, e **zero** etiquetas
+  `Demonstração` restantes em tela.
 
 **Validado no Windows pelo responsável, antes da interrupção:**
 
@@ -458,14 +650,21 @@ Executado neste ambiente, na retomada:
 - `npm run typecheck` — **passou**
 - `npm run build` (produção) — **passou**, Next.js 15.5.25, Prisma 6.19.3
 
-Não executado *neste sandbox*, e por quê:
+`npm run build` — **executado, exit 1**, e o motivo não está no código:
 
-- `npm run lint` e `npm run build` — os dois excedem o limite de tempo do shell
-  desta sessão (~3 min por comando) e estouram mesmo em um arquivo pequeno. **Não
-  foram verificados aqui.** As alterações desta retomada são de texto em JSX,
-  classes CSS e remoção de arquivos órfãos; nenhuma cria símbolo novo que o
-  `tsc` não tenha visto. Ainda assim, pela regra de não afirmar o que não foi
-  verificado, **lint e build precisam ser confirmados no Windows**.
+1. `prisma generate` (o primeiro passo do script) devolve **403 Forbidden** ao
+   buscar o checksum do schema-engine em `binaries.prisma.sh`. É a saída de rede
+   deste ambiente bloqueando o domínio, não uma falha de schema.
+2. Rodando `next build` direto, o passo seguinte baixa o binário nativo do SWC
+   para Linux — o `node_modules` deste projeto carrega só o
+   `@next/swc-win32-x64-msvc` — e o download morre com `EAI_AGAIN`,
+   `getaddrinfo registry.npmjs.org`. **Este sandbox não tem saída para o registro
+   do npm.**
+
+Ou seja: o build não chegou a compilar nada. Não houve erro de tipo, de módulo
+ou de JSX para reportar — a execução parou antes. **É limitação de ambiente, não
+resultado de código**, e o build **continua precisando ser confirmado no
+Windows**, como nas fases anteriores.
 
 Nenhuma migration, nenhum `git`, nenhum push e nenhum deploy foram executados.
 Nenhuma pasta fora de `/sistema-erika` foi alterada.
@@ -486,6 +685,12 @@ Nenhuma pasta fora de `/sistema-erika` foi alterada.
    isso é uma decisão sobre notificação, não sobre cálculo.
 5. **As quatro perguntas que faltam no diagnóstico** — a lacuna entre as 29
    transcritas e as 33 que o formulário tem, já declarada desde a Fase 2.6.
-6. **Confirmar `npm run lint` e `npm run build` no Windows.** É a única coisa
-   desta retomada que ficou sem verificação, pelo limite de tempo do shell. O
-   `typecheck` passou aqui.
+6. **Confirmar `npm run build` no Windows.** É a única coisa que ficou sem
+   verificação. O motivo é ambiente — este sandbox não alcança
+   `binaries.prisma.sh` nem `registry.npmjs.org` —, e não código. O `typecheck` e
+   o `lint` passaram aqui (ver §9).
+
+Nada nesta fase depende de resposta dela. O que dependeria — as sete regras
+gastronômicas acima — está fora do escopo declarado desta retomada: nenhuma
+fórmula de peso bruto, peso líquido, fator de correção, cocção, rendimento, custo
+real, CMV, markup ou margem foi implementada, e o Neon segue não conectado.

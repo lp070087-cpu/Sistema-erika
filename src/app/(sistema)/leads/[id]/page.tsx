@@ -5,7 +5,6 @@ import { CabecalhoPagina, Rotulo } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso, EstadoVazio, Painel, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { ListaSinais } from "@/components/ui/sinais";
 import {
   DETALHE_ORIGEM,
@@ -139,8 +138,6 @@ export default async function PaginaLead({ params }: Props) {
           </div>
         }
       />
-
-      <FaixaDemonstracao oQue="Este lead, o diagnóstico e as observações são de demonstração. Nenhum dado aqui é de cliente real." />
 
       {/* Cabeçalho de contato --------------------------------------------- */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">

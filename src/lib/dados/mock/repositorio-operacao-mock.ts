@@ -13,9 +13,12 @@
  */
 
 import type {
+  FichaDoIngrediente,
+  IngredienteEmUso,
   LinhaCliente,
   LinhaConsultoria,
   LinhaContrato,
+  LinhaIngredienteDoCliente,
   RepositorioOperacao,
   ResumoOperacao,
 } from "../repositorio-operacao";
@@ -30,6 +33,7 @@ import type {
   EventoHistorico,
   Ficha,
   Ingrediente,
+  IngredienteDoCliente,
   Notificacao,
   Processo,
   Tarefa,
@@ -63,6 +67,7 @@ import {
   EVENTOS,
   FICHAS,
   INGREDIENTES,
+  INGREDIENTES_DO_CLIENTE,
   PROCESSOS,
   TAREFAS,
 } from "./operacao";
@@ -305,6 +310,122 @@ export const repositorioOperacaoMock: RepositorioOperacao = {
 
   async obterIngrediente(id: string): Promise<Ingrediente | null> {
     return INGREDIENTES.find((i) => i.id === id) ?? null;
+  },
+
+  /**
+   * O insumo com tudo o que aponta para ele.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ AS TRÊS DIREÇÕES DA PERGUNTA "ONDE ISTO ENTRA"                     │
+   * │                                                                    │
+   * │ A varredura passa por TODAS as fichas, de todos os clientes — não   │
+   * │ só pelas do cliente atual. Um insumo que só aparecesse nas fichas   │
+   * │ de um cliente esconderia da consultora que ele já foi usado em      │
+   * │ outro lugar, e essa é justamente a informação que faz uma           │
+   * │ biblioteca valer a pena.                                            │
+   * │                                                                    │
+   * │ `precosDeClientes` só traz os clientes que têm registro PRÓPRIO.    │
+   * │ Os que caem para o preço de referência não aparecem aqui — se       │
+   * │ aparecessem, a lista diria "o Empório paga R$ 6,10" para um preço   │
+   * │ que na verdade é o da biblioteca, e ninguém saberia a diferença.    │
+   * └────────────────────────────────────────────────────────────────────┘
+   */
+  async obterIngredienteEmUso(id: string): Promise<IngredienteEmUso | null> {
+    const ingrediente = INGREDIENTES.find((i) => i.id === id);
+    if (!ingrediente) return null;
+
+    const usos: FichaDoIngrediente[] = [];
+    for (const ficha of FICHAS) {
+      const item = ficha.itens.find((it) => it.ingredienteId === id);
+      if (!item) continue;
+      const cliente = CLIENTES.find((c) => c.id === ficha.clienteId);
+      if (!cliente) continue;
+      usos.push({ ficha, cliente, item });
+    }
+
+    const precosDeClientes = INGREDIENTES_DO_CLIENTE.filter(
+      (r) => r.ingredienteId === id
+    ).flatMap((registro) => {
+      const cliente = CLIENTES.find((c) => c.id === registro.clienteId);
+      return cliente ? [{ cliente, registro }] : [];
+    });
+
+    return {
+      ingrediente,
+      usos: usos.sort((a, b) => b.ficha.atualizadaEm.getTime() - a.ficha.atualizadaEm.getTime()),
+      precosDeClientes,
+    };
+  },
+
+  /**
+   * A biblioteca vista por um cliente.
+   *
+   * Devolve TODOS os insumos, inclusive os que este cliente não tem preço
+   * registrado — e é aí que está a decisão. Uma lista que mostrasse só os
+   * insumos com preço do cliente pareceria completa, e a consultora não
+   * saberia que metade da ficha dela está rodando com preço genérico.
+   *
+   * `usosNoCliente` é a contagem de fichas DESTE cliente que usam o insumo.
+   * É o que permite responder "este insumo importa para este cliente?" sem
+   * que a tela precise cruzar ficha por ficha.
+   */
+  async listarIngredientesDoCliente(clienteId: string): Promise<LinhaIngredienteDoCliente[]> {
+    const porIngrediente = new Map(
+      INGREDIENTES_DO_CLIENTE.filter((r) => r.clienteId === clienteId).map((r) => [
+        r.ingredienteId,
+        r,
+      ])
+    );
+
+    const fichasDoCliente = FICHAS.filter((f) => f.clienteId === clienteId);
+
+    return INGREDIENTES.map((ingrediente) => {
+      const registro = porIngrediente.get(ingrediente.id) ?? null;
+      const doCliente = registro?.precoAtual != null && registro.precoAtual > 0;
+
+      const usosNoCliente = fichasDoCliente.filter((f) =>
+        f.itens.some((it) => it.ingredienteId === ingrediente.id)
+      ).length;
+
+      return {
+        id: `${clienteId}_${ingrediente.id}`,
+        ingrediente,
+        precoAtual: doCliente ? registro.precoAtual : ingrediente.precoAtual,
+        origemDoPreco: doCliente ? ("CLIENTE" as const) : ("BIBLIOTECA" as const),
+        fornecedor: doCliente ? registro.fornecedor : ingrediente.fornecedor,
+        atualizadoEm: doCliente ? registro.atualizadoEm : ingrediente.atualizadoEm,
+        historico: doCliente ? registro.historico : ingrediente.historico,
+        usosNoCliente,
+      };
+    }).sort((a, b) => {
+      // Primeiro o que este cliente realmente usa; depois o resto da
+      // biblioteca. Dentro de cada grupo, o mais recente primeiro — é a
+      // ordem em que ela olha a lista.
+      if (a.usosNoCliente !== b.usosNoCliente) return b.usosNoCliente - a.usosNoCliente;
+      return b.atualizadoEm.getTime() - a.atualizadoEm.getTime();
+    });
+  },
+
+  async obterIngredienteDoCliente(
+    clienteId: string,
+    ingredienteId: string
+  ): Promise<IngredienteDoCliente | null> {
+    return (
+      INGREDIENTES_DO_CLIENTE.find(
+        (r) => r.clienteId === clienteId && r.ingredienteId === ingredienteId
+      ) ?? null
+    );
+  },
+
+  async mapaDePrecosDoCliente(
+    clienteId: string
+  ): Promise<Map<string, IngredienteDoCliente>> {
+    return new Map(
+      INGREDIENTES_DO_CLIENTE.filter((r) => r.clienteId === clienteId).map((r) => [
+        r.ingredienteId,
+        r,
+      ])
+    );
   },
 
   // -- Contratos -----------------------------------------------------------

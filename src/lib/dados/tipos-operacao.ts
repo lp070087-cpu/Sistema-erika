@@ -13,13 +13,33 @@
  * │                                                                      │
  * │ O que existe é o que é FATO OBSERVÁVEL: quem é o cliente, o que foi  │
  * │ combinado, o que está pendente, o que foi declarado, que ingrediente │
- * │ tem que preço, em que dia. Um sistema que demonstra a operação sem   │
- * │ inventar a matemática dela.                                          │
+ * │ tem que preço, em que dia, e — desde o motor de custos — quanto o     │
+ * │ insumo pesou antes e depois de cada etapa. Um sistema que demonstra   │
+ * │ a operação sem inventar a matemática dela.                           │
  * │                                                                      │
- * │ Quando as decisões chegarem, os campos calculados ENTRAM AQUI como   │
- * │ campos derivados — preenchidos pelo servidor, nunca pela tela. O     │
- * │ contrato de `Ficha` já reserva o lugar onde isso vai acontecer, com  │
- * │ um campo de estado (`situacaoCalculo`) que hoje diz "pendente".      │
+ * │ ┌────────────────────────────────────────────────────────────────┐   │
+ * │ │ O QUE MUDOU COM O MOTOR DE CUSTOS, E O QUE NÃO MUDOU           │   │
+ * │ │                                                                │   │
+ * │ │ O que mudou: entrou PESO MEDIDO. `Transformacao` guarda o peso  │   │
+ * │ │ bruto, o limpo e o preparado — três medições, três fatos. Com   │   │
+ * │ │ eles, perda, rendimento e custo unitário por etapa passaram a   │   │
+ * │ │ ser ARITMÉTICA, e por isso saíram deste arquivo: quem os        │   │
+ * │ │ calcula é `./custos`, em funções puras, na leitura.             │   │
+ * │ │                                                                │   │
+ * │ │ O que NÃO mudou: nenhum campo de alvo. Não entrou CMV alvo,     │   │
+ * │ │ não entrou margem, não entrou markup, não entrou preço de       │   │
+ * │ │ venda, não entrou fator de correção de tabela. O motor calcula  │   │
+ * │ │ o que foi medido e para onde não há medição.                    │   │
+ * │ │                                                                │   │
+ * │ │ A diferença é a linha inteira: `rendimentoFinalPct` sai de dois │   │
+ * │ │ pesos que alguém pôs na balança. `fator de correção 1,25`      │   │
+ * │ │ sairia de uma tabela que ninguém escreveu. O primeiro é conta;  │   │
+ * │ │ o segundo seria a metodologia dela, inventada pelo sistema.     │   │
+ * │ │                                                                │   │
+ * │ │ `situacaoCalculo` continua em `Ficha` porque ainda diz algo     │   │
+ * │ │ verdadeiro: se os dados para calcular existem ou não. Ele só    │   │
+ * │ │ deixou de significar "o sistema não sabe calcular".             │   │
+ * │ └────────────────────────────────────────────────────────────────┘   │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -259,21 +279,111 @@ export type Processo = {
  */
 export type SituacaoCalculo = "PENDENTE_METODOLOGIA" | "AGUARDANDO_DADOS" | "DISPONIVEL";
 
+/**
+ * EM QUE PESO A QUANTIDADE DA FICHA FOI DECLARADA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ ESTE CAMPO É A PEÇA QUE FALTAVA PARA A CONTA FECHAR                   │
+ * │                                                                      │
+ * │ Uma ficha que pede "1,200 kg de mandioca" está pedindo o quê? O quilo │
+ * │ como se compra, o quilo depois de descascar, ou o quilo depois de     │
+ * │ cozinhar? Na cozinha, quem escreve a ficha sabe. No sistema, sem este │
+ * │ campo, a pergunta ficava sem resposta — e as três respostas dão custos │
+ * │ diferentes para a mesma linha.                                        │
+ * │                                                                      │
+ * │ Com a etapa declarada, a conta vira aritmética: a quantidade vezes o  │
+ * │ custo unitário DAQUELA etapa. Sem ela, o sistema teria que escolher   │
+ * │ por conta própria — e escolher seria inventar metodologia.            │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type EtapaPeso = "COMPRA" | "LIMPO" | "PREPARADO";
+
+export const ROTULO_ETAPA_PESO: Record<EtapaPeso, string> = {
+  COMPRA: "peso de compra",
+  LIMPO: "peso limpo",
+  PREPARADO: "peso preparado",
+};
+
 export type ItemFicha = {
   ingredienteId: string;
-  /** Quantidade líquida declarada. Como texto: "0,120" ou "a gosto". */
+  /** Quantidade declarada. Como texto: "0,120" ou "a gosto". */
   quantidade: string;
   unidade: string;
   /** Preço de referência do ingrediente no momento do uso. */
   precoReferencia: number | null;
   /**
-   * O custo do item. `null` enquanto a metodologia não for definida —
-   * e `null` é diferente de zero. Zero afirmaria que não custa nada.
+   * Em que peso a quantidade acima está expressa.
+   *
+   * `COMPRA` é o padrão de quem escreve a ficha olhando a nota fiscal;
+   * `PREPARADO` é o de quem pesa o prato pronto. As duas são declarações
+   * legítimas, e o sistema não converte uma na outra sem os pesos medidos.
    */
-  custo: number | null;
+  etapa: EtapaPeso;
+  /** O que a cozinha anotou sobre esta linha — corte, marca, substituição. */
+  observacao: string;
 };
 
+/*
+  POR QUE NÃO EXISTE MAIS UM CAMPO `custo` AQUI.
+
+  Ele existia e era `null` em todas as fichas, como registro honesto de que a
+  metodologia ainda não estava definida. Com o motor de aritmética, o custo
+  passou a ser CALCULÁVEL a partir do preço de referência e dos pesos medidos
+  — e um campo calculável não se guarda: ele se deriva na leitura, pelo mesmo
+  motivo que o total do contrato é a soma das parcelas e não um campo ao lado
+  delas. Dois lugares para o mesmo número divergem no dia em que um deles for
+  atualizado.
+
+  Quem lê o custo de um item agora é `derivarCustoDaFicha`, em `./custos`.
+*/
+
 export type SituacaoFicha = "COMPLETA" | "AGUARDANDO_DADOS" | "EM_REVISAO";
+
+/**
+ * POR QUE UMA LINHA DA FICHA NÃO ENTROU NA CONTA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ CADA MOTIVO PEDE UMA AÇÃO DIFERENTE DELA                             │
+ * │                                                                      │
+ * │   OK                    — a linha entrou na soma.                     │
+ * │   SEM_PRECO             — falta o preço do insumo. Ela resolve na     │
+ * │                           biblioteca, não na ficha.                   │
+ * │   SEM_PESO_ETAPA        — a ficha diz "peso preparado" e o insumo só  │
+ * │                           foi pesado na compra. Isso se resolve com   │
+ * │                           uma balança, não com um cadastro.           │
+ * │   QUANTIDADE_ILEGIVEL   — a quantidade não é número ("a gosto").      │
+ * │   SEM_UNIDADE_COMPATIVEL— o preço é por unidade de outra grandeza.    │
+ * │                                                                      │
+ * │ Um único "faltam dados" juntaria quatro problemas distintos num       │
+ * │ aviso só, e a consultora não saberia o que fazer com ele.             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type EstadoCalculoItem =
+  | "OK"
+  | "SEM_PRECO"
+  | "SEM_PESO_ETAPA"
+  | "QUANTIDADE_ILEGIVEL"
+  | "SEM_UNIDADE_COMPATIVEL";
+
+export const ROTULO_ESTADO_ITEM: Record<EstadoCalculoItem, string> = {
+  OK: "calculado",
+  SEM_PRECO: "sem preço",
+  SEM_PESO_ETAPA: "falta o peso",
+  QUANTIDADE_ILEGIVEL: "quantidade não numérica",
+  SEM_UNIDADE_COMPATIVEL: "unidade incompatível",
+};
+
+/** O que fazer a respeito de cada motivo — em uma frase, para a tela. */
+export const ACAO_DO_ESTADO_ITEM: Record<EstadoCalculoItem, string> = {
+  OK: "",
+  SEM_PRECO: "Registre o preço deste insumo na biblioteca.",
+  SEM_PESO_ETAPA:
+    "Este insumo ainda não foi pesado nesta etapa. Pese na cozinha e informe o peso.",
+  QUANTIDADE_ILEGIVEL:
+    "A quantidade desta linha não é um número. Se ela não tiver medida exata, deixe fora da soma.",
+  SEM_UNIDADE_COMPATIVEL:
+    "O preço deste insumo está numa unidade de grandeza diferente da quantidade da ficha.",
+};
 
 export type Ficha = {
   id: string;
@@ -310,25 +420,141 @@ export type PrecoIngrediente = {
   origem: "CONSULTORA" | "CLIENTE" | "IMPORTADO";
 };
 
+/**
+ * UMA COMPRA — o que foi pago por quanto.
+ *
+ * Os três campos são FATOS registrados: quanto veio, por qual valor, em que
+ * unidade veio. O preço unitário NÃO mora aqui: ele é `valorTotal /
+ * quantidade`, derivado em `./custos`, para que não existam dois números
+ * discordando sobre a mesma compra.
+ */
+export type Compra = {
+  quantidade: number;
+  unidade: string;
+  valorTotal: number;
+};
+
+/** Um peso medido numa etapa, com a unidade em que foi pesado. */
+export type PesoInformado = {
+  peso: number;
+  unidade: string;
+};
+
+/**
+ * AS TRÊS ETAPAS DA TRANSFORMAÇÃO.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE CADA ETAPA É OPCIONAL, E POR QUE ISSO É O PONTO              │
+ * │                                                                      │
+ * │ Nem todo insumo tem as três. A farinha não perde na limpeza; o        │
+ * │ queijo ralado não encolhe no fogo. Obrigar a preencher três pesos     │
+ * │ faria a consultora digitar o mesmo número três vezes para calar o     │
+ * │ formulário — e aí o dado deixaria de significar "eu medi" para         │
+ * │ significar "eu preenchi".                                            │
+ * │                                                                      │
+ * │ Cada etapa presente é uma MEDIÇÃO. Cada etapa ausente é uma pergunta  │
+ * │ que ela ainda não respondeu, e o sistema mostra "não informado".      │
+ * │ Nenhuma etapa ausente é preenchida por estimativa.                    │
+ * │                                                                      │
+ * │ O bruto é o único que a contagem usa como âncora: sem ele não há      │
+ * │ perda nenhuma para calcular, porque perda precisa de um ANTES.        │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type Transformacao = {
+  /** O peso como veio, antes de limpar. É o "antes" de toda perda. */
+  bruto: PesoInformado | null;
+  /** Depois de descascar, limpar, aparar. */
+  limpo: PesoInformado | null;
+  /** Depois de cozinhar, assar, grelhar — o peso utilizável. */
+  preparado: PesoInformado | null;
+  /** O que ela anotou sobre o preparo: corte, tempo, ponto. */
+  observacao: string;
+};
+
+/**
+ * O INGREDIENTE — a biblioteca e a transformação.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE MUDOU NESTA VERSÃO, E POR QUE ARQUITETURA                       │
+ * │                                                                      │
+ * │ A versão anterior era uma lista de preços com nome. Esta é o insumo   │
+ * │ como a cozinha o conhece: quanto se compra, por quanto, e o que       │
+ * │ acontece com ele entre a compra e o prato.                            │
+ * │                                                                      │
+ * │ A distinção entre a BIBLIOTECA (o insumo em si) e o DADO DO CLIENTE   │
+ * │ (o preço que aquele cliente paga) está feita em TIPO: o preço e o     │
+ * │ fornecedor saíram daqui e passaram para `IngredienteDoCliente`, que   │
+ * │ aponta para cá. O mesmo "Batata inglesa" existe uma vez, e cada       │
+ * │ cliente tem a sua linha de preço.                                     │
+ * │                                                                      │
+ * │ `precoAtual`, `atualizadoEm`, `fornecedor` e `historico` continuam    │
+ * │ existindo aqui como CAMPOS DERIVADOS da biblioteca global — o preço   │
+ * │ de referência quando não há um preço específico do cliente. Eles são  │
+ * │ preenchidos pelo repositório, nunca digitados na tela.                │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
 export type Ingrediente = {
   id: string;
   nome: string;
   categoria: string;
+  /** Unidade em que a biblioteca expressa o preço de referência. */
   unidade: string;
-  /** O preço vigente. É o primeiro da lista de histórico. */
+  /** Como este insumo é comprado, na maioria das vezes. Declarado. */
+  compra: Compra | null;
+  /** Os pesos medidos da transformação. Cada um é opcional. */
+  transformacao: Transformacao;
+  /** O que ela anotou sobre o insumo em geral — não sobre um cliente. */
+  observacoes: string;
+  /**
+   * O preço de referência da BIBLIOTECA, quando nenhum cliente tem o seu.
+   * Derivado do topo de `historico`.
+   */
   precoAtual: number | null;
   atualizadoEm: Date;
   fornecedor: string;
   /**
-   * Histórico de preços, do mais recente para o mais antigo.
-   *
-   * É o coração de um dos ganhos que a Fase 0 identificou: parar de
-   * redigitar preço em cada ficha. Só que o GANHO depende do ponto 10 —
-   * de onde vêm os preços — e do ponto 5, sobre fator de correção por
-   * contexto. Por isso o histórico é visível e o recálculo automático
-   * ainda não acontece.
+   * Histórico de preços de referência da biblioteca, do mais recente para o
+   * mais antigo. É o preço GENÉRICO do insumo — para o preço de um cliente
+   * específico, ver `IngredienteDoCliente.historico`.
    */
   historico: PrecoIngrediente[];
+};
+
+/**
+ * O INSUMO VISTO POR UM CLIENTE.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ESTA SEPARAÇÃO EXISTE                                        │
+ * │                                                                      │
+ * │ É o ponto 6 da arquitetura, e ele é o que impede o erro mais caro da  │
+ * │ área: misturar o preço de um cliente com o do outro.                  │
+ * │                                                                      │
+ * │ O "Batata inglesa" é um insumo só — a mesma coisa, a mesma compra, a  │
+ * │ mesma perda na limpeza. Mas a Empório Verde paga R$ 6,10 o quilo no   │
+ * │ hortifrúti da esquina e o Sabor da Serra paga R$ 5,40 no atacado. Se  │
+ * │ o preço morasse na biblioteca, o custo de um prato do Sabor da Serra   │
+ * │ sairia com o preço da Empório — e ninguém veria, porque o número      │
+ * │ sairia com aparência perfeitamente normal.                            │
+ * │                                                                      │
+ * │ A transformação NÃO se duplica por cliente: quanto a batata rende     │
+ * │ depende da batata, não de quem comprou. Duplicá-la por cliente         │
+ * │ criaria duas versões do mesmo fato, e a segunda a ser editada venceria │
+ * │ — sem ninguém saber qual das duas vale.                               │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type IngredienteDoCliente = {
+  id: string;
+  clienteId: string;
+  ingredienteId: string;
+  /** O preço vigente PARA ESTE CLIENTE. Derivado do topo do histórico. */
+  precoAtual: number | null;
+  unidade: string;
+  fornecedor: string;
+  atualizadoEm: Date;
+  /** Histórico de preços deste cliente, do mais recente para o mais antigo. */
+  historico: PrecoIngrediente[];
+  /** O que vale só para este cliente: marca, embalagem, substituição. */
+  observacoes: string;
 };
 
 // ---------------------------------------------------------------------------

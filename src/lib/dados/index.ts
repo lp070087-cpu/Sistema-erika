@@ -127,18 +127,22 @@ export type {
   Aceite,
   Acompanhamento,
   Cliente as ClienteOperacao,
+  Compra,
   Compromisso,
   Consultoria,
   Contrato,
   Documento,
+  EstadoCalculoItem,
   EstadoDocumentoContrato,
   EstadoEtapa,
   EtapaConsultoria,
   EtapaJornada,
+  EtapaPeso,
   EventoContrato,
   EventoHistorico,
   Ficha,
   Ingrediente,
+  IngredienteDoCliente,
   ItemAtencao,
   ItemFicha,
   Modalidade,
@@ -147,6 +151,7 @@ export type {
   OrigemLead,
   ParcelaContrato,
   PassoProcesso,
+  PesoInformado,
   PorteEstabelecimento,
   PrecoIngrediente,
   Prioridade,
@@ -168,7 +173,42 @@ export type {
   TipoEvento,
   TipoEventoContrato,
   TipoNotificacao,
+  Transformacao,
 } from "./tipos-operacao";
+
+export { ACAO_DO_ESTADO_ITEM, ROTULO_ESTADO_ITEM, ROTULO_ETAPA_PESO } from "./tipos-operacao";
+
+// --- Motor de custos --------------------------------------------------------
+
+export {
+  CASAS_CUSTO,
+  CASAS_PERCENTUAL,
+  CASAS_PESO,
+  UNIDADES_DE_PESO,
+  custoDaQuantidade,
+  custoPorEtapa,
+  derivarTransformacao,
+  ehUnidadeDePeso,
+  mesmaBase,
+  precoUnitarioDaCompra,
+} from "./custos";
+
+export type {
+  CustoDeQuantidade,
+  CustoPorEtapa,
+  IndicadoresTransformacao,
+  TransformacaoDerivada,
+} from "./custos";
+
+export { lerQuantidade, pesarFicha, resolverItem, resumoDaFicha, somarFicha } from "./custos-ficha";
+
+export type { ItemResolvido, PesoDaFicha, ResumoCustoFicha } from "./custos-ficha";
+
+export type {
+  FichaDoIngrediente,
+  IngredienteEmUso,
+  LinhaIngredienteDoCliente,
+} from "./repositorio-operacao";
 
 export type {
   LinhaCliente,

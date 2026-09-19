@@ -1,45 +1,76 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Botao } from "@/components/ui/botao";
 import { Campo, CampoSelecao } from "@/components/ui/campo";
 import { Gaveta } from "@/components/ui/gaveta";
 import { Aviso } from "@/components/ui/superficie";
 import { Dado, ListaDados } from "@/components/ui/dados";
+import { RegraAConfirmar } from "@/components/ui/metodologia";
+import { criarFicha } from "@/lib/dados/demonstracao";
+import type { EtapaPeso, Ficha, Ingrediente, ItemFicha } from "@/lib/dados";
 
 /**
- * NOVA FICHA TÉCNICA — o cabeçalho e a lista de ingredientes.
+ * NOVA FICHA TÉCNICA — o cabeçalho, e depois a composição.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ A TELA NÃO TEM CAMPO DE CUSTO, E NÃO É POR FALTA DE ESPAÇO            │
+ * │ ESTA GAVETA CRIA UMA FICHA DE VERDADE                               │
  * │                                                                      │
- * │ O pedido original queria custo, CMV e preço sugerido por item. Nenhum │
- * │ dos três aparece — nem como campo vazio, nem como campo cinza.        │
+ * │ Antes, o último botão era "Entendi — fechar": explicava que nada      │
+ * │ havia sido salvo e fechava. A pessoa preenchia o formulário inteiro   │
+ * │ para receber uma explicação.                                          │
  * │                                                                      │
- * │ O motivos é simples: um campo de custo em branco na tela é um convite │
- * │ para preencher "mais ou menos". E "mais ou menos" num custo vira CMV  │
- * │ errado, que vira preço errado, que vira prejuízo no fim do mês.       │
+ * │ Agora "Criar ficha" grava a ficha no estado da sessão e ABRE ELA.     │
+ * │ A ficha nasce com os ingredientes que foram escolhidos aqui, e        │
+ * │ termina de ser montada na tela dela — que é onde a quantidade de      │
+ * │ cada insumo tem lugar ao lado do preço e do rendimento.               │
  * │                                                                      │
- * │ As decisões que faltam para o cálculo existir estão listadas em       │
- * │ `@/components/ui/metodologia`, com nome: quanto o alimento rende       │
- * │ depois de cozido, quanto se perde entre a compra e o uso, o que entra  │
- * │ na conta do custo, como o preço de venda é formado e quantas casas     │
- * │ cada número guarda.                                                   │
- * │                                                                      │
- * │ Então o formulário pede o que é fato: o que leva, quanto leva, quanto │
- * │ rende. E onde o custo ficaria, ele explica por que não está lá.       │
+ * │ Isso não é adiar trabalho: é a divisão certa. Criar a ficha é decidir │
+ * │ o que é (prato, cliente, categoria); compor é medir. Duas tarefas     │
+ * │ diferentes, e a segunda se faz olhando os números.                    │
  * └──────────────────────────────────────────────────────────────────────┘
  *
- * O "+ ADICIONAR INGREDIENTE" INSERE UMA LINHA DE VERDADE.
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE O FORMULÁRIO NÃO PEDE CUSTO — E ISSO MUDOU DE MOTIVO          │
+ * │                                                                      │
+ * │ Na fase anterior, custo não era pedido porque não havia como          │
+ * │ calculá-lo. Hoje há: o preço de cada insumo vem da biblioteca, e a    │
+ * │ conta é multiplicação e soma.                                          │
+ * │                                                                      │
+ * │ O motivo de continuar sem campo de custo é outro, e melhor: um        │
+ * │ campo digitado à mão poderia DISCORDAR da soma das linhas. Duas       │
+ * │ versões do custo do mesmo prato, e a digitada teria a mesma           │
+ * │ aparência da calculada. Onde o custo aparece é na ficha, calculado,   │
+ * │ com a procedência de cada número visível.                             │
+ * └──────────────────────────────────────────────────────────────────────┘
  *
- * Não é um botão que abre um modal que promete salvar. As linhas são estado
- * local, aparecem na tela, podem ser removidas e valem enquanto a gaveta
- * estiver aberta. Ao recarregar, somem junto — e o aviso diz isso.
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O RENDIMENTO É EM PORÇÕES, E NÃO EM UNIDADE ESCOLHIDA                 │
+ * │                                                                      │
+ * │ Havia aqui um seletor de unidade — porções, unidades, quilos, litros. │
+ * │ O campo que ele alimenta, no domínio, é `rendimentoPorcoes`: um       │
+ * │ NÚMERO DE PORÇÕES. Escolher "litros" gravava 12 no mesmo lugar que    │
+ * │ guardava 12 porções, e o custo por porção depois saía dividido por um │
+ * │ número cuja unidade ninguém sabia.                                    │
+ * │                                                                      │
+ * │ Permitir uma escolha que o dado não suporta é pior do que não         │
+ * │ oferecê-la. Se a metodologia render pratos em outra unidade, é uma    │
+ * │ pergunta para a Érika, e não uma decisão para o sistema.              │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 
-// Não existe lista de unidades aqui de propósito: na ficha, a unidade de
-// cada item vem do INSUMO já cadastrado, não de uma escolha livre. Uma lista
-// local permitiria dizer "0,5 kg" de um insumo comprado em litro.
+/** Um id de ficha que nasce na sessão. O prefixo diz que ele não é do banco. */
+function idDaSessao(nome: string): string {
+  const slug = nome
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30);
+  return `fi_demo_${slug || "ficha"}_${Date.now().toString(36)}`;
+}
 
 type Linha = {
   /** Chave local estável — não é id de banco, e o prefixo diz isso. */
@@ -47,7 +78,11 @@ type Linha = {
   ingredienteId: string;
   quantidade: string;
   unidade: string;
+  etapa: EtapaPeso;
 };
+
+/** Quem assina o que for criado nesta sessão. Não é um nome inventado. */
+const QUEM = "sessão de trabalho";
 
 export function NovaFicha({
   clientes,
@@ -55,19 +90,19 @@ export function NovaFicha({
   categorias,
 }: {
   clientes: readonly { id: string; nome: string }[];
-  ingredientes: readonly { id: string; nome: string; unidade: string }[];
+  /** O insumo inteiro: a ficha precisa do preço e do rendimento dele. */
+  ingredientes: readonly Ingrediente[];
   /** Categorias que já existem no acervo — para não inventar taxonomia. */
   categorias: readonly string[];
 }) {
-  const [aberta, setAberta] = useState(false);
-  const [revisando, setRevisando] = useState(false);
+  const router = useRouter();
 
+  const [aberta, setAberta] = useState(false);
   const [clienteId, setClienteId] = useState(clientes[0]?.id ?? "");
   const [nome, setNome] = useState("");
   const [categoria, setCategoria] = useState(categorias[0] ?? "");
   const [categoriaNova, setCategoriaNova] = useState("");
   const [rendimento, setRendimento] = useState("");
-  const [unidadeRendimento, setUnidadeRendimento] = useState("porções");
   const [porcao, setPorcao] = useState("");
   const [linhas, setLinhas] = useState<Linha[]>([]);
 
@@ -81,11 +116,9 @@ export function NovaFicha({
   const categoriaFinal =
     categoria === SEM_CATEGORIA ? categoriaNova.trim() : categoria;
 
-  const podeRevisar =
-    clienteId !== "" && nome.trim().length > 0 && categoriaFinal.length > 0;
+  const podeCriar = clienteId !== "" && nome.trim().length > 0 && categoriaFinal.length > 0;
 
   function adicionarLinha() {
-    if (ingredientes.length === 0) return;
     const primeiro = ingredientes[0];
     if (!primeiro) return;
     setLinhas((l) => [
@@ -95,6 +128,9 @@ export function NovaFicha({
         ingredienteId: primeiro.id,
         quantidade: "",
         unidade: primeiro.unidade,
+        // Compra é o padrão porque é o peso que se conhece sem ter pesado
+        // nada: é o que está na nota. Quem mediu a limpeza troca na ficha.
+        etapa: "COMPRA",
       },
     ]);
   }
@@ -115,15 +151,80 @@ export function NovaFicha({
     );
   }
 
+  function lerNumero(texto: string): number | null {
+    const limpo = texto.trim().replace(",", ".");
+    if (limpo === "") return null;
+    const n = Number(limpo);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   function fechar() {
     setAberta(false);
-    setRevisando(false);
     setNome("");
     setCategoria(categorias[0] ?? "");
     setCategoriaNova("");
     setRendimento("");
     setPorcao("");
     setLinhas([]);
+  }
+
+  /**
+   * CRIA A FICHA — e leva para ela.
+   *
+   * A ficha nasce com `itens` montados a partir das linhas escolhidas aqui,
+   * cada um com o preço de referência do insumo naquele momento. Guardar o
+   * preço junto é o que permite, depois, saber com que preço a ficha foi
+   * escrita — e é o que o painel usa para avisar quando ele divergir do
+   * preço vigente.
+   */
+  function criar() {
+    const agora = new Date();
+
+    const itens: ItemFicha[] = linhas.flatMap((l) => {
+      const insumo = ingredientes.find((i) => i.id === l.ingredienteId);
+      if (!insumo) return [];
+      return [
+        {
+          ingredienteId: insumo.id,
+          quantidade: l.quantidade.trim(),
+          unidade: insumo.unidade,
+          precoReferencia: insumo.precoAtual,
+          etapa: l.etapa,
+          observacao: "",
+        },
+      ];
+    });
+
+    const ficha: Ficha = {
+      id: idDaSessao(nome.trim()),
+      clienteId,
+      nome: nome.trim(),
+      categoria: categoriaFinal,
+      rendimentoPorcoes: lerNumero(rendimento),
+      porcaoGramas: lerNumero(porcao),
+      itens,
+      modoPreparo: [],
+      finalizacao: [],
+      observacoes: "",
+      // Nasce em revisão porque ninguém a conferiu ainda: a composição tem
+      // linhas sem quantidade e o rendimento pode estar em branco.
+      situacao: "EM_REVISAO",
+      situacaoCalculo: "AGUARDANDO_DADOS",
+      atualizadaEm: agora,
+      historico: [
+        {
+          em: agora,
+          oQue: `Ficha criada com ${itens.length} ${
+            itens.length === 1 ? "ingrediente" : "ingredientes"
+          }.`,
+          quem: QUEM,
+        },
+      ],
+    };
+
+    criarFicha(ficha);
+    fechar();
+    router.push(`/fichas/${ficha.id}`);
   }
 
   return (
@@ -135,208 +236,116 @@ export function NovaFicha({
       <Gaveta
         aberta={aberta}
         aoFechar={fechar}
-        titulo={revisando ? "Confira antes de criar" : "Nova ficha técnica"}
-        descricao={
-          revisando
-            ? "Esta é a ficha como ela ficaria. Ainda não foi criada."
-            : "O que o prato leva, quanto rende e para qual cliente."
-        }
+        titulo="Nova ficha técnica"
+        descricao="O que o prato é e para qual cliente. A composição se completa na ficha, onde cada linha mostra o custo enquanto se digita."
         acoes={
-          revisando ? (
-            <>
-              <Botao variante="linha" tamanho="sm" onClick={() => setRevisando(false)}>
-                Voltar e editar
-              </Botao>
-              <Botao variante="primario" tamanho="sm" onClick={fechar}>
-                Entendi — fechar
-              </Botao>
-            </>
-          ) : (
-            <>
-              <Botao variante="linha" tamanho="sm" onClick={fechar}>
-                Cancelar
-              </Botao>
-              <Botao
-                variante="primario"
-                tamanho="sm"
-                disabled={!podeRevisar}
-                onClick={() => setRevisando(true)}
-              >
-                Criar ficha
-              </Botao>
-            </>
-          )
+          <>
+            <Botao variante="linha" tamanho="sm" onClick={fechar}>
+              Cancelar
+            </Botao>
+            <Botao variante="primario" tamanho="sm" disabled={!podeCriar} onClick={criar}>
+              Criar ficha
+            </Botao>
+          </>
         }
       >
-        {revisando ? (
-          <div className="space-y-5">
-            <Aviso tom="atencao" titulo="Nada foi salvo ao recarregar">
-              <p>
-                A ficha não foi criada. O acervo continua com as mesmas fichas
-                enquanto o banco não estiver conectado.
-              </p>
-            </Aviso>
+        <div className="space-y-6">
+          {/* Identificação -------------------------------------------- */}
+          <div className="space-y-4">
+            <CampoSelecao
+              label="Cliente"
+              name="cliente"
+              value={clienteId}
+              opcoes={clientes.map((c) => ({ valor: c.id, texto: c.nome }))}
+              onChange={(e) => setClienteId(e.target.value)}
+              obrigatorio
+              ajuda="A ficha pertence a um cliente — é o acervo dele."
+            />
+            <Campo
+              label="Nome do prato"
+              name="nome"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              placeholder="Ex.: Costela ao molho madeira"
+              obrigatorio
+            />
 
-            <div>
-              <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
-                Como esta ficha ficaria
-              </p>
-              <div className="mt-3 rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-4 py-4">
-                <ListaDados colunas={2}>
-                  <Dado rotulo="Cliente">
-                    {clientes.find((c) => c.id === clienteId)?.nome ?? "—"}
-                  </Dado>
-                  <Dado rotulo="Prato">{nome}</Dado>
-                  <Dado rotulo="Categoria">{categoriaFinal}</Dado>
-                  <Dado rotulo="Rendimento">
-                    {rendimento
-                      ? `${rendimento} ${unidadeRendimento}`
-                      : "não declarado"}
-                  </Dado>
-                  <Dado rotulo="Porção">
-                    {porcao ? `${porcao} g` : "não declarada"}
-                  </Dado>
-                  <Dado rotulo="Ingredientes">
-                    <span className="tabular">{linhas.length}</span>
-                  </Dado>
-                </ListaDados>
+            {/* Categoria: escolher uma existente ou criar uma nova. Não
+                existe lista fixa no código — a taxonomia é do acervo. */}
+            <CampoSelecao
+              label="Categoria"
+              name="categoria"
+              value={categoria}
+              opcoes={[
+                ...categorias.map((c) => ({ valor: c, texto: c })),
+                { valor: SEM_CATEGORIA, texto: "Nova categoria…" },
+              ]}
+              onChange={(e) => setCategoria(e.target.value)}
+              obrigatorio
+            />
+            {categoria === SEM_CATEGORIA ? (
+              <Campo
+                label="Nome da nova categoria"
+                name="categoriaNova"
+                value={categoriaNova}
+                onChange={(e) => setCategoriaNova(e.target.value)}
+                placeholder="Ex.: Entradas"
+              />
+            ) : null}
 
-                {linhas.length > 0 ? (
-                  <ul className="mt-5 divide-y divide-[var(--linha)] border-t border-[var(--linha)]">
-                    {linhas.map((l) => {
-                      const ing = ingredientes.find((i) => i.id === l.ingredienteId);
-                      return (
-                        <li
-                          key={l.chave}
-                          className="flex items-baseline justify-between gap-4 py-2.5"
-                        >
-                          <span className="text-[0.875rem] text-tinta">
-                            {ing?.nome ?? "—"}
-                          </span>
-                          <span className="text-right text-[0.875rem] text-[var(--tinta-suave)] tabular">
-                            {l.quantidade || "quantidade não informada"} {l.unidade}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="rounded-[var(--raio)] border border-dashed border-dourado/70 bg-[rgba(201,165,78,0.08)] px-4 py-3.5">
-              <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-                <strong className="font-semibold text-tinta">
-                  A prévia mostra o que a ficha terá — sem custo.
-                </strong>{" "}
-                Custo, CMV e preço sugerido ficam de fora enquanto as decisões
-                de metodologia estiverem abertas. A lista completa do que
-                segura cada um deles está na tela da ficha, junto da composição.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Identificação -------------------------------------------- */}
-            <div className="space-y-4">
-              <CampoSelecao
-                label="Cliente"
-                name="cliente"
-                value={clienteId}
-                opcoes={clientes.map((c) => ({ valor: c.id, texto: c.nome }))}
-                onChange={(e) => setClienteId(e.target.value)}
-                obrigatorio
-                ajuda="A ficha pertence a um cliente — é o acervo dele."
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo
+                label="Rendimento (porções)"
+                name="rendimento"
+                inputMode="decimal"
+                value={rendimento}
+                onChange={(e) => setRendimento(e.target.value)}
+                placeholder="Ex.: 12"
+                ajuda="Quantas porções o prato rende. Pode ficar em branco e ser preenchido depois — sem ele não há custo por porção."
               />
               <Campo
-                label="Nome do prato"
-                name="nome"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                placeholder="Ex.: Costela ao molho madeira"
-                obrigatorio
+                label="Porção (g)"
+                name="porcao"
+                inputMode="decimal"
+                value={porcao}
+                onChange={(e) => setPorcao(e.target.value)}
+                placeholder="Ex.: 320"
+                ajuda="O peso de uma porção, medido no passe."
               />
+            </div>
+          </div>
 
-              {/* Categoria: escolher uma existente ou criar uma nova. Não
-                  existe lista fixa no código — a taxonomia é do acervo. */}
-              <CampoSelecao
-                label="Categoria"
-                name="categoria"
-                value={categoria}
-                opcoes={[
-                  ...categorias.map((c) => ({ valor: c, texto: c })),
-                  { valor: SEM_CATEGORIA, texto: "Nova categoria…" },
-                ]}
-                onChange={(e) => setCategoria(e.target.value)}
-                obrigatorio
-              />
-              {categoria === SEM_CATEGORIA ? (
-                <Campo
-                  label="Nome da nova categoria"
-                  name="categoriaNova"
-                  value={categoriaNova}
-                  onChange={(e) => setCategoriaNova(e.target.value)}
-                  placeholder="Ex.: Entradas"
-                />
+          {/* Ingredientes --------------------------------------------- */}
+          <div>
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+                O que leva
+              </p>
+              {linhas.length > 0 ? (
+                <span className="text-[0.75rem] text-[var(--tinta-fraca)] tabular">
+                  {linhas.length} {linhas.length === 1 ? "item" : "itens"}
+                </span>
               ) : null}
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Campo
-                  label="Rendimento"
-                  name="rendimento"
-                  inputMode="decimal"
-                  value={rendimento}
-                  onChange={(e) => setRendimento(e.target.value)}
-                  placeholder="Ex.: 12"
-                  ajuda="Quantas porções a receita rende."
-                />
-                <CampoSelecao
-                  label="Unidade de rendimento"
-                  name="unidadeRendimento"
-                  value={unidadeRendimento}
-                  opcoes={[
-                    { valor: "porções", texto: "Porções" },
-                    { valor: "unidades", texto: "Unidades" },
-                    { valor: "kg", texto: "Quilos" },
-                    { valor: "L", texto: "Litros" },
-                  ]}
-                  onChange={(e) => setUnidadeRendimento(e.target.value)}
-                />
-                <Campo
-                  label="Porção (g)"
-                  name="porcao"
-                  inputMode="decimal"
-                  value={porcao}
-                  onChange={(e) => setPorcao(e.target.value)}
-                  placeholder="Ex.: 320"
-                />
-              </div>
             </div>
 
-            {/* Ingredientes --------------------------------------------- */}
-            <div>
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
-                  O que leva
+            {ingredientes.length === 0 ? (
+              <p className="mt-3 rounded-[var(--raio-sm)] border border-dashed border-[var(--linha-forte)] px-3.5 py-3 text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
+                Nenhum ingrediente cadastrado ainda. A ficha precisa de
+                ingredientes para existir — cadastre os insumos primeiro, na
+                tela de Ingredientes.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+                  Opcional nesta etapa. Dá para criar a ficha agora e montar a
+                  composição na tela dela, com o custo aparecendo a cada linha.
                 </p>
-                {linhas.length > 0 ? (
-                  <span className="text-[0.75rem] text-[var(--tinta-fraca)] tabular">
-                    {linhas.length} {linhas.length === 1 ? "item" : "itens"}
-                  </span>
-                ) : null}
-              </div>
 
-              {ingredientes.length === 0 ? (
-                <p className="mt-3 rounded-[var(--raio-sm)] border border-dashed border-[var(--linha-forte)] px-3.5 py-3 text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
-                  Nenhum ingrediente cadastrado ainda. A ficha precisa de
-                  ingredientes para existir — cadastre os insumos primeiro, na
-                  tela de Ingredientes.
-                </p>
-              ) : (
-                <>
-                  {linhas.length > 0 ? (
-                    <ul className="mt-3 space-y-3">
-                      {linhas.map((l) => (
+                {linhas.length > 0 ? (
+                  <ul className="mt-3 space-y-3">
+                    {linhas.map((l) => {
+                      const insumo = ingredientes.find((i) => i.id === l.ingredienteId);
+                      return (
                         <li
                           key={l.chave}
                           className="rounded-[var(--raio-sm)] border border-[var(--linha)] bg-[var(--superficie)] px-3.5 py-3"
@@ -369,21 +378,40 @@ export function NovaFicha({
                                 />
                                 <div className="flex items-end">
                                   <p className="pb-2 text-[0.8125rem] text-[var(--tinta-suave)]">
-                                    Unidade:{" "}
-                                    <span className="text-tinta">{l.unidade}</span>
+                                    Unidade: <span className="text-tinta">{l.unidade}</span>
                                     <span className="mt-0.5 block text-[0.75rem] text-[var(--tinta-fraca)]">
                                       Vem do insumo, não é escolha livre.
                                     </span>
                                   </p>
                                 </div>
                               </div>
+                              <CampoSelecao
+                                label="Em que peso esta quantidade foi medida"
+                                name={`etapa-${l.chave}`}
+                                value={l.etapa}
+                                opcoes={[
+                                  { valor: "COMPRA", texto: "Compra — o peso que se paga" },
+                                  { valor: "LIMPO", texto: "Limpo — depois de descascar" },
+                                  { valor: "PREPARADO", texto: "Preparado — depois de cozinhar" },
+                                ]}
+                                onChange={(e) =>
+                                  alterarLinha(l.chave, { etapa: e.target.value as EtapaPeso })
+                                }
+                                ajuda={
+                                  insumo && insumo.precoAtual !== null
+                                    ? `O preço deste insumo é ${insumo.precoAtual
+                                        .toFixed(2)
+                                        .replace(".", ",")} por ${insumo.unidade} na compra.`
+                                    : "Este insumo ainda não tem preço cadastrado."
+                                }
+                              />
                             </div>
                             <button
                               type="button"
                               onClick={() =>
                                 setLinhas((lista) => lista.filter((x) => x.chave !== l.chave))
                               }
-                              aria-label={`Remover ${ingredientes.find((i) => i.id === l.ingredienteId)?.nome ?? "ingrediente"}`}
+                              aria-label={`Remover ${insumo?.nome ?? "ingrediente"}`}
                               className="mt-6 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--raio-sm)] text-[var(--tinta-suave)] transition-colors hover:bg-[rgba(14,26,20,0.06)] hover:text-tinta"
                             >
                               <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
@@ -397,58 +425,39 @@ export function NovaFicha({
                             </button>
                           </div>
                         </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-                      Nenhum ingrediente na ficha ainda. Adicione um por vez —
-                      é assim que ela é montada na cozinha.
-                    </p>
-                  )}
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+                    Nenhum ingrediente escolhido ainda.
+                  </p>
+                )}
 
-                  <div className="mt-3">
-                    <Botao variante="secundario" tamanho="sm" onClick={adicionarLinha}>
-                      Adicionar ingrediente
-                    </Botao>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Por que não há custo aqui -------------------------------- */}
-            <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] px-4 py-3.5">
-              <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
-                Por que não há campo de custo
-              </p>
-              <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-                <strong className="font-semibold text-tinta">
-                  O formulário não pede custo porque ninguém decidiu como ele
-                  é calculado.
-                </strong>{" "}
-                Pedir um número de custo aqui sem saber quanto o alimento rende
-                depois de cozido, quanto se perde entre a compra e o uso e o que
-                entra na conta seria registrar um valor do qual ninguém sabe a
-                procedência — e um custo registrado errado vira preço errado sem
-                ninguém perceber. O que a ficha pede é o que é fato: quantidade,
-                unidade e rendimento.
-              </p>
-            </div>
-
-            <div className="rounded-[var(--raio)] border border-dashed border-dourado/70 bg-[rgba(201,165,78,0.08)] px-4 py-3.5">
-              <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[#8a6d1f] uppercase">
-                Antes de preencher
-              </p>
-              <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-                <strong className="font-semibold text-tinta">
-                  Dados de demonstração não são salvos ao recarregar.
-                </strong>{" "}
-                A ficha e os ingredientes que você adicionar somem ao
-                recarregar a página.
-              </p>
-            </div>
-
+                <div className="mt-3">
+                  <Botao variante="secundario" tamanho="sm" onClick={adicionarLinha}>
+                    Adicionar ingrediente
+                  </Botao>
+                </div>
+              </>
+            )}
           </div>
-        )}
+
+          {/*
+            O QUE O CUSTO DEPENDE, AQUI, E NÃO UM "NÃO HÁ CUSTO".
+            A frase mudou porque o fato mudou: a soma existe. O que continua
+            fora é a formação de preço.
+          */}
+          <RegraAConfirmar oQue="O custo da ficha é calculado a partir do preço de cada insumo e da quantidade declarada. Preço de venda, CMV alvo e markup continuam dependendo de como a sua metodologia forma preço." />
+
+          <Aviso tom="info" titulo="Esta ficha vive nesta sessão">
+            <p>
+              Ela entra no acervo na hora, com as linhas que você escolher aqui,
+              e pode ser editada na tela dela. Ao recarregar a página, o acervo
+              volta ao estado inicial — o banco ainda não está conectado.
+            </p>
+          </Aviso>
+        </div>
       </Gaveta>
     </>
   );

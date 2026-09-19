@@ -43,9 +43,12 @@ import type {
   EventoHistorico,
   Ficha,
   Ingrediente,
+  IngredienteDoCliente,
   ItemAtencao,
+  ItemFicha,
   Notificacao,
   ParcelaContrato,
+  PrecoIngrediente,
   Processo,
   StatusAcao,
   Tarefa,
@@ -126,6 +129,63 @@ export type LinhaContrato = {
   mensalidade: number | null;
 };
 
+/**
+ * O INSUMO VISTO POR UM CLIENTE — já cruzado com a biblioteca.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ESTE CRUZAMENTO MORA NO REPOSITÓRIO                         │
+ * │                                                                      │
+ * │ Uma tela que mostrasse "batata — R$ 6,10" precisaria de dois dados:   │
+ * │ o preço daquele cliente e o nome/transformação do insumo na           │
+ * │ biblioteca. Se ela mesma fizesse o cruzamento, cada tela faria o seu  │
+ * │ — e a que esquecesse de filtrar por cliente mostraria o preço do      │
+ * │ vizinho, com a mesma aparência de um número certo.                    │
+ * │                                                                      │
+ * │ Aqui o cruzamento acontece UMA vez. `precoAtual` já é o preço DO      │
+ * │ CLIENTE quando ele tem um registrado, e cai para o preço de           │
+ * │ referência da biblioteca quando não tem. `origemDoPreco` diz qual dos │
+ * │ dois foi usado, para a tela poder mostrar a diferença sem adivinhar.  │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type LinhaIngredienteDoCliente = {
+  id: string;
+  ingrediente: Ingrediente;
+  /** O preço vigente para ESTE cliente, ou o de referência quando não há. */
+  precoAtual: number | null;
+  /** Qual preço foi usado — o específico do cliente ou o da biblioteca. */
+  origemDoPreco: "CLIENTE" | "BIBLIOTECA";
+  fornecedor: string;
+  atualizadoEm: Date;
+  /** O histórico que vale para este cliente. */
+  historico: PrecoIngrediente[];
+  /** Quantas fichas deste cliente usam este insumo. */
+  usosNoCliente: number;
+};
+
+/**
+ * ONDE UM INSUMO ENTRA — a resposta para "de que pratos isto faz parte".
+ *
+ * A ficha aparece com o CLIENTE junto, e não só com o nome. Saber que a
+ * batata entra no "Escondidinho" responde metade da pergunta; a outra metade
+ * é de quem é esse prato — porque o custo da mesma batata muda de cliente
+ * para cliente, e é justamente essa diferença que a consultoria investiga.
+ */
+export type FichaDoIngrediente = {
+  ficha: Ficha;
+  cliente: Cliente;
+  /** A linha exata onde o insumo entra — quantidade, etapa, observação. */
+  item: ItemFicha;
+};
+
+/** O insumo com tudo o que aponta para ele. Usado no detalhe do insumo. */
+export type IngredienteEmUso = {
+  ingrediente: Ingrediente;
+  /** As fichas (de todos os clientes) que usam este insumo. */
+  usos: FichaDoIngrediente[];
+  /** Os clientes que têm preço próprio para este insumo. */
+  precosDeClientes: Array<{ cliente: Cliente; registro: IngredienteDoCliente }>;
+};
+
 export interface RepositorioOperacao {
   // -- Resumo --------------------------------------------------------------
   resumoOperacao(): Promise<ResumoOperacao>;
@@ -177,6 +237,43 @@ export interface RepositorioOperacao {
   // -- Ingredientes --------------------------------------------------------
   listarIngredientes(): Promise<Ingrediente[]>;
   obterIngrediente(id: string): Promise<Ingrediente | null>;
+
+  /**
+   * O insumo com tudo o que aponta para ele: as fichas que o usam (com o
+   * cliente de cada uma) e os clientes que têm preço próprio.
+   *
+   * É o que faz o detalhe do ingrediente responder "onde isto entra" e
+   * "quem paga quanto por isto" — as duas perguntas que fazem um insumo ser
+   * consultável e não só uma linha de lista.
+   */
+  obterIngredienteEmUso(id: string): Promise<IngredienteEmUso | null>;
+
+  /**
+   * A biblioteca de insumos VISTA POR UM CLIENTE.
+   *
+   * Todos os insumos da biblioteca aparecem — inclusive os que este cliente
+   * ainda não tem preço registrado, que saem com o preço de referência e
+   * `origemDoPreco: "BIBLIOTECA"`. Esconder os sem preço próprio faria a
+   * lista parecer completa quando não é.
+   */
+  listarIngredientesDoCliente(clienteId: string): Promise<LinhaIngredienteDoCliente[]>;
+
+  /** O preço deste insumo PARA ESTE cliente. `null` quando não há registro. */
+  obterIngredienteDoCliente(
+    clienteId: string,
+    ingredienteId: string
+  ): Promise<IngredienteDoCliente | null>;
+
+  /**
+   * O preço de cada insumo de um cliente, indexado por `ingredienteId`.
+   *
+   * Existe porque a ficha resolve N linhas de uma vez: chamar
+   * `obterIngredienteDoCliente` por linha seria N consultas para montar uma
+   * tela só, e a tela já sabe quais ids quer.
+   */
+  mapaDePrecosDoCliente(
+    clienteId: string
+  ): Promise<Map<string, IngredienteDoCliente>>;
 
   // -- Contratos -----------------------------------------------------------
   listarContratos(): Promise<Contrato[]>;

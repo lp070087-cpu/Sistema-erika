@@ -72,7 +72,7 @@ export function PlanoDeAcao({
     setAcoes((atuais) => atuais.map((a) => (a.id === id ? { ...a, status } : a)));
     const alvo = acoes.find((a) => a.id === id);
     setAviso(
-      `“${alvo?.titulo ?? "Ação"}” foi marcada como ${ROTULO_STATUS_ACAO[status].toLowerCase()} — na demonstração. Ao recarregar, volta ao estado original.`
+      `“${alvo?.titulo ?? "Ação"}” foi marcada como ${ROTULO_STATUS_ACAO[status].toLowerCase()} — nesta sessão. Ao recarregar, volta ao estado original.`
     );
   }
 
@@ -80,7 +80,7 @@ export function PlanoDeAcao({
     if (!rascunho || !rascunho.titulo.trim()) return;
     setAcoes((atuais) => [rascunho, ...atuais]);
     setAviso(
-      `A ação “${rascunho.titulo}” foi adicionada à lista — na demonstração. Ela desaparece ao recarregar a página.`
+      `A ação “${rascunho.titulo}” foi adicionada à lista — nesta sessão. Ela desaparece ao recarregar a página.`
     );
     setRascunho(null);
   }
@@ -97,7 +97,7 @@ export function PlanoDeAcao({
         </p>
         <p className="mt-2.5">
           Recarregar a página devolve o plano ao estado original. Isso é o
-          comportamento esperado nesta fase, e não uma falha.
+          comportamento esperado, e não uma falha.
         </p>
       </Aviso>
 
@@ -108,7 +108,7 @@ export function PlanoDeAcao({
             ? "Nenhuma ação registrada"
             : `${contagem.concluidas} de ${contagem.total} concluídas`
         }
-        descricao="O que foi combinado com este cliente. Mover o status é um clique — e a demonstração deixa claro o que aconteceria."
+        descricao="O que foi combinado com este cliente. Mover o status é um clique, e a tela responde na hora."
         acoes={
           <Botao variante="primario" tamanho="sm" onClick={() => setRascunho(novaAcao(consultoriaId, clienteId))}>
             Nova ação
@@ -252,7 +252,7 @@ export function PlanoDeAcao({
         aberta={rascunho !== null}
         aoFechar={() => setRascunho(null)}
         titulo="Nova ação do plano"
-        descricao="O que foi combinado com o cliente. Fica na demonstração: nada é gravado."
+        descricao="O que foi combinado com o cliente. Fica nesta sessão: nada é gravado."
         acoes={
           <>
             <Botao variante="linha" tamanho="sm" onClick={() => setRascunho(null)}>

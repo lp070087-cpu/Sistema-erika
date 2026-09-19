@@ -21,14 +21,20 @@
  * │                                                                      │
  * │ O QUE ESTE ARQUIVO NÃO TEM                                           │
  * │                                                                      │
- * │ · nenhum custo de ficha          → depende dos pontos 4, 5, 6 e 19   │
  * │ · nenhum CMV, markup ou preço    → depende do ponto 7                │
  * │ · nenhuma margem, lucro, economia→ a origem do volume é o ponto 9    │
  * │ · nenhuma nota, score ou peso    → depende do ponto 11               │
+ * │ · nenhum fator de correção de tabela → depende dos pontos 5 e 6      │
  * │                                                                      │
- * │ Onde a tela precisaria de um desses números, ela mostra o que falta  │
- * │ e por quê. Um campo `null` aqui é uma pergunta em aberto, não um     │
- * │ esquecimento.                                                        │
+ * │ O que ELE PASSOU A TER, com o motor de custos: os pesos medidos de    │
+ * │ cada insumo (`transformacao`), a etapa em que cada item de ficha foi  │
+ * │ declarado (`etapa`) e o preço de cada cliente (`INGREDIENTES_DO_      │
+ * │ CLIENTE`). Com esses três, perda, rendimento e custo passaram a ser   │
+ * │ conta — e deixaram de ser pergunta.                                   │
+ * │                                                                      │
+ * │ Onde a tela precisaria de um dos números que continuam faltando, ela  │
+ * │ mostra o que falta e por quê. Um campo `null` aqui é uma pergunta em  │
+ * │ aberto, não um esquecimento.                                          │
  * │                                                                      │
  * │ Nenhum dado pessoal real: os negócios são fictícios, os e-mails são  │
  * │ `*.exemplo` e os telefones são `(5X) 99000-000X`.                    │
@@ -39,12 +45,14 @@ import type {
   AcaoPlano,
   Acompanhamento,
   Cliente,
+  Compra,
   Compromisso,
   Consultoria,
   Documento,
   EventoHistorico,
   Ficha,
   Ingrediente,
+  IngredienteDoCliente,
   Notificacao,
   PrecoIngrediente,
   Processo,
@@ -1333,9 +1341,42 @@ export const PROCESSOS: Processo[] = [
 // ---------------------------------------------------------------------------
 // BIBLIOTECA DE INGREDIENTES
 // ---------------------------------------------------------------------------
-// A biblioteca é da CONSULTORA, não de um cliente — foi a decisão de
-// arquitetura da Fase 0 para resolver o gargalo de redigitar preço em cada
-// ficha. O preço por cliente vem depois, junto com o ponto 10.
+// ┌──────────────────────────────────────────────────────────────────────┐
+// │ O QUE ESTA BIBLIOTECA CARREGA AGORA                                  │
+// │                                                                      │
+// │ Cada insumo tem quatro coisas, e cada uma responde uma pergunta:      │
+// │                                                                      │
+// │   · CATEGORIA e UNIDADE  — como ele é organizado e contado            │
+// │   · COMPRA                — quanto se leva por vez e por quanto       │
+// │   · TRANSFORMAÇÃO         — o que acontece com ele entre a compra e   │
+// │                             o prato, em pesos que alguém mediu        │
+// │   · HISTÓRICO             — o preço, com data e fornecedor            │
+// │                                                                      │
+// │ A TRANSFORMAÇÃO ESTÁ PREENCHIDA EM POUCOS, E ISSO É O DADO.           │
+// │                                                                      │
+// │ Só os insumos que passam por limpeza ou cocção têm pesos medidos. O   │
+// │ queijo, a farinha e o azeite não têm — não porque faltou tempo de     │
+// │ preencher, mas porque não há perda a medir: o que se compra é o que   │
+// │ se usa. Para esses, o custo por quilo é o preço da nota, e o sistema  │
+// │ mostra exatamente isso, sem inventar rendimento de 100%.              │
+// │                                                                      │
+// │ Onde há medição, ela é o que a CONSULTORIA registrou numa visita —    │
+// │ não um valor de tabela. Os três números da batata (5,000 / 4,500 /    │
+// │ 4,000) são da visita ao Empório Verde, e é por isso que a ficha do    │
+// │ escondidinho consegue mostrar o custo por quilo preparado.            │
+// │                                                                      │
+// │ ┌────────────────────────────────────────────────────────────────┐   │
+// │ │ O CASO DA BATATA, MARCADO COMO O QUE É                          │   │
+// │ │                                                                │   │
+// │ │ A batata é a demonstração de referência desta fase: 5 kg de     │   │
+// │ │ compra, 4,5 kg depois de descascar, 4 kg depois de cozinhar.    │   │
+// │ │ Ela existe para provar que a conta fecha — 10% de perda na      │   │
+// │ │ limpeza, 80% de rendimento final — e NÃO para virar regra.      │   │
+// │ │                                                                │   │
+// │ │ Nenhuma outra linha desta biblioteca foi preenchida por          │   │
+// │ │ semelhança com ela. Cada peso aqui é uma medição própria.        │   │
+// │ └────────────────────────────────────────────────────────────────┘   │
+// └──────────────────────────────────────────────────────────────────────┘
 
 type OrigemPreco = PrecoIngrediente["origem"];
 
@@ -1347,12 +1388,37 @@ type EntradaPreco = {
   origem?: OrigemPreco;
 };
 
+/** Uma etapa medida, na forma curta que este arquivo usa para escrevê-la. */
+type EtapaMedida = { peso: number; unidade: string };
+
+type PesosDaTransformacao = {
+  bruto?: EtapaMedida;
+  limpo?: EtapaMedida;
+  preparado?: EtapaMedida;
+  observacao?: string;
+};
+
 /**
  * Monta o ingrediente a partir do histórico.
  *
  * `precoAtual` e `atualizadoEm` são DERIVADOS da primeira entrada, não
  * digitados de novo. Um ingrediente cujo preço atual discordasse do topo do
  * próprio histórico seria um bug silencioso esperando para aparecer na tela.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE `compra` É DERIVADA, E NÃO DIGITADA                          │
+ * │                                                                      │
+ * │ Seria tentador escrever `valorTotal` à mão em cada ingrediente. Só    │
+ * │ que aí o preço unitário teria DUAS fontes: o topo do histórico e a    │
+ * │ divisão da compra. No dia em que o preço subisse, uma delas ficaria   │
+ * │ para trás — e a contagem do ingrediente discordaria do custo da       │
+ * │ ficha que o usa, com os dois números parecendo certos.                │
+ * │                                                                      │
+ * │ Então a compra é montada a partir do preço vigente: quem informa a    │
+ * │ QUANTIDADE comprada (5 kg, 1 caixa, 30 dúzias) é este arquivo; quem   │
+ * │ informa o VALOR UNITÁRIO é o histórico. `valorTotal` é o produto dos  │
+ * │ dois, e por isso não pode divergir deles.                             │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 function ingrediente(
   id: string,
@@ -1360,7 +1426,13 @@ function ingrediente(
   categoria: string,
   unidade: string,
   atual: EntradaPreco,
-  anteriores: EntradaPreco[]
+  anteriores: EntradaPreco[],
+  extras: {
+    /** Quanto se compra por vez, na unidade do preço. `null` = não declarado. */
+    compra?: { quantidade: number; unidade: string } | null;
+    transformacao?: PesosDaTransformacao;
+    observacoes?: string;
+  } = {}
 ): Ingrediente {
   const historico: PrecoIngrediente[] = [atual, ...anteriores]
     .map((e, i) => ({
@@ -1375,11 +1447,27 @@ function ingrediente(
 
   const vigente = historico[0];
 
+  const compra: Compra | null = extras.compra
+    ? {
+        quantidade: extras.compra.quantidade,
+        unidade: extras.compra.unidade,
+        valorTotal: Number((extras.compra.quantidade * atual.valor).toFixed(2)),
+      }
+    : null;
+
   return {
     id,
     nome,
     categoria,
     unidade,
+    compra,
+    transformacao: {
+      bruto: extras.transformacao?.bruto ?? null,
+      limpo: extras.transformacao?.limpo ?? null,
+      preparado: extras.transformacao?.preparado ?? null,
+      observacao: extras.transformacao?.observacao ?? "",
+    },
+    observacoes: extras.observacoes ?? "",
     precoAtual: vigente ? vigente.valor : null,
     atualizadoEm: vigente ? vigente.em : AGORA,
     fornecedor: vigente ? vigente.fornecedor : "",
@@ -1391,89 +1479,713 @@ const DISTRIBUIDORA = "Distribuidora Central";
 const HORTIFRUTI = "Hortifrúti do Mercado";
 const ATACADO = "Atacado Bom Preço";
 
+/** Atalhos de peso, para as linhas com medição ficarem legíveis. */
+const kg = (peso: number): EtapaMedida => ({ peso, unidade: "kg" });
+const l = (peso: number): EtapaMedida => ({ peso, unidade: "L" });
+const maco = (peso: number): EtapaMedida => ({ peso, unidade: "maço" });
+
 export const INGREDIENTES: Ingrediente[] = [
-  ingrediente("in_farinha_trigo", "Farinha de trigo tipo 1", "Farináceos", "kg", { valor: 4.89, fornecedor: ATACADO, dias: 12 }, [
-    { valor: 4.59, fornecedor: ATACADO, dias: 46 },
-    { valor: 4.35, fornecedor: ATACADO, dias: 88 },
+  // ---- Farináceos e mercearia --------------------------------------------
+  ingrediente(
+    "in_farinha_trigo",
+    "Farinha de trigo tipo 1",
+    "Farináceos",
+    "kg",
+    { valor: 4.89, fornecedor: ATACADO, dias: 12 },
+    [
+      { valor: 4.59, fornecedor: ATACADO, dias: 46 },
+      { valor: 4.35, fornecedor: ATACADO, dias: 88 },
+    ],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      observacoes: "Insumo de prateleira. Entra na receita pelo peso da embalagem, sem etapa de limpeza.",
+    }
+  ),
+  ingrediente(
+    "in_arroz",
+    "Arroz branco tipo 1",
+    "Mercearia",
+    "kg",
+    { valor: 6.3, fornecedor: ATACADO, dias: 15 },
+    [{ valor: 6.9, fornecedor: ATACADO, dias: 52 }],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      observacoes: "O grão ganha peso na cocção. O peso cozido ainda não foi medido nesta cozinha.",
+    }
+  ),
+  ingrediente(
+    "in_feijao",
+    "Feijão preto",
+    "Mercearia",
+    "kg",
+    { valor: 8.9, fornecedor: ATACADO, dias: 15 },
+    [{ valor: 8.2, fornecedor: ATACADO, dias: 50 }],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      observacoes: "Remolho e cocção aumentam o peso. Sem uma medição, o sistema não estima o rendimento.",
+    }
+  ),
+  ingrediente(
+    "in_quinoa",
+    "Quinoa em grãos",
+    "Mercearia",
+    "kg",
+    { valor: 32.0, fornecedor: ATACADO, dias: 43 },
+    [{ valor: 29.9, fornecedor: ATACADO, dias: 96 }],
+    {
+      compra: { quantidade: 1, unidade: "kg" },
+      observacoes: "Lavada antes de cozinhar. O peso escorrido depois da cocção ainda não foi medido.",
+    }
+  ),
+  ingrediente(
+    "in_chocolate",
+    "Chocolate meio amargo",
+    "Mercearia",
+    "kg",
+    { valor: 46.0, fornecedor: ATACADO, dias: 37 },
+    [
+      { valor: 52.8, fornecedor: ATACADO, dias: 68 },
+      { valor: 48.0, fornecedor: ATACADO, dias: 104 },
+    ],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      observacoes: "Derretido em banho-maria. Não há perda de peso a medir no derretimento.",
+    }
+  ),
+  ingrediente(
+    "in_azeite",
+    "Azeite de oliva extravirgem",
+    "Mercearia",
+    "L",
+    { valor: 47.9, fornecedor: ATACADO, dias: 29 },
+    [
+      { valor: 44.9, fornecedor: ATACADO, dias: 70 },
+      { valor: 42.5, fornecedor: ATACADO, dias: 112 },
+    ],
+    {
+      compra: { quantidade: 1, unidade: "L" },
+      observacoes: "O volume comprado é o volume usado. Não há limpeza nem cocção a medir.",
+    }
+  ),
+  ingrediente(
+    "in_polvilho",
+    "Fubá para polenta",
+    "Mercearia",
+    "kg",
+    { valor: 5.8, fornecedor: ATACADO, dias: 24 },
+    [{ valor: 5.2, fornecedor: ATACADO, dias: 61 }],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      observacoes: "Entra seco na receita e absorve o caldo na cocção — o peso final depende do caldo, não do fubá.",
+    }
+  ),
+  ingrediente(
+    "in_ovos",
+    "Ovos brancos",
+    "Laticínios",
+    "dúzia",
+    { valor: 9.8, fornecedor: ATACADO, dias: 11 },
+    [
+      { valor: 8.4, fornecedor: ATACADO, dias: 33 },
+      { valor: 7.9, fornecedor: ATACADO, dias: 68 },
+    ],
+    {
+      compra: { quantidade: 30, unidade: "dúzia" },
+      observacoes: "Comprados em caixa fechada de 30 dúzias. Contados por unidade, não pesados.",
+    }
+  ),
+
+  // ---- Hortifrúti ---------------------------------------------------------
+  ingrediente(
+    "in_batata",
+    "Batata inglesa",
+    "Hortifrúti",
+    "kg",
+    { valor: 6.1, fornecedor: HORTIFRUTI, dias: 2 },
+    [
+      { valor: 5.4, fornecedor: HORTIFRUTI, dias: 24 },
+      { valor: 7.2, fornecedor: HORTIFRUTI, dias: 62 },
+    ],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      transformacao: {
+        bruto: kg(5),
+        limpo: kg(4.5),
+        preparado: kg(4),
+        observacao:
+          "Medição de demonstração, feita na visita ao Empório Verde: 5 kg como veio, 4,5 kg depois de descascar e 4 kg depois de cozinhar e escorrer.",
+      },
+      observacoes:
+        "É a linha de referência desta fase. Os pesos são desta cozinha, medidos uma vez — não um valor de tabela para batata em geral.",
+    }
+  ),
+  ingrediente(
+    "in_mandioca",
+    "Mandioca descascada",
+    "Hortifrúti",
+    "kg",
+    { valor: 7.6, fornecedor: HORTIFRUTI, dias: 2 },
+    [{ valor: 6.9, fornecedor: HORTIFRUTI, dias: 20 }],
+    {
+      compra: { quantidade: 10, unidade: "kg" },
+      transformacao: {
+        bruto: kg(5),
+        limpo: kg(3.65),
+        preparado: kg(3),
+        observacao:
+          "Pesada antes de descascar, depois de descascar e depois de cozinhar e escorrer na peneira.",
+      },
+      observacoes:
+        "A casca grossa responde pela maior parte da perda. É o insumo que mais pesa no custo do escondidinho.",
+    }
+  ),
+  ingrediente(
+    "in_cenoura",
+    "Cenoura",
+    "Hortifrúti",
+    "kg",
+    { valor: 4.7, fornecedor: HORTIFRUTI, dias: 2 },
+    [{ valor: 5.9, fornecedor: HORTIFRUTI, dias: 18 }],
+    {
+      compra: { quantidade: 10, unidade: "kg" },
+      transformacao: {
+        bruto: kg(5),
+        limpo: kg(4.4),
+        preparado: kg(4),
+        observacao: "Descascada e aparada, e depois assada em corte rústico.",
+      },
+      observacoes: "É usada crua em uma ficha e assada em outra — o rendimento medido é o assado.",
+    }
+  ),
+  ingrediente(
+    "in_cebola",
+    "Cebola",
+    "Hortifrúti",
+    "kg",
+    { valor: 5.2, fornecedor: HORTIFRUTI, dias: 2 },
+    [
+      { valor: 4.6, fornecedor: HORTIFRUTI, dias: 21 },
+      { valor: 6.1, fornecedor: HORTIFRUTI, dias: 55 },
+    ],
+    {
+      compra: { quantidade: 10, unidade: "kg" },
+      transformacao: {
+        bruto: kg(5),
+        limpo: kg(4.3),
+        observacao: "Pesada em uma caixa, antes e depois de descascar e retirar as pontas.",
+      },
+      observacoes: "Entra em quase todas as fichas como base de refogado.",
+    }
+  ),
+  ingrediente(
+    "in_alho",
+    "Alho",
+    "Hortifrúti",
+    "kg",
+    { valor: 21.0, fornecedor: HORTIFRUTI, dias: 21 },
+    [{ valor: 19.4, fornecedor: HORTIFRUTI, dias: 60 }],
+    {
+      compra: { quantidade: 1, unidade: "kg" },
+      transformacao: {
+        bruto: kg(1),
+        limpo: kg(0.88),
+        observacao: "Pesado antes e depois de descascar, em uma caixa de 1 kg.",
+      },
+      observacoes: "A perda é casca. O custo por quilo limpo é o número que interessa na ficha.",
+    }
+  ),
+  ingrediente(
+    "in_tomate_italiano",
+    "Tomate italiano",
+    "Hortifrúti",
+    "kg",
+    { valor: 8.45, fornecedor: HORTIFRUTI, dias: 2 },
+    [
+      { valor: 9.8, fornecedor: HORTIFRUTI, dias: 16 },
+      { valor: 7.4, fornecedor: HORTIFRUTI, dias: 44 },
+    ],
+    {
+      compra: { quantidade: 10, unidade: "kg" },
+      transformacao: {
+        bruto: kg(5),
+        limpo: kg(4.6),
+        observacao: "Retirada do pedúnculo e das partes machucadas. Não passa por cocção antes do uso.",
+      },
+      observacoes: "O preço oscila mais que o dos outros hortifrútis — são três preços no histórico.",
+    }
+  ),
+  ingrediente(
+    "in_banana",
+    "Banana prata",
+    "Hortifrúti",
+    "kg",
+    { valor: 4.2, fornecedor: HORTIFRUTI, dias: 2 },
+    [
+      { valor: 5.1, fornecedor: HORTIFRUTI, dias: 15 },
+      { valor: 6.3, fornecedor: HORTIFRUTI, dias: 48 },
+    ],
+    {
+      compra: { quantidade: 10, unidade: "kg" },
+      transformacao: {
+        bruto: kg(5),
+        limpo: kg(4.6),
+        observacao: "Peso da polpa medido depois de descascar, em uma caixa de 5 kg.",
+      },
+      observacoes: "O rendimento depende do grau de maturação do lote — por isso a medição está datada.",
+    }
+  ),
+  ingrediente(
+    "in_manjericao",
+    "Manjericão fresco",
+    "Hortifrúti",
+    "maço",
+    { valor: 3.5, fornecedor: HORTIFRUTI, dias: 2 },
+    [{ valor: 3.2, fornecedor: HORTIFRUTI, dias: 19 }],
+    {
+      compra: { quantidade: 10, unidade: "maço" },
+      transformacao: {
+        bruto: maco(10),
+        limpo: maco(9),
+        observacao: "Contado em maços, não pesado: os talos são retirados antes de usar.",
+      },
+      observacoes:
+        "O único insumo contado em maço. A conta aqui é por unidade — não há conversão de maço para quilo.",
+    }
+  ),
+
+  // ---- Carnes -------------------------------------------------------------
+  ingrediente(
+    "in_frango_peito",
+    "Peito de frango",
+    "Carnes",
+    "kg",
+    { valor: 19.8, fornecedor: DISTRIBUIDORA, dias: 5 },
+    [
+      { valor: 21.3, fornecedor: DISTRIBUIDORA, dias: 26 },
+      { valor: 18.6, fornecedor: DISTRIBUIDORA, dias: 64 },
+    ],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      transformacao: {
+        bruto: kg(2.5),
+        limpo: kg(2.4),
+        preparado: kg(1.75),
+        observacao:
+          "Aparado antes de grelhar e pesado depois de descansar cinco minutos na chapa.",
+      },
+      observacoes:
+        "É a maior perda da biblioteca, e é cocção: a água que sai na chapa. Nenhuma tabela preveria isso para esta chapa.",
+    }
+  ),
+  ingrediente(
+    "in_carne_moida",
+    "Carne moída (patinho)",
+    "Carnes",
+    "kg",
+    { valor: 38.9, fornecedor: DISTRIBUIDORA, dias: 5 },
+    [
+      { valor: 36.4, fornecedor: DISTRIBUIDORA, dias: 34 },
+      { valor: 35.9, fornecedor: DISTRIBUIDORA, dias: 76 },
+    ],
+    {
+      compra: { quantidade: 5, unidade: "kg" },
+      observacoes:
+        "Moída no balcão antes de sair da loja: chega pronta para a panela e não passa por limpeza na cozinha.",
+    }
+  ),
+  ingrediente(
+    "in_carne_seca",
+    "Carne seca desfiada",
+    "Carnes",
+    "kg",
+    { valor: 64.5, fornecedor: DISTRIBUIDORA, dias: 20 },
+    [{ valor: 61.0, fornecedor: DISTRIBUIDORA, dias: 58 }],
+    {
+      compra: { quantidade: 2, unidade: "kg" },
+      transformacao: {
+        bruto: kg(2),
+        limpo: kg(1.8),
+        preparado: kg(1.2),
+        observacao:
+          "Dessalgada em três águas, cozida sob pressão e desfiada. Peso medido depois de esfriar.",
+      },
+      observacoes:
+        "O insumo mais caro da biblioteca, e o que mais perde peso. É a razão de o escondidinho precisar de ficha.",
+    }
+  ),
+  ingrediente(
+    "in_costela",
+    "Costela de porco",
+    "Carnes",
+    "kg",
+    { valor: 27.5, fornecedor: DISTRIBUIDORA, dias: 24 },
+    [{ valor: 25.4, fornecedor: DISTRIBUIDORA, dias: 66 }],
+    {
+      compra: { quantidade: 15, unidade: "kg" },
+      transformacao: {
+        bruto: kg(5),
+        limpo: kg(4.7),
+        preparado: kg(3.6),
+        observacao:
+          "Aparada e depois assada lentamente; pesada sem o osso e sem a gordura que escorreu.",
+      },
+      observacoes: "O osso sai do peso: o que entra no prato é a carne que sobra dele.",
+    }
+  ),
+
+  // ---- Laticínios ---------------------------------------------------------
+  ingrediente(
+    "in_queijo_mussarela",
+    "Queijo mussarela",
+    "Laticínios",
+    "kg",
+    { valor: 42.9, fornecedor: DISTRIBUIDORA, dias: 9 },
+    [
+      { valor: 39.5, fornecedor: DISTRIBUIDORA, dias: 40 },
+      { valor: 41.2, fornecedor: DISTRIBUIDORA, dias: 82 },
+    ],
+    {
+      compra: { quantidade: 4, unidade: "kg" },
+      transformacao: {
+        bruto: kg(3),
+        limpo: kg(2.88),
+        observacao: "Aparada das bordas mais duras, medida em um bloco de 3 kg.",
+      },
+      observacoes: "Derrete nas montagens, mas não se pesa queijo derretido na bandeja.",
+    }
+  ),
+  ingrediente(
+    "in_manteiga",
+    "Manteiga sem sal",
+    "Laticínios",
+    "kg",
+    { valor: 58.0, fornecedor: DISTRIBUIDORA, dias: 33 },
+    [{ valor: 54.5, fornecedor: DISTRIBUIDORA, dias: 74 }],
+    {
+      compra: { quantidade: 1, unidade: "kg" },
+      observacoes:
+        "O segundo insumo mais caro por quilo. Entra em purês e coberturas, e é onde a porção pequena esconde o custo.",
+    }
+  ),
+  ingrediente(
+    "in_leite",
+    "Leite integral",
+    "Laticínios",
+    "L",
+    { valor: 5.4, fornecedor: DISTRIBUIDORA, dias: 33 },
+    [{ valor: 4.9, fornecedor: DISTRIBUIDORA, dias: 71 }],
+    {
+      compra: { quantidade: 12, unidade: "L" },
+      observacoes: "Comprado em caixa de 12 litros. Reduz na cocção, e a redução não foi medida.",
+    }
+  ),
+  ingrediente(
+    "in_creme_leite",
+    "Creme de leite",
+    "Laticínios",
+    "L",
+    { valor: 12.9, fornecedor: DISTRIBUIDORA, dias: 37 },
+    [{ valor: 11.6, fornecedor: DISTRIBUIDORA, dias: 79 }],
+    {
+      compra: { quantidade: 12, unidade: "L" },
+      observacoes: "Comprado em caixa fechada e usado por litro. Não passa por limpeza.",
+    }
+  ),
+];
+
+// ---------------------------------------------------------------------------
+// PREÇO POR CLIENTE
+// ---------------------------------------------------------------------------
+// ┌──────────────────────────────────────────────────────────────────────┐
+// │ POR QUE O PREÇO DO CLIENTE SAI DESTA BIBLIOTECA                       │
+// │                                                                      │
+// │ `INGREDIENTES` guarda o preço de REFERÊNCIA — o que a consultora      │
+// │ anota quando não sabe quem comprou. É o padrão da biblioteca.         │
+// │                                                                      │
+// │ O preço que VALE na ficha é outro: é o que aquele cliente pagou. O    │
+// │ Empório Verde compra no hortifrúti da esquina; o Sabor da Serra       │
+// │ compra no atacado, com nota. A batata é a mesma, o preço não.         │
+// │                                                                      │
+// │ Se o preço do cliente morasse na biblioteca, o custo de um prato do   │
+// │ Sabor da Serra sairia com o preço do Empório — e o número sairia com  │
+// │ aparência perfeitamente normal.                                       │
+// │                                                                      │
+// │ ┌────────────────────────────────────────────────────────────────┐   │
+// │ │ O QUE ESTE BLOCO DELIBERADAMENTE NÃO FAZ                       │   │
+// │ │                                                                │   │
+// │ │ Não há entrada para todos os insumos de todos os clientes. O    │   │
+// │ │ que não está aqui cai para o preço de referência da biblioteca, │   │
+// │ │ e a tela diz que foi esse o usado — com `origemDoPreco`.        │   │
+// │ │                                                                │   │
+// │ │ Preencher as 24 linhas para os 4 clientes faria a demonstração  │   │
+// │ │ parecer um cadastro completo, quando o que ela mostra é que     │   │
+// │ │ FALTA preço de cliente registrado. A ausência é o dado.         │   │
+// │ └────────────────────────────────────────────────────────────────┘   │
+// └──────────────────────────────────────────────────────────────────────┘
+
+type EntradaDeCliente = {
+  ingredienteId: string;
+  /** O preço que ESTE cliente paga. O histórico é montado a partir daqui. */
+  atual: EntradaPreco;
+  anteriores: EntradaPreco[];
+  observacoes?: string;
+};
+
+/**
+ * Monta os registros de preço de um cliente.
+ *
+ * A unidade nunca é digitada aqui: ela vem do insumo na biblioteca. Um preço
+ * de cliente em unidade diferente da biblioteca seria uma conversão silenciosa
+ * — e o sistema não converte nada sem que alguém tenha medido.
+ */
+function precosDoCliente(clienteId: string, entradas: EntradaDeCliente[]): IngredienteDoCliente[] {
+  return entradas.map((e) => {
+    const base = INGREDIENTES.find((i) => i.id === e.ingredienteId);
+    const unidade = base?.unidade ?? "";
+
+    const historico: PrecoIngrediente[] = [e.atual, ...e.anteriores]
+      .map((p, i) => ({
+        id: `${clienteId}_${e.ingredienteId}_p${i + 1}`,
+        em: atras(p.dias),
+        valor: p.valor,
+        unidade,
+        fornecedor: p.fornecedor,
+        origem: p.origem ?? ("CLIENTE" as OrigemPreco),
+      }))
+      .sort((a, b) => b.em.getTime() - a.em.getTime());
+
+    const vigente = historico[0];
+
+    return {
+      id: `${clienteId}_${e.ingredienteId}`,
+      clienteId,
+      ingredienteId: e.ingredienteId,
+      precoAtual: vigente ? vigente.valor : null,
+      unidade,
+      fornecedor: vigente ? vigente.fornecedor : "",
+      atualizadoEm: vigente ? vigente.em : AGORA,
+      historico,
+      observacoes: e.observacoes ?? "",
+    };
+  });
+}
+
+const MERCADO_BAIRRO = "Mercado do Bairro";
+const ATACADO_INTERIOR = "Atacado do Interior";
+const DOCE_FORNECEDOR = "Doce & Cia Atacado";
+
+export const INGREDIENTES_DO_CLIENTE: IngredienteDoCliente[] = [
+  /*
+    ── EMPÓRIO VERDE ─────────────────────────────────────────────────────
+    Compra no varejo do bairro e em quantidade pequena, duas vezes por
+    semana. É o cliente com o preço mais alto — e é justamente o que a
+    consultoria está tentando mostrar a ele.
+  */
+  ...precosDoCliente("cl_emporio_verde", [
+    {
+      ingredienteId: "in_batata",
+      atual: { valor: 6.1, fornecedor: MERCADO_BAIRRO, dias: 2 },
+      anteriores: [
+        { valor: 5.9, fornecedor: MERCADO_BAIRRO, dias: 26 },
+        { valor: 7.4, fornecedor: MERCADO_BAIRRO, dias: 63 },
+      ],
+      observacoes: "Comprada em saco de 5 kg, duas vezes por semana.",
+    },
+    {
+      ingredienteId: "in_mandioca",
+      atual: { valor: 7.6, fornecedor: MERCADO_BAIRRO, dias: 2 },
+      anteriores: [{ valor: 7.1, fornecedor: MERCADO_BAIRRO, dias: 23 }],
+    },
+    {
+      ingredienteId: "in_carne_seca",
+      atual: { valor: 64.5, fornecedor: MERCADO_BAIRRO, dias: 20 },
+      anteriores: [{ valor: 62.0, fornecedor: MERCADO_BAIRRO, dias: 55 }],
+      observacoes: "Comprada já desfiada, em bandeja de 1 kg.",
+    },
+    {
+      ingredienteId: "in_queijo_mussarela",
+      atual: { valor: 44.9, fornecedor: MERCADO_BAIRRO, dias: 9 },
+      anteriores: [{ valor: 41.5, fornecedor: MERCADO_BAIRRO, dias: 42 }],
+      observacoes: "Mais caro que a referência do atacado — é a diferença que a ficha vai mostrar.",
+    },
+    {
+      ingredienteId: "in_manteiga",
+      atual: { valor: 58.0, fornecedor: MERCADO_BAIRRO, dias: 33 },
+      anteriores: [{ valor: 55.0, fornecedor: MERCADO_BAIRRO, dias: 76 }],
+    },
+    {
+      ingredienteId: "in_frango_peito",
+      atual: { valor: 19.8, fornecedor: MERCADO_BAIRRO, dias: 5 },
+      anteriores: [{ valor: 21.9, fornecedor: MERCADO_BAIRRO, dias: 28 }],
+    },
   ]),
-  ingrediente("in_queijo_mussarela", "Queijo mussarela", "Laticínios", "kg", { valor: 42.9, fornecedor: DISTRIBUIDORA, dias: 9 }, [
-    { valor: 39.5, fornecedor: DISTRIBUIDORA, dias: 40 },
-    { valor: 41.2, fornecedor: DISTRIBUIDORA, dias: 82 },
+
+  /*
+    ── SABOR DA SERRA ────────────────────────────────────────────────────
+    Compra no atacado do interior, em volume, com nota. Preços abaixo dos
+    do Empório em quase todas as linhas — o que reforça que a diferença de
+    custo entre os dois não vem da ficha: vem da compra.
+  */
+  ...precosDoCliente("cl_sabor_serra", [
+    {
+      ingredienteId: "in_costela",
+      atual: { valor: 25.4, fornecedor: ATACADO_INTERIOR, dias: 24 },
+      anteriores: [{ valor: 23.9, fornecedor: ATACADO_INTERIOR, dias: 69 }],
+      observacoes: "Comprada em caixa fechada de 15 kg, no início do mês.",
+    },
+    {
+      ingredienteId: "in_cebola",
+      atual: { valor: 4.55, fornecedor: ATACADO_INTERIOR, dias: 3 },
+      anteriores: [
+        { valor: 4.2, fornecedor: ATACADO_INTERIOR, dias: 24 },
+        { valor: 5.6, fornecedor: ATACADO_INTERIOR, dias: 58 },
+      ],
+      observacoes: "Saco de 20 kg, dividido entre a cozinha e o buffet.",
+    },
+    {
+      ingredienteId: "in_alho",
+      atual: { valor: 18.9, fornecedor: ATACADO_INTERIOR, dias: 22 },
+      anteriores: [{ valor: 17.5, fornecedor: ATACADO_INTERIOR, dias: 63 }],
+    },
+    {
+      ingredienteId: "in_arroz",
+      atual: { valor: 5.75, fornecedor: ATACADO_INTERIOR, dias: 16 },
+      anteriores: [{ valor: 6.4, fornecedor: ATACADO_INTERIOR, dias: 54 }],
+    },
   ]),
-  ingrediente("in_tomate_italiano", "Tomate italiano", "Hortifrúti", "kg", { valor: 8.45, fornecedor: HORTIFRUTI, dias: 2 }, [
-    { valor: 9.8, fornecedor: HORTIFRUTI, dias: 16 },
-    { valor: 7.4, fornecedor: HORTIFRUTI, dias: 44 },
+
+  /*
+    ── DOCE PONTO ────────────────────────────────────────────────────────
+    Confeitaria, e por isso o que importa aqui é mercearia e laticínio. O
+    chocolate mudou de fornecedor no mês passado — a ficha do brownie
+    registra isso no próprio histórico.
+  */
+  ...precosDoCliente("cl_doce_ponto", [
+    {
+      ingredienteId: "in_chocolate",
+      atual: { valor: 44.5, fornecedor: DOCE_FORNECEDOR, dias: 6 },
+      anteriores: [
+        { valor: 51.0, fornecedor: ATACADO, dias: 65 },
+        { valor: 47.5, fornecedor: ATACADO, dias: 102 },
+      ],
+      observacoes: "Fornecedor trocado: a barra de 5 kg agora vem da Doce & Cia.",
+    },
+    {
+      ingredienteId: "in_manteiga",
+      atual: { valor: 56.4, fornecedor: DOCE_FORNECEDOR, dias: 33 },
+      anteriores: [{ valor: 53.2, fornecedor: DOCE_FORNECEDOR, dias: 78 }],
+    },
+    {
+      ingredienteId: "in_farinha_trigo",
+      atual: { valor: 4.62, fornecedor: DOCE_FORNECEDOR, dias: 12 },
+      anteriores: [{ valor: 4.4, fornecedor: DOCE_FORNECEDOR, dias: 49 }],
+      observacoes: "Comprada em saco de 5 kg, junto com o açúcar.",
+    },
+    {
+      ingredienteId: "in_ovos",
+      atual: { valor: 9.8, fornecedor: DOCE_FORNECEDOR, dias: 11 },
+      anteriores: [{ valor: 8.9, fornecedor: DOCE_FORNECEDOR, dias: 35 }],
+    },
+    {
+      ingredienteId: "in_leite",
+      atual: { valor: 5.25, fornecedor: DOCE_FORNECEDOR, dias: 33 },
+      anteriores: [{ valor: 4.85, fornecedor: DOCE_FORNECEDOR, dias: 74 }],
+    },
+    {
+      ingredienteId: "in_cenoura",
+      atual: { valor: 4.7, fornecedor: HORTIFRUTI, dias: 2 },
+      anteriores: [{ valor: 5.7, fornecedor: HORTIFRUTI, dias: 20 }],
+    },
   ]),
-  ingrediente("in_carne_moida", "Carne moída (patinho)", "Carnes", "kg", { valor: 38.9, fornecedor: DISTRIBUIDORA, dias: 5 }, [
-    { valor: 36.4, fornecedor: DISTRIBUIDORA, dias: 34 },
-    { valor: 35.9, fornecedor: DISTRIBUIDORA, dias: 76 },
+
+  /*
+    ── BELLA MASSA ───────────────────────────────────────────────────────
+    Massa fresca e molho. Compra proteína e tomate em volume, e é o cliente
+    cuja ficha mais depende de preço atualizado — carne e tomate são os dois
+    insumos que mais oscilam no histórico.
+  */
+  ...precosDoCliente("cl_bella_massa", [
+    {
+      ingredienteId: "in_carne_moida",
+      atual: { valor: 37.9, fornecedor: ATACADO_INTERIOR, dias: 5 },
+      anteriores: [
+        { valor: 35.8, fornecedor: ATACADO_INTERIOR, dias: 36 },
+        { valor: 35.2, fornecedor: ATACADO_INTERIOR, dias: 79 },
+      ],
+      observacoes: "Moída na hora, no balcão do atacado.",
+    },
+    {
+      ingredienteId: "in_tomate_italiano",
+      atual: { valor: 7.9, fornecedor: ATACADO_INTERIOR, dias: 3 },
+      anteriores: [
+        { valor: 9.4, fornecedor: ATACADO_INTERIOR, dias: 18 },
+        { valor: 7.1, fornecedor: ATACADO_INTERIOR, dias: 46 },
+      ],
+      observacoes: "Caixa de 20 kg, comprada conforme a cotação da semana.",
+    },
+    {
+      ingredienteId: "in_farinha_trigo",
+      atual: { valor: 4.75, fornecedor: ATACADO_INTERIOR, dias: 12 },
+      anteriores: [{ valor: 4.5, fornecedor: ATACADO_INTERIOR, dias: 48 }],
+    },
+    {
+      ingredienteId: "in_ovos",
+      atual: { valor: 9.4, fornecedor: ATACADO_INTERIOR, dias: 11 },
+      anteriores: [{ valor: 8.2, fornecedor: ATACADO_INTERIOR, dias: 34 }],
+    },
+    {
+      ingredienteId: "in_cebola",
+      atual: { valor: 4.95, fornecedor: ATACADO_INTERIOR, dias: 3 },
+      anteriores: [{ valor: 4.4, fornecedor: ATACADO_INTERIOR, dias: 22 }],
+    },
+    {
+      ingredienteId: "in_alho",
+      atual: { valor: 20.5, fornecedor: ATACADO_INTERIOR, dias: 21 },
+      anteriores: [{ valor: 18.8, fornecedor: ATACADO_INTERIOR, dias: 62 }],
+    },
+    {
+      ingredienteId: "in_azeite",
+      atual: { valor: 46.5, fornecedor: ATACADO_INTERIOR, dias: 30 },
+      anteriores: [{ valor: 43.8, fornecedor: ATACADO_INTERIOR, dias: 72 }],
+    },
   ]),
-  ingrediente("in_carne_seca", "Carne seca desfiada", "Carnes", "kg", { valor: 64.5, fornecedor: DISTRIBUIDORA, dias: 20 }, [
-    { valor: 61.0, fornecedor: DISTRIBUIDORA, dias: 58 },
-  ]),
-  ingrediente("in_cebola", "Cebola", "Hortifrúti", "kg", { valor: 5.2, fornecedor: HORTIFRUTI, dias: 2 }, [
-    { valor: 4.6, fornecedor: HORTIFRUTI, dias: 21 },
-    { valor: 6.1, fornecedor: HORTIFRUTI, dias: 55 },
-  ]),
-  ingrediente("in_alho", "Alho", "Hortifrúti", "kg", { valor: 21.0, fornecedor: HORTIFRUTI, dias: 21 }, [
-    { valor: 19.4, fornecedor: HORTIFRUTI, dias: 60 },
-  ]),
-  ingrediente("in_azeite", "Azeite de oliva extravirgem", "Mercearia", "L", { valor: 47.9, fornecedor: ATACADO, dias: 29 }, [
-    { valor: 44.9, fornecedor: ATACADO, dias: 70 },
-    { valor: 42.5, fornecedor: ATACADO, dias: 112 },
-  ]),
-  ingrediente("in_arroz", "Arroz branco tipo 1", "Mercearia", "kg", { valor: 6.3, fornecedor: ATACADO, dias: 15 }, [
-    { valor: 6.9, fornecedor: ATACADO, dias: 52 },
-  ]),
-  ingrediente("in_feijao", "Feijão preto", "Mercearia", "kg", { valor: 8.9, fornecedor: ATACADO, dias: 15 }, [
-    { valor: 8.2, fornecedor: ATACADO, dias: 50 },
-  ]),
-  ingrediente("in_frango_peito", "Peito de frango", "Carnes", "kg", { valor: 19.8, fornecedor: DISTRIBUIDORA, dias: 5 }, [
-    { valor: 21.3, fornecedor: DISTRIBUIDORA, dias: 26 },
-    { valor: 18.6, fornecedor: DISTRIBUIDORA, dias: 64 },
-  ]),
-  ingrediente("in_mandioca", "Mandioca descascada", "Hortifrúti", "kg", { valor: 7.6, fornecedor: HORTIFRUTI, dias: 2 }, [
-    { valor: 6.9, fornecedor: HORTIFRUTI, dias: 20 },
-  ]),
-  ingrediente("in_batata", "Batata inglesa", "Hortifrúti", "kg", { valor: 6.1, fornecedor: HORTIFRUTI, dias: 2 }, [
-    { valor: 5.4, fornecedor: HORTIFRUTI, dias: 24 },
-    { valor: 7.2, fornecedor: HORTIFRUTI, dias: 62 },
-  ]),
-  ingrediente("in_cenoura", "Cenoura", "Hortifrúti", "kg", { valor: 4.7, fornecedor: HORTIFRUTI, dias: 2 }, [
-    { valor: 5.9, fornecedor: HORTIFRUTI, dias: 18 },
-  ]),
-  ingrediente("in_manjericao", "Manjericão fresco", "Hortifrúti", "maço", { valor: 3.5, fornecedor: HORTIFRUTI, dias: 2 }, [
-    { valor: 3.2, fornecedor: HORTIFRUTI, dias: 19 },
-  ]),
-  ingrediente("in_manteiga", "Manteiga sem sal", "Laticínios", "kg", { valor: 58.0, fornecedor: DISTRIBUIDORA, dias: 33 }, [
-    { valor: 54.5, fornecedor: DISTRIBUIDORA, dias: 74 },
-  ]),
-  ingrediente("in_leite", "Leite integral", "Laticínios", "L", { valor: 5.4, fornecedor: DISTRIBUIDORA, dias: 33 }, [
-    { valor: 4.9, fornecedor: DISTRIBUIDORA, dias: 71 },
-  ]),
-  ingrediente("in_ovos", "Ovos brancos", "Laticínios", "dúzia", { valor: 9.8, fornecedor: ATACADO, dias: 11 }, [
-    { valor: 8.4, fornecedor: ATACADO, dias: 33 },
-    { valor: 7.9, fornecedor: ATACADO, dias: 68 },
-  ]),
-  ingrediente("in_quinoa", "Quinoa em grãos", "Mercearia", "kg", { valor: 32.0, fornecedor: ATACADO, dias: 43 }, [
-    { valor: 29.9, fornecedor: ATACADO, dias: 96 },
-  ]),
-  ingrediente("in_banana", "Banana prata", "Hortifrúti", "kg", { valor: 4.2, fornecedor: HORTIFRUTI, dias: 2 }, [
-    { valor: 5.1, fornecedor: HORTIFRUTI, dias: 15 },
-    { valor: 6.3, fornecedor: HORTIFRUTI, dias: 48 },
-  ]),
-  ingrediente("in_chocolate", "Chocolate meio amargo", "Mercearia", "kg", { valor: 46.0, fornecedor: ATACADO, dias: 37 }, [
-    { valor: 52.8, fornecedor: ATACADO, dias: 68 },
-    { valor: 48.0, fornecedor: ATACADO, dias: 104 },
-  ]),
-  ingrediente("in_creme_leite", "Creme de leite", "Laticínios", "L", { valor: 12.9, fornecedor: DISTRIBUIDORA, dias: 37 }, [
-    { valor: 11.6, fornecedor: DISTRIBUIDORA, dias: 79 },
-  ]),
-  ingrediente("in_costela", "Costela de porco", "Carnes", "kg", { valor: 27.5, fornecedor: DISTRIBUIDORA, dias: 24 }, [
-    { valor: 25.4, fornecedor: DISTRIBUIDORA, dias: 66 },
-  ]),
-  ingrediente("in_polvilho", "Fubá para polenta", "Mercearia", "kg", { valor: 5.8, fornecedor: ATACADO, dias: 24 }, [
-    { valor: 5.2, fornecedor: ATACADO, dias: 61 },
+
+  /*
+    ── QUINTAL DA MARIA ──────────────────────────────────────────────────
+    Consultoria já encerrada. Os preços continuam sendo alimentados por ela,
+    e é por isso que estas linhas existem: um cliente encerrado não deixa de
+    ter custo, ele deixa de ter acompanhamento.
+  */
+  ...precosDoCliente("cl_quintal_maria", [
+    {
+      ingredienteId: "in_frango_peito",
+      atual: { valor: 20.4, fornecedor: MERCADO_BAIRRO, dias: 5 },
+      anteriores: [
+        { valor: 21.8, fornecedor: MERCADO_BAIRRO, dias: 27 },
+        { valor: 19.2, fornecedor: MERCADO_BAIRRO, dias: 66 },
+      ],
+      observacoes: "Frango caipira, comprado direto do produtor da região.",
+    },
+    {
+      ingredienteId: "in_polvilho",
+      atual: { valor: 5.4, fornecedor: ATACADO_INTERIOR, dias: 25 },
+      anteriores: [{ valor: 5.0, fornecedor: ATACADO_INTERIOR, dias: 63 }],
+    },
+    {
+      ingredienteId: "in_batata",
+      atual: { valor: 5.85, fornecedor: MERCADO_BAIRRO, dias: 2 },
+      anteriores: [{ valor: 5.2, fornecedor: MERCADO_BAIRRO, dias: 25 }],
+    },
+    {
+      ingredienteId: "in_manteiga",
+      atual: { valor: 57.2, fornecedor: MERCADO_BAIRRO, dias: 34 },
+      anteriores: [{ valor: 54.0, fornecedor: MERCADO_BAIRRO, dias: 75 }],
+    },
+    {
+      ingredienteId: "in_cebola",
+      atual: { valor: 4.9, fornecedor: MERCADO_BAIRRO, dias: 3 },
+      anteriores: [{ valor: 4.5, fornecedor: MERCADO_BAIRRO, dias: 23 }],
+    },
   ]),
 ];
 
@@ -1481,18 +2193,30 @@ export const INGREDIENTES: Ingrediente[] = [
 // FICHAS TÉCNICAS
 // ---------------------------------------------------------------------------
 // ┌──────────────────────────────────────────────────────────────────────┐
-// │ POR QUE TODO `custo` AQUI É `null`                                   │
+// │ O QUE MUDOU AQUI, E POR QUE A FICHA SAIU MAIS HONESTA                 │
 // │                                                                      │
-// │ `quantidade` e `precoReferencia` são FATOS: o que foi declarado e    │
-// │ quanto o insumo custou naquele dia. `custo` é um PRODUTO, e o produto│
-// │ depende de decisões que não existem:                                 │
+// │ Antes, cada item carregava `custo: null` — o registro de que a conta  │
+// │ não podia ser feita. Agora ele carrega `etapa`, e a diferença é a     │
+// │ diferença entre não calcular e calcular direito.                     │
 // │                                                                      │
-// │   · o fator de correção entra antes ou depois de pesar?  → pontos 5,6 │
-// │   · existe índice de cocção, e o que se faz com a perda? → ponto 4   │
-// │   · arredonda em que casa, e em que momento?            → ponto 19   │
+// │ `etapa` responde a pergunta que faltava: "1,200 kg de mandioca" é     │
+// │ quilo comprado, quilo descascado ou quilo cozido? As três respostas   │
+// │ dão custos diferentes para a mesma linha, e quem sabe é a cozinha.    │
+// │ Com a etapa declarada, o sistema só precisa multiplicar.              │
 // │                                                                      │
-// │ Escrever um número aqui seria inventar a metodologia dela. `null` é  │
-// │ a resposta honesta, e a tela sabe explicar o que ele significa.       │
+// │ Não existe mais campo de custo nenhum, e isso é intencional: o custo  │
+// │ é DERIVADO de `quantidade × custo unitário da etapa`, em ./custos.    │
+// │ Guardá-lo seria manter duas fontes para o mesmo número.               │
+// │                                                                      │
+// │ AS OBSERVAÇÕES DE LINHA SÃO O OUTRO GANHO.                           │
+// │                                                                      │
+// │ Cada item pode trazer uma frase do que a cozinha anotou sobre ele —   │
+// │ corte, marca, substituição. É o que impede a ficha de virar uma       │
+// │ tabela de números sem explicação.                                     │
+// │                                                                      │
+// │ O QUE CONTINUA FORA: preço de venda, CMV alvo, margem e markup. A     │
+// │ ficha calcula o que o prato CUSTA. O que cobrar por ele é a decisão   │
+// │ que ainda não foi tomada — e por isso não aparece.                    │
 // └──────────────────────────────────────────────────────────────────────┘
 
 export const FICHAS: Ficha[] = [
@@ -1505,13 +2229,13 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 12,
     porcaoGramas: 320,
     itens: [
-      { ingredienteId: "in_mandioca", quantidade: "1,200", unidade: "kg", precoReferencia: 7.6, custo: null },
-      { ingredienteId: "in_carne_seca", quantidade: "0,600", unidade: "kg", precoReferencia: 64.5, custo: null },
-      { ingredienteId: "in_leite", quantidade: "0,300", unidade: "L", precoReferencia: 5.4, custo: null },
-      { ingredienteId: "in_manteiga", quantidade: "0,060", unidade: "kg", precoReferencia: 58.0, custo: null },
-      { ingredienteId: "in_cebola", quantidade: "0,150", unidade: "kg", precoReferencia: 5.2, custo: null },
-      { ingredienteId: "in_alho", quantidade: "0,020", unidade: "kg", precoReferencia: 21.0, custo: null },
-      { ingredienteId: "in_queijo_mussarela", quantidade: "0,180", unidade: "kg", precoReferencia: 42.9, custo: null },
+      { ingredienteId: "in_mandioca", quantidade: "1,200", unidade: "kg", precoReferencia: 7.6, etapa: "PREPARADO", observacao: "Peso do purê já cozido e amassado." },
+      { ingredienteId: "in_carne_seca", quantidade: "0,600", unidade: "kg", precoReferencia: 64.5, etapa: "PREPARADO", observacao: "Peso depois de dessalgada, cozida e desfiada." },
+      { ingredienteId: "in_leite", quantidade: "0,300", unidade: "L", precoReferencia: 5.4, etapa: "COMPRA", observacao: "Medido na jarra, do litro aberto." },
+      { ingredienteId: "in_manteiga", quantidade: "0,060", unidade: "kg", precoReferencia: 58.0, etapa: "COMPRA", observacao: "Pesada na balança de bancada." },
+      { ingredienteId: "in_cebola", quantidade: "0,150", unidade: "kg", precoReferencia: 5.2, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_alho", quantidade: "0,020", unidade: "kg", precoReferencia: 21.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_queijo_mussarela", quantidade: "0,180", unidade: "kg", precoReferencia: 42.9, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Cozinhar a mandioca descascada em água com sal até ficar macia.",
@@ -1541,11 +2265,11 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 10,
     porcaoGramas: 280,
     itens: [
-      { ingredienteId: "in_frango_peito", quantidade: "1,400", unidade: "kg", precoReferencia: 19.8, custo: null },
-      { ingredienteId: "in_cenoura", quantidade: "0,300", unidade: "kg", precoReferencia: 4.7, custo: null },
-      { ingredienteId: "in_batata", quantidade: "0,500", unidade: "kg", precoReferencia: 6.1, custo: null },
-      { ingredienteId: "in_azeite", quantidade: "0,080", unidade: "L", precoReferencia: 47.9, custo: null },
-      { ingredienteId: "in_manjericao", quantidade: "1", unidade: "maço", precoReferencia: 3.5, custo: null },
+      { ingredienteId: "in_frango_peito", quantidade: "1,400", unidade: "kg", precoReferencia: 19.8, etapa: "PREPARADO", observacao: "Peso depois de grelhado e descansado." },
+      { ingredienteId: "in_cenoura", quantidade: "0,300", unidade: "kg", precoReferencia: 4.7, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_batata", quantidade: "0,500", unidade: "kg", precoReferencia: 6.1, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_azeite", quantidade: "0,080", unidade: "L", precoReferencia: 47.9, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_manjericao", quantidade: "1", unidade: "maço", precoReferencia: 3.5, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Temperar o peito de frango e deixar descansar sob refrigeração.",
@@ -1573,10 +2297,10 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 8,
     porcaoGramas: 180,
     itens: [
-      { ingredienteId: "in_quinoa", quantidade: "0,400", unidade: "kg", precoReferencia: 32.0, custo: null },
-      { ingredienteId: "in_tomate_italiano", quantidade: "0,300", unidade: "kg", precoReferencia: 8.45, custo: null },
-      { ingredienteId: "in_cenoura", quantidade: "0,200", unidade: "kg", precoReferencia: 4.7, custo: null },
-      { ingredienteId: "in_azeite", quantidade: "0,060", unidade: "L", precoReferencia: null, custo: null },
+      { ingredienteId: "in_quinoa", quantidade: "0,400", unidade: "kg", precoReferencia: 32.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_tomate_italiano", quantidade: "0,300", unidade: "kg", precoReferencia: 8.45, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_cenoura", quantidade: "0,200", unidade: "kg", precoReferencia: 4.7, etapa: "PREPARADO", observacao: "Peso depois de assada e resfriada." },
+      { ingredienteId: "in_azeite", quantidade: "0,060", unidade: "L", precoReferencia: null, etapa: "COMPRA", observacao: "Preço não registrado no dia em que a ficha foi escrita." },
     ],
     modoPreparo: [
       "Lavar a quinoa e cozinhar até os grãos abrirem.",
@@ -1598,11 +2322,11 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 16,
     porcaoGramas: 110,
     itens: [
-      { ingredienteId: "in_farinha_trigo", quantidade: "0,300", unidade: "kg", precoReferencia: 4.89, custo: null },
-      { ingredienteId: "in_cenoura", quantidade: "0,400", unidade: "kg", precoReferencia: 4.7, custo: null },
-      { ingredienteId: "in_ovos", quantidade: "4", unidade: "dúzia", precoReferencia: 9.8, custo: null },
-      { ingredienteId: "in_chocolate", quantidade: "0,200", unidade: "kg", precoReferencia: 46.0, custo: null },
-      { ingredienteId: "in_creme_leite", quantidade: "0,200", unidade: "L", precoReferencia: 12.9, custo: null },
+      { ingredienteId: "in_farinha_trigo", quantidade: "0,300", unidade: "kg", precoReferencia: 4.89, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_cenoura", quantidade: "0,400", unidade: "kg", precoReferencia: 4.7, etapa: "LIMPO", observacao: "Peso da cenoura descascada, que é como ela vai ao liquidificador." },
+      { ingredienteId: "in_ovos", quantidade: "4", unidade: "dúzia", precoReferencia: 9.8, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_chocolate", quantidade: "0,200", unidade: "kg", precoReferencia: 46.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_creme_leite", quantidade: "0,200", unidade: "L", precoReferencia: 12.9, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Bater a cenoura, os ovos e o óleo no liquidificador.",
@@ -1628,9 +2352,9 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 14,
     porcaoGramas: 300,
     itens: [
-      { ingredienteId: "in_costela", quantidade: "2,800", unidade: "kg", precoReferencia: 27.5, custo: null },
-      { ingredienteId: "in_cebola", quantidade: "0,300", unidade: "kg", precoReferencia: 5.2, custo: null },
-      { ingredienteId: "in_alho", quantidade: "0,040", unidade: "kg", precoReferencia: 21.0, custo: null },
+      { ingredienteId: "in_costela", quantidade: "2,800", unidade: "kg", precoReferencia: 27.5, etapa: "PREPARADO", observacao: "Peso da carne assada, já sem osso." },
+      { ingredienteId: "in_cebola", quantidade: "0,300", unidade: "kg", precoReferencia: 5.2, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_alho", quantidade: "0,040", unidade: "kg", precoReferencia: 21.0, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Temperar a costela na véspera e manter sob refrigeração.",
@@ -1655,10 +2379,10 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 20,
     porcaoGramas: 100,
     itens: [
-      { ingredienteId: "in_farinha_trigo", quantidade: "0,400", unidade: "kg", precoReferencia: 4.89, custo: null },
-      { ingredienteId: "in_cenoura", quantidade: "0,500", unidade: "kg", precoReferencia: 4.7, custo: null },
-      { ingredienteId: "in_ovos", quantidade: "6", unidade: "dúzia", precoReferencia: 9.8, custo: null },
-      { ingredienteId: "in_leite", quantidade: "0,150", unidade: "L", precoReferencia: 5.4, custo: null },
+      { ingredienteId: "in_farinha_trigo", quantidade: "0,400", unidade: "kg", precoReferencia: 4.89, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_cenoura", quantidade: "0,500", unidade: "kg", precoReferencia: 4.7, etapa: "LIMPO", observacao: "Peso da cenoura descascada." },
+      { ingredienteId: "in_ovos", quantidade: "6", unidade: "dúzia", precoReferencia: 9.8, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_leite", quantidade: "0,150", unidade: "L", precoReferencia: 5.4, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Bater os líquidos com a cenoura.",
@@ -1681,10 +2405,10 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 24,
     porcaoGramas: 90,
     itens: [
-      { ingredienteId: "in_chocolate", quantidade: "0,500", unidade: "kg", precoReferencia: 46.0, custo: null },
-      { ingredienteId: "in_manteiga", quantidade: "0,250", unidade: "kg", precoReferencia: 58.0, custo: null },
-      { ingredienteId: "in_farinha_trigo", quantidade: "0,200", unidade: "kg", precoReferencia: 4.89, custo: null },
-      { ingredienteId: "in_ovos", quantidade: "5", unidade: "dúzia", precoReferencia: 9.8, custo: null },
+      { ingredienteId: "in_chocolate", quantidade: "0,500", unidade: "kg", precoReferencia: 46.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_manteiga", quantidade: "0,250", unidade: "kg", precoReferencia: 58.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_farinha_trigo", quantidade: "0,200", unidade: "kg", precoReferencia: 4.89, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_ovos", quantidade: "5", unidade: "dúzia", precoReferencia: 9.8, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Derreter o chocolate com a manteiga em banho-maria.",
@@ -1711,12 +2435,12 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 6,
     porcaoGramas: 380,
     itens: [
-      { ingredienteId: "in_farinha_trigo", quantidade: "0,500", unidade: "kg", precoReferencia: 4.89, custo: null },
-      { ingredienteId: "in_ovos", quantidade: "6", unidade: "dúzia", precoReferencia: 9.8, custo: null },
-      { ingredienteId: "in_carne_moida", quantidade: "0,700", unidade: "kg", precoReferencia: 38.9, custo: null },
-      { ingredienteId: "in_tomate_italiano", quantidade: "0,800", unidade: "kg", precoReferencia: 8.45, custo: null },
-      { ingredienteId: "in_cebola", quantidade: "0,200", unidade: "kg", precoReferencia: 5.2, custo: null },
-      { ingredienteId: "in_queijo_mussarela", quantidade: "a definir", unidade: "kg", precoReferencia: null, custo: null },
+      { ingredienteId: "in_farinha_trigo", quantidade: "0,500", unidade: "kg", precoReferencia: 4.89, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_ovos", quantidade: "6", unidade: "dúzia", precoReferencia: 9.8, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_carne_moida", quantidade: "0,700", unidade: "kg", precoReferencia: 38.9, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_tomate_italiano", quantidade: "0,800", unidade: "kg", precoReferencia: 8.45, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_cebola", quantidade: "0,200", unidade: "kg", precoReferencia: 5.2, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_queijo_mussarela", quantidade: "a definir", unidade: "kg", precoReferencia: null, etapa: "COMPRA", observacao: "O que ele compra pronto ainda não foi decidido com a cozinha." },
     ],
     modoPreparo: [
       "Preparar a massa fresca na casa e deixar descansar.",
@@ -1741,11 +2465,11 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 10,
     porcaoGramas: 180,
     itens: [
-      { ingredienteId: "in_carne_moida", quantidade: "1,500", unidade: "kg", precoReferencia: 38.9, custo: null },
-      { ingredienteId: "in_tomate_italiano", quantidade: "2,000", unidade: "kg", precoReferencia: 8.45, custo: null },
-      { ingredienteId: "in_cebola", quantidade: "0,400", unidade: "kg", precoReferencia: 5.2, custo: null },
-      { ingredienteId: "in_alho", quantidade: "0,050", unidade: "kg", precoReferencia: 21.0, custo: null },
-      { ingredienteId: "in_azeite", quantidade: "0,100", unidade: "L", precoReferencia: 47.9, custo: null },
+      { ingredienteId: "in_carne_moida", quantidade: "1,500", unidade: "kg", precoReferencia: 38.9, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_tomate_italiano", quantidade: "2,000", unidade: "kg", precoReferencia: 8.45, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_cebola", quantidade: "0,400", unidade: "kg", precoReferencia: 5.2, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_alho", quantidade: "0,050", unidade: "kg", precoReferencia: 21.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_azeite", quantidade: "0,100", unidade: "L", precoReferencia: 47.9, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Refogar a cebola e o alho no azeite.",
@@ -1770,10 +2494,10 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 8,
     porcaoGramas: 400,
     itens: [
-      { ingredienteId: "in_frango_peito", quantidade: "1,600", unidade: "kg", precoReferencia: 19.8, custo: null },
-      { ingredienteId: "in_polvilho", quantidade: "0,400", unidade: "kg", precoReferencia: 5.8, custo: null },
-      { ingredienteId: "in_alho", quantidade: "0,030", unidade: "kg", precoReferencia: 21.0, custo: null },
-      { ingredienteId: "in_cebola", quantidade: "0,200", unidade: "kg", precoReferencia: 5.2, custo: null },
+      { ingredienteId: "in_frango_peito", quantidade: "1,600", unidade: "kg", precoReferencia: 19.8, etapa: "PREPARADO", observacao: "Peso depois do cozimento na panela de ferro." },
+      { ingredienteId: "in_polvilho", quantidade: "0,400", unidade: "kg", precoReferencia: 5.8, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_alho", quantidade: "0,030", unidade: "kg", precoReferencia: 21.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_cebola", quantidade: "0,200", unidade: "kg", precoReferencia: 5.2, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Temperar o frango e deixar tomar gosto.",
@@ -1799,10 +2523,10 @@ export const FICHAS: Ficha[] = [
     rendimentoPorcoes: 10,
     porcaoGramas: 200,
     itens: [
-      { ingredienteId: "in_batata", quantidade: "0,300", unidade: "kg", precoReferencia: 6.1, custo: null },
-      { ingredienteId: "in_manteiga", quantidade: "0,050", unidade: "kg", precoReferencia: 58.0, custo: null },
-      { ingredienteId: "in_leite", quantidade: "0,200", unidade: "L", precoReferencia: 5.4, custo: null },
-      { ingredienteId: "in_cebola", quantidade: "0,150", unidade: "kg", precoReferencia: 5.2, custo: null },
+      { ingredienteId: "in_batata", quantidade: "0,300", unidade: "kg", precoReferencia: 6.1, etapa: "PREPARADO", observacao: "Peso já cozido, antes de amassar com a abóbora." },
+      { ingredienteId: "in_manteiga", quantidade: "0,050", unidade: "kg", precoReferencia: 58.0, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_leite", quantidade: "0,200", unidade: "L", precoReferencia: 5.4, etapa: "COMPRA", observacao: "" },
+      { ingredienteId: "in_cebola", quantidade: "0,150", unidade: "kg", precoReferencia: 5.2, etapa: "COMPRA", observacao: "" },
     ],
     modoPreparo: [
       "Cozinhar a abóbora com a batata até desmanchar.",

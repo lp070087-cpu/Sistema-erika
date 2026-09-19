@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CabecalhoPagina } from "@/components/ui/rotulo";
-import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso } from "@/components/ui/superficie";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { obterRepositorioOperacao } from "@/lib/dados";
 import { FUSO_HORARIO } from "@/lib/configuracao-publica";
 import { FormularioContrato } from "./formulario";
@@ -77,14 +75,7 @@ export default async function PaginaNovoContrato() {
         rotulo="Contratos"
         titulo="Novo contrato"
         descricao="Monte o combinado: quem contrata, o que foi contratado, quanto custa, em quantas vezes e quando cada parcela vence."
-        acoes={
-          <div className="flex flex-wrap items-center gap-3">
-            <Etiqueta tom="oliva">Demonstração</Etiqueta>
-          </div>
-        }
       />
-
-      <FaixaDemonstracao oQue="Este formulário monta o contrato na tela, mas não grava: o sistema ainda não tem banco conectado. Ao recarregar a página, tudo o que você preencheu some — e é assim que se percebe que nada foi registrado." />
 
       {clientes.length === 0 ? (
         <Aviso tom="atencao" titulo="Nenhum cliente na carteira ainda">

@@ -4,7 +4,6 @@ import { CabecalhoPagina, Rotulo } from "@/components/ui/rotulo";
 import { Etiqueta, Indicador } from "@/components/ui/indicador";
 import { Aviso, EstadoVazio, Painel, Secao } from "@/components/ui/superficie";
 import { Dado, ListaDados } from "@/components/ui/dados";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { obterRepositorioOperacao } from "@/lib/dados";
 import type { ClienteOperacao } from "@/lib/dados";
 import {
@@ -107,33 +106,25 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
         descricao="Transforme os dados da consultoria em documentos organizados e prontos para análise ou envio."
       />
 
-      <FaixaDemonstracao oQue="A planilha gerada aqui é um arquivo .xlsx de verdade, que abre no Excel — mas os dados dentro dela vêm do cenário de demonstração, não de um banco conectado." />
-
       {/* ── RESUMO ─────────────────────────────────────────────────────── */}
       <Secao
         rotulo="Resumo"
-        titulo="O que esta central sabe fazer"
-        descricao="São contagens do catálogo abaixo — conferem com os cards, um por um."
+        titulo="O que dá para gerar hoje"
+        descricao="Duas contagens, conferíveis contra os cards abaixo — uma por uma."
       >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Indicador
-            emCard
-            rotulo="Modelos no catálogo"
-            valor={TOTAL_MODELOS}
-            contexto="Todas as planilhas que o sistema conhece"
-          />
+        <div className="grid gap-4 sm:grid-cols-2">
           <Indicador
             emCard
             rotulo="Gerando arquivo"
             valor={TOTAL_DISPONIVEIS}
             tom="positivo"
-            contexto="Prontas para baixar hoje"
+            contexto="Prontas para baixar agora"
           />
           <Indicador
             emCard
-            rotulo="Em preparação"
-            valor={TOTAL_MODELOS - TOTAL_DISPONIVEIS}
-            contexto="Dependem de trabalho ou de uma definição sua"
+            rotulo="No catálogo"
+            valor={TOTAL_MODELOS}
+            contexto="Todas as planilhas que o sistema conhece"
           />
         </div>
       </Secao>
@@ -147,7 +138,7 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
       <Secao
         rotulo="Catálogo"
         titulo="O que ainda está por vir"
-        descricao="Cada card diz por que ainda não está pronto. Três esperam trabalho de programação; um espera uma decisão sua — e está marcado como tal."
+        descricao="Cada card diz o que falta para ficar pronto. Um deles depende de uma decisão sua, e está marcado como tal."
       >
         <div className="grid gap-4 lg:grid-cols-2">
           {restantes.map((m) => (
@@ -170,15 +161,16 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
       */}
       <HistoricoDePlanilhas registros={geradas} />
 
+      {/* ── O QUE A ÁREA AINDA NÃO FAZ ─────────────────────────────────── */}
       <Aviso titulo="O que esta área ainda não faz">
         <p>
-          A planilha gerada aqui é um arquivo real. O que não existe ainda é o que a alimenta: o
-          sistema continua em modo de demonstração, sem banco conectado, e os nomes e datas que
-          aparecem no arquivo são os do cenário de demonstração.
-        </p>
-        <p className="mt-2.5">
           Não há envio automático por e-mail, não há integração com Google Sheets ou Drive, e nada é
           importado de uma planilha existente. O arquivo é baixado e fica com você.
+        </p>
+        <p className="mt-2.5">
+          O histórico abaixo fica vazio de propósito: o arquivo é entregue ao seu computador e o
+          servidor não guarda cópia. A lista mostra as colunas que um registro vai ter no dia em que
+          houver onde guardá-lo.
         </p>
       </Aviso>
 

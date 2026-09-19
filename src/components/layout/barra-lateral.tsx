@@ -19,21 +19,21 @@ import { cn } from "@/lib/utils/cn";
  *   < 1024px  vira gaveta sobreposta, aberta por um botão na barra de topo.
  *             É o modo de consulta: celular, durante uma visita presencial.
  *
- * Item ainda não implementado aparece esmaecido, com um AVISO EM PORTUGUÊS
- * logo abaixo do nome. Nada de esconder o menu futuro — ela precisa ver para
- * onde o sistema vai.
+ * Item ainda não implementado aparece esmaecido e continua no menu — nada de
+ * esconder o menu futuro, porque ela precisa ver para onde o sistema vai.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE O AVISO MUDOU DE LUGAR E DE FORMA                            │
+ * │ O QUE SAIU DO MENU, E POR QUÊ                                        │
  * │                                                                      │
- * │ Antes ele era um código curto alinhado à direita (`f4`, `parcial`).    │
- * │ Cabia bem ao lado do título justamente porque não significava nada    │
- * │ para quem lê: era um símbolo para quem constrói.                      │
+ * │ Cada item trazia uma segunda linha com o estado da CONSTRUÇÃO —        │
+ * │ "Cadastro em preparação", "Custo aguardando definição", "Um modelo     │
+ * │ disponível". A frase é verdadeira e não serve para nada aqui: ela não  │
+ * │ diz o que se faz dentro do módulo, diz em que ponto do trabalho ele    │
+ * │ está. Repetida em seis dos dezessete itens, transformava uma lista de  │
+ * │ lugares em relatório de obra.                                         │
  * │                                                                      │
- * │ Agora que o aviso é uma frase — "Custo aguardando definição" — ele    │
- * │ não cabe mais na mesma linha, e nem deveria: ficaria espremido       │
- * │ contra o título e truncado no meio da ideia. Virou uma SEGUNDA LINHA, │
- * │ menor e mais clara, do jeito que uma legenda se lê.                   │
+ * │ O `estado` continua em `navegacao.ts` e continua decidindo o peso      │
+ * │ visual do item logo abaixo. O que saiu foi a frase escrita na tela.    │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 export function BarraLateral({
@@ -119,8 +119,11 @@ export function BarraLateral({
           </button>
         </div>
 
-        {/* Grupos de navegação */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
+        {/* Grupos de navegação.
+            `min-h-0` porque, sem ele, o menu de dezessete itens se recusa a
+            rolar dentro de uma barra de altura fixa — e empurra a assinatura
+            do rodapé para fora da tela. É a mesma correção da gaveta. */}
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
           {NAVEGACAO.map((grupo) => (
             <div key={grupo.chave} className="mb-5 last:mb-0">
               <p className="mb-1.5 px-2 text-[0.625rem] font-semibold uppercase tracking-[0.2em] text-[var(--tinta-fraca)]">
@@ -137,7 +140,6 @@ export function BarraLateral({
                   // isso pintava /consultorias — que é só um aviso de
                   // "módulo futuro" — com a mesma cor cheia de uma tela
                   // pronta. Quem lê o menu não tinha como perceber.
-                  const noAr = item.estado === "no-ar";
                   const aberto = item.estado !== "previsto";
 
                   return (
@@ -157,21 +159,28 @@ export function BarraLateral({
                       >
                         <span className="block truncate text-[0.875rem]">{item.titulo}</span>
                         {/*
-                          O aviso é lido por leitores de tela como parte do
-                          link — e deve ser. "Fichas técnicas, custo aguardando
-                          definição" é exatamente o que a pessoa precisa ouvir
-                          antes de decidir clicar.
+                          ┌──────────────────────────────────────────────────┐
+                          │ O AVISO DE ESTADO SAIU DO MENU                   │
+                          │                                                  │
+                          │ Cada item trazia uma segunda linha — "Cadastro   │
+                          │ em preparação", "Custo aguardando definição",    │
+                          │ "Um modelo disponível". Lida de fora, a frase    │
+                          │ não informa nada a quem trabalha: o que ela      │
+                          │ diz é sobre o ESTADO DA CONSTRUÇÃO do módulo,    │
+                          │ não sobre o que se faz dentro dele.             │
+                          │                                                  │
+                          │ Pior: repetida em seis itens de uma lista de     │
+                          │ dezessete, ela transformava um menu em relatório │
+                          │ de obra. Quem abre o sistema para trabalhar não  │
+                          │ precisa saber qual módulo está pronto — precisa  │
+                          │ que os que ela usa funcionem.                    │
+                          │                                                  │
+                          │ O estado NÃO desapareceu: ele continua declarado │
+                          │ em `navegacao.ts` e é ele que decide o peso      │
+                          │ visual do item aqui embaixo. O que saiu foi a    │
+                          │ frase escrita na tela.                          │
+                          └──────────────────────────────────────────────────┘
                         */}
-                        {!noAr && item.aviso ? (
-                          <span
-                            className={cn(
-                              "mt-0.5 block truncate text-[0.6875rem] leading-snug",
-                              ativo ? "text-oliva-palha" : "text-[var(--tinta-fraca)]"
-                            )}
-                          >
-                            {item.aviso}
-                          </span>
-                        ) : null}
                       </Link>
                     </li>
                   );
@@ -185,7 +194,7 @@ export function BarraLateral({
         <div className="shrink-0 border-t border-[var(--linha)] px-5 py-3">
           <p className="assina text-[0.9375rem] leading-none text-oliva">Cozinha organizada</p>
           <p className="mt-1 text-[0.625rem] uppercase tracking-[0.18em] text-[var(--tinta-fraca)]">
-            Demonstração · v{SISTEMA_VERSAO}
+            Versão {SISTEMA_VERSAO}
           </p>
         </div>
       </aside>

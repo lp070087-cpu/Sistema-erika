@@ -13,7 +13,6 @@ import {
   Celula,
 } from "@/components/ui/tabela";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { ListaSinais } from "@/components/ui/sinais";
 import {
   DETALHE_ORIGEM,
@@ -131,8 +130,6 @@ export default async function PaginaLeads({ searchParams }: Props) {
           </BotaoLink>
         }
       />
-
-      <FaixaDemonstracao oQue="Estes leads e suas respostas são inventados para demonstração. Nenhum é cliente real e nenhum telefone ou e-mail aqui existe." />
 
       {/* Filtro por status ------------------------------------------------- */}
       <div className="flex flex-wrap items-center gap-2">
@@ -338,7 +335,7 @@ export default async function PaginaLeads({ searchParams }: Props) {
 
           <Aviso tom="atencao" titulo="Depende do banco e de decisão">
             <p>
-              Os leads exibidos são de demonstração. Gravar um lead de verdade
+              Os leads exibidos são um cenário de exemplo. Gravar um lead de verdade
               depende do banco configurado e do ponto{" "}
               <strong className="font-semibold text-tinta tabular">15</strong> —
               se quem responde o diagnóstico entra direto na fila ou passa por

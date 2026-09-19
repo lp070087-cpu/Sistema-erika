@@ -4,7 +4,6 @@ import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso, EstadoVazio, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { BarraFiltros } from "@/components/ui/filtros";
 import { ListaResponsiva } from "@/components/ui/lista-responsiva";
 import type { ColunaLista } from "@/components/ui/lista-responsiva";
@@ -235,7 +234,6 @@ export default async function PaginaContratos({ searchParams }: Props) {
         descricao="Acompanhe propostas formalizadas, aceites, pagamentos e documentos de cada consultoria."
         acoes={
           <div className="flex flex-wrap items-center gap-3">
-            <Etiqueta tom="oliva">Demonstração</Etiqueta>
             <BotaoLink href="/contratos/novo" variante="primario" tamanho="sm">
               Novo contrato
             </BotaoLink>
@@ -254,8 +252,6 @@ export default async function PaginaContratos({ searchParams }: Props) {
           </p>
         </Aviso>
       ) : null}
-
-      <FaixaDemonstracao oQue="Estes contratos são inventados para demonstração, e os valores não têm nenhuma relação com o que a Érika cobra. O sistema não emite cobrança, não recebe pagamento e não confirma nada com banco — o que existe aqui é o registro do que foi combinado." />
 
       {/* Contagem por estado — conferível contando as linhas da lista. */}
       <Secao

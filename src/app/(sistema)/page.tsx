@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CabecalhoPagina, Rotulo } from "@/components/ui/rotulo";
+import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta, Indicador } from "@/components/ui/indicador";
-import { Aviso, EstadoVazio, Painel, Secao } from "@/components/ui/superficie";
+import { EstadoVazio, Secao } from "@/components/ui/superficie";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { AbrirLink, CopiarLink, EnderecoPublico } from "@/components/ui/link-publico";
 import {
   SITE_PUBLICO_URL,
@@ -30,7 +29,6 @@ import {
   saudacao,
   valorEmReais,
 } from "@/lib/dados";
-import { NAVEGACAO } from "@/lib/navegacao";
 
 export const metadata: Metadata = { title: "Visão geral" };
 
@@ -156,7 +154,6 @@ export default async function PaginaVisaoGeral() {
     .sort((a, b) => a.quando.getTime() - b.quando.getTime())
     .slice(0, 5);
 
-  const totalItens = NAVEGACAO.reduce((s, g) => s + g.itens.length, 0);
   const minhaSaudacao = saudacao(agora, FUSO_HORARIO);
 
   return (
@@ -166,16 +163,13 @@ export default async function PaginaVisaoGeral() {
         rotulo="Visão geral da operação"
         titulo={`${minhaSaudacao}, ${MARCA_PRIMEIRO_NOME}.`}
         descricao="Veja o que precisa da sua atenção hoje."
-        acoes={<Etiqueta tom="oliva">Demonstração</Etiqueta>}
       />
-
-      <FaixaDemonstracao oQue="Clientes, consultorias, contratos, tarefas, fichas e diagnósticos desta tela são de demonstração. Nenhuma empresa ou pessoa aqui existe, e nada foi gravado em banco." />
 
       {/* ── RESUMO ───────────────────────────────────────────────────── */}
       <Secao
         rotulo="Resumo"
         titulo="O tamanho do dia"
-        descricao="Seis contagens, todas conferíveis contra as telas de origem. Nenhuma delas é nota, média ou projeção — são coisas que se podem contar."
+        descricao="Seis contagens. Cada uma confere com a tela de onde ela vem."
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <Indicador
@@ -233,7 +227,7 @@ export default async function PaginaVisaoGeral() {
             ? "Nada travado neste momento"
             : `${atencao.length} ${atencao.length === 1 ? "item" : "itens"} travando o trabalho`
         }
-        descricao="O que espera uma ação sua ou do cliente. A ordem é por tipo — o que já travou a consultoria vem antes do que é só uma chegada nova. Não é priorização automática: ordenar por gravidade exigiria o peso de cada situação, que ainda não foi definido."
+        descricao="O que espera uma ação sua ou do cliente, na ordem em que apareceu."
         acoes={
           <BotaoLink href="/tarefas" variante="secundario" tamanho="sm">
             Ver todas as tarefas
@@ -257,7 +251,7 @@ export default async function PaginaVisaoGeral() {
         <Secao
           rotulo="Contratos"
           titulo="Propostas e parcelas"
-          descricao="O que está formalizado e o que está por receber. Os valores são os declarados em cada contrato — a soma é aritmética, não previsão."
+          descricao="O que está formalizado e o que está por receber, com o valor declarado em cada contrato."
           acoes={
             <BotaoLink href="/contratos" variante="secundario" tamanho="sm">
               Ver contratos
@@ -303,7 +297,17 @@ export default async function PaginaVisaoGeral() {
                           </span>
                         </div>
                         <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.75rem] text-[var(--tinta-fraca)]">
-                          <span className="truncate">{l.contrato.titulo}</span>
+                          {/*
+                            `min-w-0` no span, e não só `truncate`.
+
+                            Truncar exige que o item POSSA encolher. Num
+                            contêiner flex, o padrão é `min-width: auto`: o
+                            item se recusa a ficar menor que o próprio texto.
+                            Sem o `min-w-0`, um título de contrato longo não
+                            corta com reticências — ele empurra a linha e
+                            estoura a largura do cartão no celular.
+                          */}
+                          <span className="min-w-0 truncate">{l.contrato.titulo}</span>
                           {parcelas.ATRASADO > 0 ? (
                             <>
                               <span aria-hidden>·</span>
@@ -326,7 +330,7 @@ export default async function PaginaVisaoGeral() {
         <Secao
           rotulo="A receber"
           titulo="Os próximos vencimentos"
-          descricao="As parcelas com data marcada à frente, na ordem em que vencem. Só entram parcelas que ainda não foram pagas — paga não é previsão, é fato."
+          descricao="As parcelas com data à frente, na ordem em que vencem. Só as que ainda não foram pagas."
           acoes={
             <BotaoLink href="/contratos" variante="secundario" tamanho="sm">
               Ver todos
@@ -371,7 +375,7 @@ export default async function PaginaVisaoGeral() {
         <Secao
           rotulo="Tarefas"
           titulo="O que vence hoje"
-          descricao="As tarefas com prazo de hoje e as que passaram. Contagem direta do que está cadastrado."
+          descricao="As tarefas com prazo de hoje e as que já passaram."
           acoes={
             <BotaoLink href="/tarefas" variante="secundario" tamanho="sm">
               Abrir
@@ -413,7 +417,7 @@ export default async function PaginaVisaoGeral() {
         <Secao
           rotulo="Próximos acompanhamentos"
           titulo="Os encontros à frente"
-          descricao="Agenda declarada da consultoria. O sistema não sincroniza com calendário externo — nem com Google Agenda."
+          descricao="Reuniões, visitas e análises marcadas, na ordem em que acontecem."
           acoes={
             <BotaoLink href="/acompanhamentos" variante="secundario" tamanho="sm">
               Ver histórico
@@ -458,7 +462,7 @@ export default async function PaginaVisaoGeral() {
       <Secao
         rotulo="Em andamento"
         titulo={`${consultoriasAbertas.length} ${consultoriasAbertas.length === 1 ? "consultoria aberta" : "consultorias abertas"}`}
-        descricao="Cada uma com a etapa atual e o próximo passo declarado. O status é escrito por ela — o sistema não deduz status a partir das etapas concluídas."
+        descricao="Cada uma com o status atual e o próximo passo."
         acoes={
           <BotaoLink href="/consultorias" variante="secundario" tamanho="sm">
             Ver todas
@@ -574,7 +578,7 @@ export default async function PaginaVisaoGeral() {
                 {
                   href: "/planilhas",
                   texto: "Planilhas",
-                  nota: "1 modelo disponível",
+                  nota: "Exportar em Excel",
                 },
                 { href: "/tarefas", texto: "Tarefas", nota: `${gavetas.proximas.length} à frente` },
                 { href: "/fichas", texto: "Fichas técnicas", nota: `${fichas.length} no acervo` },
@@ -626,74 +630,37 @@ export default async function PaginaVisaoGeral() {
         </div>
       </div>
 
-      {/* ── O QUE AINDA NÃO ENTRA ────────────────────────────────────── */}
-      <Aviso tom="atencao" titulo="O bloco de custo continua fora desta tela">
-        <p>
-          &ldquo;Variação de custo no período&rdquo; era o quinto bloco pedido para este painel, e é
-          o único que ainda não pode existir. Ele depende de quanto o alimento rende depois de
-          cozido, de quanto se perde entre a compra e o uso, de{" "}
-          <strong className="font-semibold text-tinta">o que entra na conta do custo</strong> e de
-          qual margem é a alvo.
-        </p>
-        <p className="mt-2.5">
-          Um painel de abertura mostrando &ldquo;variação de custo: 0%&rdquo; teria a aparência de
-          operação saudável. O zero não mediria a cozinha de ninguém — mediria que a metodologia não
-          existe. É o defeito de sempre: ausência de dado virando número.
-        </p>
-      </Aviso>
-
-      {/* ── MAPA DO SISTEMA ──────────────────────────────────────────── */}
-      <Secao
-        rotulo="Mapa do sistema"
-        titulo={`Os ${totalItens} módulos e o estado de cada um`}
-        descricao="O estado é declarado item a item, não deduzido do número da fase. Módulo em preparação abre e explica o que falta; módulo previsto tem rota e escopo."
-      >
-        <div className="space-y-5">
-          {NAVEGACAO.map((grupo) => (
-            <div key={grupo.chave}>
-              <Rotulo className="mb-2.5">{grupo.titulo}</Rotulo>
-              <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {grupo.itens.map((item) => {
-                  const etiqueta =
-                    item.estado === "no-ar"
-                      ? { tom: "verde" as const, texto: "No ar" }
-                      : item.estado === "parcial"
-                        ? { tom: "dourado" as const, texto: "Em preparação" }
-                        : { tom: "neutro" as const, texto: "Em breve" };
-                  return (
-                    <li key={item.chave}>
-                      <Link
-                        href={item.href}
-                        className="group flex items-center justify-between gap-3 rounded-[var(--raio-sm)] border border-[var(--linha)] bg-[var(--superficie)] px-3.5 py-2.5 transition-colors duration-150 hover:border-[var(--linha-forte)] hover:bg-white"
-                      >
-                        <span className="min-w-0 truncate text-[0.875rem] font-medium text-tinta">
-                          {item.titulo}
-                        </span>
-                        <Etiqueta tom={etiqueta.tom}>{etiqueta.texto}</Etiqueta>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </Secao>
-
-      <Painel escuro className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Rotulo claro>Como ler esta fase</Rotulo>
-          <p className="mt-2 font-display text-[1.25rem] text-off">
-            A operação inteira aparece. O cálculo ainda não.
-          </p>
-          <p className="mt-1.5 max-w-[62ch] text-[0.875rem] text-creme/65">
-            {totalItens} módulos. Cliente, consultoria, contrato, tarefa, ficha, processo,
-            acompanhamento e planilha já funcionam de ponta a ponta — o que falta é a metodologia de
-            custo, e ela depende de decisão dela.
-          </p>
-        </div>
-        <span className="assina text-[1.5rem] text-oliva-palha">Organização gera lucro</span>
-      </Painel>
+      {/*
+        ┌────────────────────────────────────────────────────────────────────┐
+        │ O QUE SAIU DO FIM DESTA TELA, E POR QUÊ                            │
+        │                                                                    │
+        │ Havia três blocos aqui embaixo, e nenhum deles era sobre o dia do  │
+        │ trabalho dela.                                                      │
+        │                                                                    │
+        │ 1. Um aviso explicando por que "variação de custo" não existe —     │
+        │    texto escrito para quem audita o sistema, não para quem o usa.   │
+        │ 2. O "Mapa do sistema": os dezenove módulos com etiqueta            │
+        │    "No ar"/"Em preparação"/"Em breve". É o estado da CONSTRUÇÃO —   │
+        │    informação de obra, não informação de operação. E era o mesmo    │
+        │    conteúdo do menu lateral, repetido em tamanho grande.            │
+        │ 3. Um painel escuro, "Como ler esta fase", em letra de 1.25rem      │
+        │    no rodapé de um painel de abertura.                              │
+        │                                                                    │
+        │ Nada disso foi apagado da arquitetura: o estado de cada módulo       │
+        │ continua declarado em `navegacao.ts` e continua pintando o item      │
+        │ no menu. O que saiu foi a versão em tamanho de cartaz.               │
+        │                                                                    │
+        │ No lugar ficou UMA linha, que diz o mesmo fato em linguagem de       │
+        │ operação: um único campo do resumo ainda depende de uma decisão      │
+        │ dela.                                                              │
+        └────────────────────────────────────────────────────────────────────┘
+      */}
+      <p className="border-t border-[var(--linha)] pt-4 text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
+        Um campo do resumo ainda não tem como ser calculado. &ldquo;Variação de custo no
+        período&rdquo; depende de definir o que entra na conta do custo — rendimento depois de
+        cozido, perda entre compra e uso e margem alvo. Enquanto isso, ele fica fora da soma em vez
+        de aparecer como zero.
+      </p>
     </div>
   );
 }

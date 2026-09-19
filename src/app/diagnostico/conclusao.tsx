@@ -102,11 +102,10 @@ export function Conclusao({ respostas }: { respostas: Record<string, string> }) 
           </p>
           <p className="mt-2.5 text-[0.9375rem] leading-relaxed text-[var(--tinta-suave)]">
             <strong className="font-semibold text-tinta">
-              Esta é uma demonstração do fluxo de diagnóstico.
+              Este formulário ainda não envia as respostas.
             </strong>{" "}
-            As suas respostas não foram enviadas para a Érika e ficaram apenas
-            nesta tela. É assim que o formulário se comporta enquanto o sistema
-            está em construção.
+            O que você respondeu ficou apenas nesta tela e não chegou à Érika.
+            O envio depende de uma etapa que ainda não foi ligada.
           </p>
           <p className="mt-3 text-[0.9375rem] leading-relaxed text-[var(--tinta-suave)]">
             {contato ? (

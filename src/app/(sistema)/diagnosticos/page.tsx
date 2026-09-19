@@ -13,7 +13,6 @@ import {
   Celula,
 } from "@/components/ui/tabela";
 import { BotaoLink } from "@/components/ui/botao";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import {
   BLOCOS_DIAGNOSTICO,
   LACUNA,
@@ -88,8 +87,6 @@ export default async function PaginaDiagnosticos() {
           </BotaoLink>
         }
       />
-
-      <FaixaDemonstracao oQue="Estes diagnósticos são de demonstração. As respostas foram escritas para a tela poder ser avaliada — não vieram de nenhum cliente." />
 
       {diagnosticos.length === 0 ? (
         <EstadoVazio

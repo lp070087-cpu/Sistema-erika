@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { CabecalhoPagina } from "@/components/ui/rotulo";
-import { Etiqueta } from "@/components/ui/indicador";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { BarraFiltros } from "@/components/ui/filtros";
 import {
   ROTULO_TIPO_ACOMPANHAMENTO,
@@ -85,10 +83,7 @@ export default async function PaginaAcompanhamentos({ searchParams }: Props) {
         rotulo="Operação"
         titulo="Acompanhamentos"
         descricao="O diário do relacionamento: o que foi discutido em cada reunião, visita ou análise, o que ficou pendente e qual é o próximo passo. É a memória que hoje vive em caderno e mensagem solta."
-        acoes={<Etiqueta tom="oliva">Demonstração</Etiqueta>}
       />
-
-      <FaixaDemonstracao oQue="Os acompanhamentos desta tela são inventados para demonstração. As datas, os resumos e as pendências foram escritos como exemplo — nenhum encontro real aconteceu." />
 
       <BarraFiltros
         base="/acompanhamentos"

@@ -157,7 +157,18 @@ export function Gaveta({
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        {/*
+          `min-h-0` junto do `flex-1 overflow-y-auto` — os dois, não só o segundo.
+
+          No flex, o padrão de um item é `min-height: auto`: ele se recusa a
+          ficar menor que o próprio conteúdo. Sem o `min-h-0`, o corpo da
+          gaveta cresce com o formulário em vez de rolar, e empurra o rodapé
+          com os botões "Cancelar" e "Salvar" para fora do quadro. O botão de
+          salvar some — e some justamente na tela em que a pessoa acabou de
+          preencher tudo. É o defeito clássico do flex, e a correção é uma
+          classe.
+        */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
 
         {acoes ? (
           <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 border-t border-[var(--linha)] px-5 py-4">

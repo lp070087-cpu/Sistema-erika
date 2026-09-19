@@ -280,10 +280,9 @@ function FormularioDeAcompanhamento({
           )}
           {cliente && !consultoria ? (
             <p className="mt-2 text-[0.75rem] leading-relaxed text-[var(--tinta-fraca)]">
-              Este cliente não tem consultoria em andamento. Na demonstração o
-              registro pode ser salvo assim mesmo, mas no sistema real ele
-              precisaria de uma consultoria — um acompanhamento não existe
-              solto.
+              Este cliente não tem consultoria em andamento. Aqui o registro
+              entra assim mesmo; no sistema em uso, ele precisaria de uma
+              consultoria — um acompanhamento não existe solto.
             </p>
           ) : null}
         </div>

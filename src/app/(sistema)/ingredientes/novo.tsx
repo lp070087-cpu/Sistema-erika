@@ -4,29 +4,53 @@ import { useState } from "react";
 import { Botao } from "@/components/ui/botao";
 import { Campo, CampoSelecao } from "@/components/ui/campo";
 import { Gaveta } from "@/components/ui/gaveta";
-import { Aviso } from "@/components/ui/superficie";
+import { useDemonstracao } from "@/components/ui/use-demonstracao";
+import { valorEmReais } from "@/lib/dados";
+import type { Ingrediente, PesoInformado, Transformacao } from "@/lib/dados";
+import { cadastrarIngrediente } from "@/lib/dados/demonstracao";
 
 /**
- * NOVO INGREDIENTE — e a única conta que o sistema faz sozinho.
+ * CADASTRAR UM INSUMO — e as duas contas que o sistema faz sozinho.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE AQUI PODE HAVER UMA DIVISÃO, E EM OUTROS LUGARES NÃO          │
+ * │ POR QUE AQUI PODE HAVER DIVISÃO, E EM OUTROS LUGARES NÃO             │
  * │                                                                      │
- * │ "Preço pago ÷ quantidade comprada" é aritmética pura sobre dois        │
- * │ números que a consultora digitou. Ela comprou 5 kg e pagou R$ 120 —    │
- * │ o quilo custou R$ 24. Não há nenhuma decisão da Érika nessa conta:     │
- * │ não depende de fator de correção, de índice de cocção nem de regra de  │
- * │ arredondamento. Se ela não quiser, não usa.                           │
+ * │ "Preço pago ÷ quantidade comprada" é aritmética pura sobre dois       │
+ * │ números que a consultora digitou. Ela comprou 5 kg e pagou R$ 120 —   │
+ * │ o quilo custou R$ 24. Não há nenhuma decisão da Érika nessa conta:    │
+ * │ não depende de fator de correção, de índice de cocção nem de regra de │
+ * │ arredondamento.                                                      │
  * │                                                                      │
- * │ O QUE O SISTEMA SE RECUSA A FAZER, E A RAZÃO                          │
+ * │ O que o sistema se recusa a fazer é CONVERTER a unidade de compra     │
+ * │ para a unidade de uso na ficha. Se ela compra uma caixa de 12 latas e │
+ * │ a ficha pede em ml, alguém precisa dizer quantos ml tem a lata — e se │
+ * │ ela é aproveitada inteira. Isso é fator de correção e rendimento: é    │
+ * │ método, não conta.                                                    │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ AS PESAGENS SÃO OPCIONAIS, E ISSO É DELIBERADO                       │
  * │                                                                      │
- * │ Converter a unidade de COMPRA para a unidade de USO na ficha. Se ela  │
- * │ compra uma caixa de 12 latas e a ficha pede em ml, alguém precisa     │
- * │ dizer quantos ml tem a lata — e se essa lata é aproveitada inteira.   │
- * │ Isso é fator de correção e rendimento: é método, não conta. Então o    │
- * │ formulário para na divisão e diz onde parou.                          │
+ * │ O formulário poderia exigir as três: peso de compra, peso limpo, peso │
+ * │ preparado. Exigir seria mais fácil de escrever e pior de usar.        │
  * │                                                                      │
- * │ O PREÇO SEMPRE ENTRA COM DATA. É a razão de a biblioteca existir.      │
+ * │ Insumo sem pesagem ainda serve — ele tem preço, entra na lista de      │
+ * │ compras, aparece nas fichas. O que ele não tem é rendimento, e a tela  │
+ * │ mostra "não pesado" em vez de inventar um. E a pesagem acontece na     │
+ * │ cozinha, com a balança na mão — não é coisa que se faça sentada na     │
+ * │ frente do computador durante a consultoria.                           │
+ * │                                                                      │
+ * │ Por isso o bloco fica RECOLHIDO e sem asterisco: quem tem a medição    │
+ * │ preenche agora, quem não tem preenche depois, e o formulário não       │
+ * │ obriga ninguém a digitar número que não mediu.                        │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O PREÇO ENTRA COM DATA, SEMPRE                                      │
+ * │                                                                      │
+ * │ É a razão de a biblioteca existir. Um preço sem data não permite      │
+ * │ saber se ele ainda vale — e é assim que um número de janeiro continua │
+ * │ dentro de uma ficha em junho sem ninguém notar.                       │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -35,9 +59,9 @@ const UNIDADES = ["kg", "g", "L", "ml", "un", "dúzia", "maço", "cx", "pct"] as
 /** Hoje, no fuso de quem está usando — a data do preço é o dia da compra. */
 function hojeLocal(): string {
   const d = new Date();
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mes}-${dia}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
 }
 
 /**
@@ -48,20 +72,43 @@ function hojeLocal(): string {
  * que está lendo — e é exatamente aí que se digita 1290 sem perceber.
  */
 function lerNumero(texto: string): number | null {
-  const limpo = texto.trim().replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const limpo = texto.trim().replace(/\s/g, "");
   if (limpo === "") return null;
+
+  if (limpo.includes(",")) {
+    const n = Number(limpo.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   const n = Number(limpo);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Reais, do jeito que se escreve no Brasil. */
-function emReais(valor: number): string {
-  return `R$ ${valor.toFixed(2).replace(".", ",")}`;
+/** Um id que não colide com os do cenário, que começam todos com `in_`. */
+function idDeSessao(nome: string): string {
+  const slug = nome
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30);
+  return `in_demo_${slug || "insumo"}_${Date.now().toString(36)}`;
 }
 
-export function NovoIngrediente({ categorias }: { categorias: readonly string[] }) {
+export function NovoIngrediente({
+  categorias,
+  /** Chamado depois de cadastrar — para a ficha continuar de onde parou. */
+  aoCadastrar,
+}: {
+  categorias: readonly string[];
+  aoCadastrar?: (ingrediente: Ingrediente) => void;
+}) {
+  useDemonstracao();
+
   const [aberta, setAberta] = useState(false);
   const [revisando, setRevisando] = useState(false);
+  const [mostrarPesagens, setMostrarPesagens] = useState(false);
 
   const SEM_CATEGORIA = "__nova__";
   const [nome, setNome] = useState("");
@@ -72,6 +119,12 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
   const [preco, setPreco] = useState("");
   const [fornecedor, setFornecedor] = useState("");
   const [data, setData] = useState(hojeLocal());
+  const [observacoes, setObservacoes] = useState("");
+
+  const [pBruto, setPBruto] = useState("");
+  const [pLimpo, setPLimpo] = useState("");
+  const [pPreparado, setPPreparado] = useState("");
+  const [obsPreparo, setObsPreparo] = useState("");
 
   const categoriaFinal = categoria === SEM_CATEGORIA ? categoriaNova.trim() : categoria;
 
@@ -79,26 +132,103 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
   const precoNum = lerNumero(preco);
 
   /**
-   * A divisão. Só acontece quando os dois números existem e a quantidade é
-   * maior que zero — e é exibida como "preço por unidade de compra", nunca
-   * como "custo do insumo", que soaria como custo de ficha.
+   * A DIVISÃO — preço pago pela quantidade comprada.
+   *
+   * É o preço por unidade de COMPRA: o que a nota diz, normalizado. Nunca
+   * chamado de "custo do insumo", que soaria como custo dentro de uma ficha.
    */
-  const porUnidade =
-    qtdNum !== null && precoNum !== null ? precoNum / qtdNum : null;
+  const porUnidade = qtdNum !== null && precoNum !== null ? precoNum / qtdNum : null;
 
-  const podeRevisar =
-    nome.trim().length > 0 && categoriaFinal.length > 0 && data !== "";
+  const podeRevisar = nome.trim().length > 0 && categoriaFinal.length > 0 && data !== "";
 
-  function fechar() {
-    setAberta(false);
-    setRevisando(false);
+  function limpar() {
     setNome("");
     setCategoriaNova("");
     setQuantidade("");
     setPreco("");
     setFornecedor("");
+    setObservacoes("");
+    setPBruto("");
+    setPLimpo("");
+    setPPreparado("");
+    setObsPreparo("");
     setData(hojeLocal());
+    setMostrarPesagens(false);
   }
+
+  function fechar() {
+    setAberta(false);
+    setRevisando(false);
+    limpar();
+  }
+
+  /**
+   * Monta o insumo e o entrega ao store.
+   *
+   * O peso informado carrega a PRÓPRIA unidade — a de compra. Isso mantém o
+   * cadastro coerente: quem comprou em quilo pesa em quilo. Converter para
+   * outra unidade aqui seria inventar uma conversão que o sistema não faz.
+   */
+  function salvar() {
+    const quando = new Date(`${data}T12:00:00`);
+    const id = idDeSessao(nome.trim());
+
+    const peso = (texto: string): PesoInformado | null => {
+      const n = lerNumero(texto);
+      return n === null ? null : { peso: n, unidade };
+    };
+
+    const transformacao: Transformacao = {
+      bruto: peso(pBruto),
+      limpo: peso(pLimpo),
+      preparado: peso(pPreparado),
+      observacao: obsPreparo.trim(),
+    };
+
+    const ingrediente: Ingrediente = {
+      id,
+      nome: nome.trim(),
+      categoria: categoriaFinal,
+      unidade,
+      compra:
+        qtdNum !== null && precoNum !== null
+          ? { quantidade: qtdNum, unidade, valorTotal: precoNum }
+          : null,
+      transformacao,
+      observacoes: observacoes.trim(),
+      /*
+        O preço de referência nasce da divisão, e não de um campo digitado.
+        Existindo os dois, existiriam dois números discordando sobre a mesma
+        compra — e o segundo a ser editado venceria, sem ninguém saber qual
+        dos dois vale.
+      */
+      precoAtual: porUnidade,
+      atualizadoEm: quando,
+      fornecedor: fornecedor.trim(),
+      historico: [],
+    };
+
+    cadastrarIngrediente(ingrediente);
+    aoCadastrar?.(ingrediente);
+    fechar();
+  }
+
+  const linhasDeRevisao: Array<[string, string]> = [
+    ["Ingrediente", nome.trim() || "—"],
+    ["Categoria", categoriaFinal || "—"],
+    ["Unidade", unidade],
+    ["Comprado", qtdNum !== null ? `${quantidade} ${unidade}` : "não informado"],
+    ["Pago", precoNum !== null ? valorEmReais(precoNum) : "não informado"],
+    ["Preço por unidade", porUnidade !== null ? `${valorEmReais(porUnidade)} / ${unidade}` : "—"],
+    ["Fornecedor", fornecedor.trim() || "não informado"],
+    ["Data do preço", data ? new Date(`${data}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
+    [
+      "Pesagens",
+      [pBruto, pLimpo, pPreparado].filter((p) => lerNumero(p) !== null).length === 0
+        ? "nenhuma medida ainda"
+        : `${[pBruto, pLimpo, pPreparado].filter((p) => lerNumero(p) !== null).length} de 3`,
+    ],
+  ];
 
   return (
     <>
@@ -112,7 +242,7 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
         titulo={revisando ? "Confira antes de cadastrar" : "Novo ingrediente"}
         descricao={
           revisando
-            ? "Este é o insumo como ele ficaria. Ainda não foi cadastrado."
+            ? "Este é o insumo como ele entrará na biblioteca."
             : "O insumo, o preço que você pagou e a data da compra."
         }
         acoes={
@@ -121,8 +251,8 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
               <Botao variante="linha" tamanho="sm" onClick={() => setRevisando(false)}>
                 Voltar e editar
               </Botao>
-              <Botao variante="primario" tamanho="sm" onClick={fechar}>
-                Entendi — fechar
+              <Botao variante="primario" tamanho="sm" onClick={salvar}>
+                Cadastrar insumo
               </Botao>
             </>
           ) : (
@@ -136,7 +266,7 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
                 disabled={!podeRevisar}
                 onClick={() => setRevisando(true)}
               >
-                Cadastrar insumo
+                Revisar
               </Botao>
             </>
           )
@@ -144,42 +274,17 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
       >
         {revisando ? (
           <div className="space-y-5">
-            <Aviso tom="atencao" titulo="Nada foi salvo ao recarregar">
-              <p>
-                A biblioteca continua com os mesmos insumos. O cadastro não é
-                gravado enquanto o banco não estiver conectado.
-              </p>
-            </Aviso>
-
-            <div>
-              <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
-                Como este insumo ficaria
-              </p>
-              <dl className="mt-3 divide-y divide-[var(--linha)] rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-4 py-2">
-                {[
-                  ["Ingrediente", nome],
-                  ["Categoria", categoriaFinal],
-                  ["Unidade", unidade],
-                  ["Comprado", qtdNum !== null ? `${quantidade} ${unidade}` : "não informado"],
-                  ["Pago", precoNum !== null ? emReais(precoNum) : "não informado"],
-                  ["Fornecedor", fornecedor || "não informado"],
-                  [
-                    "Data do preço",
-                    data
-                      ? new Date(`${data}T12:00:00`).toLocaleDateString("pt-BR")
-                      : "—",
-                  ],
-                ].map(([rotulo, valor]) => (
-                  <div
-                    key={rotulo}
-                    className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-2.5"
-                  >
-                    <dt className="text-[0.8125rem] text-[var(--tinta-suave)]">{rotulo}</dt>
-                    <dd className="text-right text-[0.875rem] text-tinta">{valor}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+            <dl className="divide-y divide-[var(--linha)] rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-4 py-2">
+              {linhasDeRevisao.map(([rotulo, valor]) => (
+                <div
+                  key={rotulo}
+                  className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-2.5"
+                >
+                  <dt className="text-[0.8125rem] text-[var(--tinta-suave)]">{rotulo}</dt>
+                  <dd className="text-right text-[0.875rem] text-tinta">{valor}</dd>
+                </div>
+              ))}
+            </dl>
 
             {porUnidade !== null ? (
               <div className="rounded-[var(--raio)] border border-[var(--linha)] border-l-2 border-l-oliva bg-[rgba(107,122,70,0.06)] px-4 py-4">
@@ -187,28 +292,28 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
                   Conta que o sistema fez
                 </p>
                 <p className="mt-2 text-[0.875rem] leading-relaxed text-[var(--tinta-suave)]">
-                  {emReais(precoNum as number)} ÷ {quantidade} {unidade} ={" "}
+                  {valorEmReais(precoNum as number)} ÷ {quantidade} {unidade} ={" "}
                   <strong className="font-semibold text-tinta">
-                    {emReais(porUnidade)} por {unidade}
+                    {valorEmReais(porUnidade)} por {unidade}
                   </strong>
                 </p>
                 <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
-                  Foi só uma divisão dos dois números que você digitou. O
-                  sistema não usou nenhuma regra da metodologia para chegar
-                  nisso — e por isso mesmo não converte essa unidade para
-                  outra.
+                  Foi só uma divisão dos dois números que você digitou. Nenhuma
+                  regra da metodologia entrou nisso — e por isso mesmo o
+                  sistema não converte essa unidade para outra.
                 </p>
               </div>
             ) : null}
 
-            <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] px-4 py-3.5">
-              <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-                <span className="font-medium text-tinta">
-                  A unidade de compra é a unidade do insumo.
-                </span>{" "}
-                Se você comprar em caixa e a ficha pedir em ml, a conversão
-                depende de quanto rende a caixa — isso é metodologia, e ainda
-                não está definida.
+            <div className="rounded-[var(--raio)] border border-dashed border-dourado/60 bg-[rgba(201,165,78,0.07)] px-4 py-3.5">
+              <p className="text-[0.8125rem] font-semibold text-tinta">
+                O insumo entra na biblioteca nesta sessão
+              </p>
+              <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+                Ao cadastrar, ele passa a aparecer na biblioteca e a poder ser
+                escolhido nas fichas — sem ser redigitado. O banco ainda não
+                está conectado: ao recarregar a página, o insumo volta ao
+                estado inicial.
               </p>
             </div>
           </div>
@@ -289,15 +394,25 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
                 type="date"
                 value={data}
                 onChange={(e) => setData(e.target.value)}
+                obrigatorio
                 ajuda="O dia da compra. É esta data que faz o histórico servir para alguma coisa."
+              />
+
+              <Campo
+                label="Observações"
+                name="observacoes"
+                value={observacoes}
+                onChange={(e) => setObservacoes(e.target.value)}
+                placeholder="Marca, embalagem, o que mais importar"
               />
             </div>
 
             {/*
-              A conta aparece ENQUANTO ela digita. Ver "R$ 42,90 por kg" ao
-              lado do que acabou de digitar é a conferência mais rápida que
-              existe: se o número parecer absurdo, provavelmente a vírgula
-              escorregou.
+              A CONTA APARECE ENQUANTO ELA DIGITA.
+
+              Ver "R$ 42,90 por kg" ao lado do que acabou de digitar é a
+              conferência mais rápida que existe: se o número parecer absurdo,
+              provavelmente a vírgula escorregou.
             */}
             {porUnidade !== null ? (
               <div className="rounded-[var(--raio)] border border-[var(--linha)] border-l-2 border-l-oliva bg-[rgba(107,122,70,0.06)] px-4 py-3.5">
@@ -305,8 +420,10 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
                   Só para você conferir
                 </p>
                 <p className="mt-2 text-[0.9375rem] text-tinta">
-                  {emReais(precoNum as number)} ÷ {quantidade} {unidade} ={" "}
-                  <strong className="font-semibold">{emReais(porUnidade)} por {unidade}</strong>
+                  {valorEmReais(precoNum as number)} ÷ {quantidade} {unidade} ={" "}
+                  <strong className="font-semibold">
+                    {valorEmReais(porUnidade)} por {unidade}
+                  </strong>
                 </p>
                 <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[var(--tinta-fraca)]">
                   Uma divisão simples, com os seus números. Confira se o valor
@@ -315,32 +432,87 @@ export function NovoIngrediente({ categorias }: { categorias: readonly string[] 
               </div>
             ) : null}
 
+            {/* ── PESAGENS (opcional) ─────────────────────────────────────── */}
+            <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] px-4 py-4">
+              <button
+                type="button"
+                onClick={() => setMostrarPesagens((v) => !v)}
+                className="flex w-full items-baseline justify-between gap-4 text-left"
+              >
+                <span>
+                  <span className="block text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
+                    Pesagens do preparo — opcional
+                  </span>
+                  <span className="mt-1 block text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
+                    Se você já pesou este insumo na cozinha, informe aqui. Se
+                    não, deixe em branco: ele entra na biblioteca do mesmo jeito,
+                    e a pesagem pode ser feita depois.
+                  </span>
+                </span>
+                <span className="shrink-0 text-[0.8125rem] text-[var(--tinta-suave)]">
+                  {mostrarPesagens ? "Fechar" : "Abrir"}
+                </span>
+              </button>
+
+              {mostrarPesagens ? (
+                <div className="mt-4 space-y-4 border-t border-dashed border-[var(--linha-forte)] pt-4">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Campo
+                      label="Peso de compra"
+                      name="pBruto"
+                      inputMode="decimal"
+                      value={pBruto}
+                      onChange={(e) => setPBruto(e.target.value)}
+                      placeholder="Ex.: 5"
+                      ajuda={`Em ${unidade}, como veio.`}
+                    />
+                    <Campo
+                      label="Peso limpo"
+                      name="pLimpo"
+                      inputMode="decimal"
+                      value={pLimpo}
+                      onChange={(e) => setPLimpo(e.target.value)}
+                      placeholder="Ex.: 4,5"
+                      ajuda={`Em ${unidade}, depois de limpar.`}
+                    />
+                    <Campo
+                      label="Peso preparado"
+                      name="pPreparado"
+                      inputMode="decimal"
+                      value={pPreparado}
+                      onChange={(e) => setPPreparado(e.target.value)}
+                      placeholder="Ex.: 4"
+                      ajuda={`Em ${unidade}, depois de cozinhar.`}
+                    />
+                  </div>
+
+                  <Campo
+                    label="Anotação do preparo"
+                    name="obsPreparo"
+                    value={obsPreparo}
+                    onChange={(e) => setObsPreparo(e.target.value)}
+                    placeholder="Corte, tempo, ponto"
+                  />
+
+                  <p className="text-[0.75rem] leading-relaxed text-[var(--tinta-fraca)]">
+                    Cada peso é uma medição. O sistema calcula a perda e o
+                    rendimento a partir deles — e não estima o que não foi
+                    medido. A unidade dos pesos é a mesma da compra, porque é
+                    nessa que a balança foi lida.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
             <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] px-4 py-3.5">
               <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[var(--tinta-fraca)] uppercase">
                 O que o sistema não calcula aqui
               </p>
               <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-                <strong className="font-semibold text-tinta">
-                  O cadastro guarda o preço como ele foi informado.
-                </strong>{" "}
                 Não há conversão da unidade de compra para a unidade usada na
-                ficha, nem custo por porção. As duas dependem de quanto o
-                insumo rende depois de limpo e de como a porção é definida —
-                duas decisões que ainda não foram tomadas, e que estão
-                nomeadas na tela da ficha.
-              </p>
-            </div>
-
-            <div className="rounded-[var(--raio)] border border-dashed border-dourado/70 bg-[rgba(201,165,78,0.08)] px-4 py-3.5">
-              <p className="text-[0.6875rem] font-semibold tracking-[0.14em] text-[#8a6d1f] uppercase">
-                Antes de preencher
-              </p>
-              <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
-                <strong className="font-semibold text-tinta">
-                  Dados de demonstração não são salvos ao recarregar.
-                </strong>{" "}
-                O insumo não entra na biblioteca enquanto o banco não estiver
-                conectado.
+                ficha, nem custo por porção. As duas dependem de quanto o insumo
+                rende depois de limpo e de como a porção é definida — duas
+                decisões que ainda não foram tomadas.
               </p>
             </div>
           </div>

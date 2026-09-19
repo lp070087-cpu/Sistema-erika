@@ -181,9 +181,10 @@ export default function PaginaMeuSite() {
           publicado em nenhum lugar.
         </p>
         <div className="mt-4">
-          <Aviso tom="atencao" titulo="Enquanto for demonstração">
-            Os clientes que aparecem no sistema são exemplos. O endereço do site,
-            porém, é real e já pode ser divulgado.
+          <Aviso tom="atencao" titulo="O endereço é real; os clientes são exemplo">
+            O endereço abaixo já pode ser divulgado — ele é o do seu site no ar.
+            Os clientes que aparecem dentro do sistema, não: são um cenário de
+            exemplo.
           </Aviso>
         </div>
       </Painel>

@@ -84,17 +84,34 @@ export type DecisaoPendente = {
 export const DECISOES_PENDENTES: readonly DecisaoPendente[] = [
   {
     id: "coccao",
-    decisao: "Quanto o alimento rende depois de cozido",
+    decisao: "O rendimento da cocção entra como tabela ou como pesagem",
+    /*
+      ESTA PERGUNTA MUDOU DE FORMA DEPOIS DO MOTOR DE CUSTOS.
+
+      Antes ela era "quanto o alimento rende depois de cozido" — e o sistema
+      não tinha como responder porque não tinha peso nenhum.
+
+      Agora, quando os pesos foram medidos, o rendimento é conta fechada:
+      1,75 kg depois de grelhar sobre 2,5 kg antes dá 70%, e esse número não
+      depende de decisão nenhuma.
+
+      O que continua em aberto é OUTRA coisa, e é ela que a consultora
+      precisa responder: a metodologia dela tem um índice de cocção de
+      REFERÊNCIA — um número que vale antes de medir, para prever? Se tiver,
+      ele entra como valor de tabela, e o sistema precisa saber quando
+      aplicá-lo em vez da medição. Se não tiver, então todo rendimento é
+      medido, e o que falta é combinar que a balança entra na rotina.
+    */
     porque:
-      "Um quilo cru não vira um quilo no prato. Quanto se perde depende do corte, do tempo e do forno — e só quem está na cozinha sabe qual é o número de cada preparo.",
-    trava: ["Custo por porção", "Peso da porção pronta"],
+      "O rendimento já medido o sistema calcula sozinho. O que ainda não se sabe é se a sua metodologia usa um índice de cocção de referência, aplicado ANTES da pesagem — e o que fazer quando o medido e o de tabela discordarem.",
+    trava: ["Aplicar índice em vez de medir", "Rendimento de insumo ainda não pesado"],
   },
   {
     id: "compra-para-uso",
-    decisao: "Quanto se perde entre a compra e o uso",
+    decisao: "O fator de correção é tabela da metodologia, ou só o que foi medido",
     porque:
-      "Limpar, aparar e porcionar tira peso do insumo antes de ele virar prato. O quanto tira varia conforme o fornecedor e o dia, e o sistema não tem como medir isso.",
-    trava: ["Custo por porção", "Quantidade a comprar"],
+      "Limpar e aparar tira peso, e o sistema já calcula quanto tirou quando existem os dois pesos. Falta decidir se existe um fator de correção oficial por categoria de alimento — e, se existir, se ele substitui a medição da cozinha ou serve só de conferência.",
+    trava: ["Estimar perda sem pesar", "Conferência entre medido e tabela"],
   },
   {
     id: "custo-do-prato",
@@ -122,7 +139,7 @@ export const DECISOES_PENDENTES: readonly DecisaoPendente[] = [
     decisao: "Quantas casas decimais cada número guarda",
     porque:
       "Custo arredondado antes de multiplicar dá resultado diferente de arredondar no fim. A diferença é pequena por prato e grande por mês.",
-    trava: ["Custo por porção", "Preço sugerido", "Totais das planilhas"],
+    trava: ["Preço sugerido", "Totais das planilhas"],
   },
   {
     id: "peso-das-etapas",
@@ -132,6 +149,53 @@ export const DECISOES_PENDENTES: readonly DecisaoPendente[] = [
     trava: ["Percentual de conclusão da consultoria"],
   },
 ];
+
+/**
+ * A MARCA DA REGRA AINDA NÃO CONFIRMADA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE UM COMPONENTE PARA DIZER "AINDA NÃO SEI"                     │
+ * │                                                                      │
+ * │ O sistema recebeu uma ordem específica: onde uma regra profissional   │
+ * │ ainda não foi confirmada, marcar como "Regra da metodologia a         │
+ * │ confirmar" — e NÃO escolher por conta própria.                        │
+ * │                                                                      │
+ * │ A alternativa seria uma frase cinza explicando isso em cada lugar     │
+ * │ onde a regra faltasse. Frases cinzas repetidas divergem, e a          │
+ * │ consultora deixa de lê-las — foi o que aconteceu com "em             │
+ * │ preparação". A marca precisa ser reconhecível de longe, curta e       │
+ * │ igual em todo lugar, para que ela saiba exatamente o que está         │
+ * │ olhando quando encontrar uma.                                        │
+ * │                                                                      │
+ * │ Repare no que ela NÃO faz: não diz que o cálculo está errado, não     │
+ * │ esconde o número e não promete uma data. Ela diz uma coisa só — que   │
+ * │ aquele ponto depende de uma resposta dela.                            │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function RegraAConfirmar({
+  oQue,
+  className,
+}: {
+  /** O que, exatamente, ainda não está definido neste ponto. */
+  oQue: string;
+  className?: string;
+}) {
+  return (
+    <p
+      className={cn(
+        "flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-[var(--raio-sm)] " +
+          "border border-dashed border-dourado/60 bg-[rgba(201,165,78,0.07)] px-2.5 py-1.5 " +
+          "text-[0.75rem] leading-relaxed text-[#7a6119]",
+        className
+      )}
+    >
+      <span className="font-semibold tracking-[0.1em] uppercase">
+        Regra da metodologia a confirmar
+      </span>
+      <span className="text-[var(--tinta-suave)]">{oQue}</span>
+    </p>
+  );
+}
 
 /**
  * A LISTA DE BLOQUEIOS, PARA AS TELAS.

@@ -5,7 +5,6 @@ import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { Etiqueta } from "@/components/ui/indicador";
 import { Painel, Secao } from "@/components/ui/superficie";
 import { Dado, ListaDados } from "@/components/ui/dados";
-import { FaixaDemonstracao } from "@/components/ui/faixa-demonstracao";
 import { Jornada } from "@/components/ui/jornada";
 import { DecisoesQueFaltam } from "@/components/ui/metodologia";
 import { LinhaDoTempo } from "@/components/ui/linha-do-tempo";
@@ -165,8 +164,6 @@ export default async function PaginaConsultoria({ params }: Props) {
           </Etiqueta>
         }
       />
-
-      <FaixaDemonstracao oQue="Esta consultoria é inventada para demonstração. As ações e os encontros abaixo são fictícios, e as alterações feitas nesta tela não são gravadas em lugar nenhum." />
 
       {/*
         ── A SEQUÊNCIA, ANTES DOS DADOS ────────────────────────────────
@@ -367,9 +364,9 @@ export default async function PaginaConsultoria({ params }: Props) {
         descricao="Esta é a etapa que responde se o trabalho deu certo — em texto, na leitura da consultora, enquanto a leitura por número não estiver definida."
       >
         <DecisoesQueFaltam
-          apenas={["coccao", "compra-para-uso", "custo-do-prato", "formacao-de-preco", "peso-das-etapas"]}
+          apenas={["coccao", "compra-para-uso", "arredondamento"]}
           titulo="Por que o resultado ainda é descrito, e não medido"
-          descricao="Medir o resultado exige comparar o antes e o depois — e comparar exige que os dois tenham sido calculados do mesmo jeito, com as decisões abaixo já fixadas. Sem elas, a comparação mediria a diferença entre duas suposições, não a diferença entre dois momentos."
+          descricao="O custo do prato já é somado a partir do preço dos insumos e da quantidade declarada. O que ainda não dá para comparar é o ANTES e o DEPOIS: a comparação só mede o efeito da consultoria se os dois momentos tiverem sido calculados do mesmo jeito, com as decisões abaixo fixadas. Sem elas, ela mediria a diferença entre duas suposições."
         />
       </Secao>
 
@@ -517,7 +514,7 @@ export default async function PaginaConsultoria({ params }: Props) {
         <Secao
           rotulo={`${fichas.length} no acervo`}
           titulo="Fichas técnicas do cliente"
-          descricao="O acervo deste cliente. A ficha guarda o que é declarado — rendimento, porção, modo de preparo — e o custo continua fora até a metodologia fechar."
+          descricao="O acervo deste cliente. A ficha guarda o que é declarado — rendimento, porção, modo de preparo — e soma o custo dos insumos na etapa em que cada quantidade foi medida. Preço de venda e CMV continuam fora, até a metodologia fechar."
           acoes={
             <Link
               href={`/clientes/${cliente.id}?aba=fichas`}
