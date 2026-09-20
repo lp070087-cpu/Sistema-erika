@@ -135,6 +135,25 @@ function escreverFolha(aba: Worksheet, grade: GradeDaPlanilha, folha: FolhaGrade
         linha = escreverTexto(aba, linha, item.texto, totalColunas, item.tom);
         break;
       }
+
+      case "vazia": {
+        /*
+          A LINHA DE GRADE LIVRE.
+
+          Ela existe para a planilha em branco, e no arquivo ela precisa ser
+          o que é na tela: uma linha COM BORDAS e sem conteúdo. Se fosse
+          simplesmente pulada, a folha em branco sairia do Excel com zero
+          linhas — e a grade que ela preencheu no navegador não estaria lá.
+
+          O `ler`/`escrever` de célula vazia é deliberado: o ExcelJS só
+          materializa a borda de uma linha que tem pelo menos uma célula
+          estilizada. Escrever o estilo em cada coluna é o que faz a grade
+          chegar ao Excel com a mesma cara de grade.
+        */
+        escreverLinhaVazia(aba, linha, folha, item.celulas);
+        linha += 1;
+        break;
+      }
     }
   }
 
@@ -302,6 +321,38 @@ function escreverLinhaDeDados(
         bruto !== undefined && bruto !== null && FORMATO_EXCEL[col.formato]
           ? FORMATO_EXCEL[col.formato]
           : undefined,
+    };
+  });
+  aba.getRow(linha).height = 17;
+}
+
+/**
+ * Uma linha de grade livre — vazia, ou com o que ela digitou.
+ *
+ * Diferente de `dados`, esta linha não recebe faixa alternada nem numFmt: ela
+ * é grade de digitação, e a única coisa que ela carrega é a divisão fina entre
+ * células. A faixa alternada existe para guiar o olho numa lista longa; numa
+ * grade em branco, ela pintaria de cinza linhas que ninguém preencheu.
+ */
+function escreverLinhaVazia(
+  aba: Worksheet,
+  linha: number,
+  folha: FolhaGrade,
+  celulas: Readonly<Record<string, CelulaGrade>> | undefined
+): void {
+  folha.colunas.forEach((col, i) => {
+    const cell = aba.getCell(linha, i + 1);
+    const bruto = celulas?.[col.chave] ?? null;
+    cell.value = bruto;
+    cell.style = {
+      ...ESTILO_CELULA,
+      alignment: {
+        vertical: "middle",
+        horizontal: ALINHAMENTO_EXCEL[ALINHAMENTO_DO_FORMATO[col.formato]],
+        wrapText: false,
+      },
+      numFmt:
+        bruto !== null && FORMATO_EXCEL[col.formato] ? FORMATO_EXCEL[col.formato] : undefined,
     };
   });
   aba.getRow(linha).height = 17;

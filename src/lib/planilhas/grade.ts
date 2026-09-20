@@ -134,6 +134,24 @@ export type CelulaGrade = string | number | Date | null;
  *   subtotal  — fecha um bloco sem ser o total da folha.
  *   total     — o TOTAL.
  *   texto     — nota de rodapé ou pendência, atravessando as colunas.
+ *   vazia     — uma linha de grade livre, sem conteúdo.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE "vazia" PRECISOU EXISTIR                                     │
+ * │                                                                      │
+ * │ As seis primeiras descrevem uma planilha que o sistema MONTA: cada    │
+ * │ linha tem um significado, e a lista termina quando o conteúdo termina. │
+ * │                                                                      │
+ * │ A planilha em branco é o contrário disso. Trinta linhas de nada, e o  │
+ * │ vazio é o CONTEÚDO — é onde ela vai digitar. Sem um tipo que          │
+ * │ represente "linha existe e está vazia", a grade em branco teria de    │
+ * │ ser uma lista de zero linhas, e a tela desenharia um retângulo vazio  │
+ * │ sem linhas, sem números e sem onde clicar.                            │
+ * │                                                                      │
+ * │ O `altura` é a única concessão: no Excel a linha de uma ficha é mais  │
+ * │ alta que a de uma grid de digitação. Ele é opcional e o padrão é a    │
+ * │ linha compacta.                                                       │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 export type LinhaGrade =
   | { tipo: "secao"; texto: string }
@@ -142,7 +160,8 @@ export type LinhaGrade =
   | { tipo: "dados"; celulas: Readonly<Record<string, CelulaGrade>> }
   | { tipo: "subtotal"; celulas: Readonly<Record<string, CelulaGrade>>; rotulo?: string }
   | { tipo: "total"; celulas: Readonly<Record<string, CelulaGrade>>; rotulo?: string }
-  | { tipo: "texto"; texto: string; tom?: "nota" | "pendencia" };
+  | { tipo: "texto"; texto: string; tom?: "nota" | "pendencia" }
+  | { tipo: "vazia"; celulas?: Readonly<Record<string, CelulaGrade>> };
 
 /** Uma folha — o que o Excel chama de aba, e o que a tela chama de aba. */
 export type FolhaGrade = {
@@ -172,6 +191,69 @@ export type FolhaGrade = {
   mostrarCabecalho: boolean;
   /** A nota do rodapé, com a origem do arquivo. */
   assinatura: string;
+  /**
+   * EM QUE LINHA DO ARQUIVO A PRIMEIRA LINHA DESTA FOLHA CAI.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ POR QUE A TELA PRECISA SABER ISTO                                  │
+   * │                                                                    │
+   * │ O escritor do Excel gasta as linhas 1 e 2 com a faixa de título e   │
+   * │ a de subtítulo, e só então começa o conteúdo — na linha 3. É por    │
+   * │ isso que `escreverFolha` faz `let linha = 3`.                       │
+   * │                                                                    │
+   * │ A grade na tela não desenha essas duas faixas: o título e o         │
+   * │ subtítulo já estão na barra de cima, e repeti-los aqui gastaria     │
+   * │ duas linhas de planilha com texto que ela não lê.                  │
+   * │                                                                    │
+   * │ A consequência, sem este campo, é que a linha 1 da tela seria a     │
+   * │ linha 3 do arquivo. E aí "some a linha 12" — dito ao telefone, ou   │
+   * │ escrito num bilhete — apontaria para linhas diferentes conforme     │
+   * │ quem olha. Numa planilha de conferência de custo, a linha é          │
+   * │ endereço, e dois endereços para a mesma linha é defeito.            │
+   * │                                                                    │
+   * │ O PADRÃO É 3, que é o que o escritor faz hoje para toda folha. Um   │
+   * │ modelo que um dia mude a altura do próprio cabeçalho declara o      │
+   * │ número aqui, e a tela acompanha sem saber por quê.                  │
+   * └────────────────────────────────────────────────────────────────────┘
+   */
+  linhaInicial?: number;
+  /**
+   * A FOLHA ACEITA DIGITAÇÃO?
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ POR QUE ISTO É DECISÃO DA FOLHA, E NÃO UM PADRÃO DO SISTEMA        │
+   * │                                                                    │
+   * │ As folhas derivadas — ficha técnica, custos, relatório — são        │
+   * │ VISTAS de dados que moram em outro lugar. O custo de um prato sai   │
+   * │ de `resolverItem`; editá-lo na grade criaria um segundo caminho de  │
+   * │ escrita, e um número na planilha que não corresponde a nada no      │
+   * │ sistema. Nelas, `editavel` é falso, e toda célula é CALCULADA.      │
+   * │                                                                    │
+   * │ A planilha em branco é o oposto: não existe dado de origem nenhum.  │
+   * │ Se ela não aceitar digitação, ela não serve para nada. Nela,        │
+   * │ `editavel` é verdadeiro e a célula é ENTRADA.                       │
+   * │                                                                    │
+   * │ O padrão é falso porque o padrão precisa ser o SEGURO: uma folha    │
+   * │ nova que esqueça de declarar isto nasce somente-leitura, e não      │
+   * │ nasce aceitando escrita num dado que ela não governa.               │
+   * └────────────────────────────────────────────────────────────────────┘
+   */
+  editavel?: boolean;
+  /**
+   * NUMA FOLHA EDITÁVEL, AS CÉLULAS QUE SÃO RESULTADO.
+   *
+   * Chaves no formato de endereço — `"G4"`, `"H12"`. Elas aparecem na grade
+   * com o tratamento de valor calculado e NÃO recebem digitação: são a
+   * resposta da conta, e uma resposta que se pode reescrever à mão deixa de
+   * ser resposta.
+   *
+   * É o que separa, numa ficha que veio de um PDF, o que a Érika INFORMOU
+   * (peso, preço — entrada) do que o sistema CALCULOU (correção, custo).
+   * Sem essa separação, ou tudo vira editável — e o custo passa a poder ser
+   * digitado — ou nada vira, e ela não consegue corrigir o peso que o PDF
+   * trouxe errado.
+   */
+  calculadas?: readonly string[];
 };
 
 /** O que um modelo devolve: o arquivo inteiro descrito em dados. */
@@ -243,9 +325,63 @@ export function valorOuTraco(valor: CelulaGrade): CelulaGrade {
 // Auxiliares de montagem — usados pelos modelos
 // ---------------------------------------------------------------------------
 
+/**
+ * A LETRA DE UMA COLUNA, A PARTIR DO NÚMERO — 1 vira "A", 27 vira "AA".
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELA MUDOU DE CASA                                        │
+ * │                                                                   │
+ * │ Esta função já existia em `estilos.ts`, que importa `exceljs` — é    │
+ * │ arquivo de SERVIDOR. Funcionava, e tinha um defeito que só não doeu  │
+ * │ ainda: a letra da coluna é uma regra do VOCABULÁRIO da planilha, não │
+ * │ um detalhe do ExcelJS. O ExcelJS só precisa dela para escrever       │
+ * │ `topLeftCell` à mão.                                                 │
+ * │                                                                   │
+ * │ Agora a TELA também precisa dela: a faixa A B C D em cima da grade é │
+ * │ a mesma letra, e um componente de navegador não pode importar de     │
+ * │ `estilos.ts` sem arrastar o exceljs inteiro para o bundle.           │
+ * │                                                                   │
+ * │ Duas cópias seria pior: no dia em que uma delas errasse a conta da   │
+ * │ base 26, a grade mostraria "AB" numa coluna que o arquivo chama de   │
+ * │ "AC". `estilos.ts` passa a importar daqui.                           │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * Funciona por decomposição em base 26 com deslocamento: a coluna 27 é "AA",
+ * porque 27 = 1×26 + 1. O `- 1` antes de cada divisão corrige o fato de a
+ * base começar em 1 e não em 0.
+ */
+export function letraDaColuna(numero: number): string {
+  let n = Math.floor(numero);
+  let letra = "";
+  while (n > 0) {
+    const resto = (n - 1) % 26;
+    letra = String.fromCharCode(65 + resto) + letra;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letra || "A";
+}
+
+/**
+ * O ENDEREÇO DE UMA CÉLULA — "A1", "G12".
+ *
+ * É o nome que qualquer pessoa que usa planilha reconhece, e é a chave com
+ * que uma folha editável marca as células que são RESULTADO em vez de
+ * entrada (`FolhaGrade.calculadas`).
+ */
+export function endereco(linha: number, coluna: number): string {
+  return `${letraDaColuna(coluna)}${linha}`;
+}
+
 /** Uma linha de dados, a partir de um objeto simples. */
 export function dados(celulas: Readonly<Record<string, CelulaGrade>>): LinhaGrade {
   return { tipo: "dados", celulas };
+}
+
+/** Uma linha de grade — existe, está vazia, e é onde se digita. */
+export function linhasVazias(quantidade: number): LinhaGrade[] {
+  return Array.from({ length: Math.max(0, Math.floor(quantidade)) }, () => ({
+    tipo: "vazia" as const,
+  }));
 }
 
 /** Um par rótulo/valor. */

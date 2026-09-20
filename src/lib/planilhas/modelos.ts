@@ -51,8 +51,42 @@ import type { ModeloPlanilha } from "./tipos";
 export const ABAS_RELATORIO = ["Resumo", "Tarefas", "Acompanhamentos", "Informações"] as const;
 export const ABAS_FICHA = ["Fichas", "Base", "Informações"] as const;
 export const ABAS_CUSTOS = ["Custos", "Composição", "Informações"] as const;
+export const ABAS_LIVRE = ["Planilha"] as const;
+
+/**
+ * O MODELO COM QUE A CENTRAL ABRE QUANDO NADA FOI ESCOLHIDO.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE NÃO É O RELATÓRIO, COMO ERA ANTES                            │
+ * │                                                                      │
+ * │ Ele era o padrão por ser o único que não exigia nada além de tarefas  │
+ * │ e acompanhamentos. Continuava exigindo CLIENTE — e é justamente por   │
+ * │ isso que a tela abria no "Escolha um cliente".                        │
+ * │                                                                      │
+ * │ A planilha em branco é a única que funciona com zero dado. Abrir a    │
+ * │ Central nela é o que faz a grade estar visível na primeira pintura,   │
+ * │ que é o pedido central desta rodada.                                  │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export const MODELO_PADRAO = "planilha-em-branco";
 
 export const MODELOS: readonly ModeloPlanilha[] = [
+  {
+    id: "planilha-em-branco",
+    nome: "Planilha em branco",
+    descricao:
+      "Uma grade livre de 30 linhas por 12 colunas para digitar à mão, sem depender de cliente ou consultoria. Sem fórmula nesta versão.",
+    estado: "DISPONIVEL",
+    abas: ABAS_LIVRE,
+    /*
+      `exige` VAZIO, E ISSO É O MODELO INTEIRO.
+
+      É a única entrada do catálogo que não pede fonte nenhuma — e é a
+      propriedade que a torna o estado inicial da tela. Se ela exigisse
+      cliente, a Central voltaria a abrir vazia.
+    */
+    exige: [],
+  },
   {
     id: "relatorio-consultoria",
     nome: "Relatório de consultoria",

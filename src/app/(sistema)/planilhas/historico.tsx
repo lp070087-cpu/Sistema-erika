@@ -1,4 +1,4 @@
-import { EstadoVazio, Secao } from "@/components/ui/superficie";
+import { EstadoVazio } from "@/components/ui/superficie";
 import { ListaResponsiva } from "@/components/ui/lista-responsiva";
 import type { ColunaLista } from "@/components/ui/lista-responsiva";
 import { dataCurta } from "@/lib/dados";
@@ -6,6 +6,26 @@ import { COLUNAS_HISTORICO, tamanhoLegivel } from "@/lib/planilhas/historico";
 import type { RegistroPlanilha } from "@/lib/planilhas/historico";
 
 /**
+ * O HISTÓRICO DE PLANILHAS GERADAS — RECOLHIDO, E FORA DO CAMINHO DA GRADE.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELE DEIXOU DE SER UMA SEÇÃO ABERTA                          │
+ * │                                                                      │
+ * │ Ele vinha logo abaixo da grade, com rótulo, título e uma área própria. │
+ * │ Com a lista vazia — que é o estado de hoje, porque não há             │
+ * │ armazenamento — isso virava um bloco alto dizendo "Planilhas geradas / │
+ * │ Nenhuma planilha gerada ainda" no meio da tela.                        │
+ * │                                                                      │
+ * │ A ordem que o briefing pede é essa: a PLANILHA é o centro, e o         │
+ * │ histórico é um lugar onde ela vai buscar um arquivo antigo — não um    │
+ * │ painel para ler. Recolhido, ele ocupa uma linha e não disputa nada.     │
+ * │                                                                      │
+ * │ `details`/`summary` nativo, e não um acordeão de estado: o navegador    │
+ * │ já sabe abrir, fechar e navegar por teclado, e o conteúdo continua no   │
+ * │ HTML mesmo fechado — de modo que a busca do navegador ainda acha o      │
+ * │ nome de uma planilha antiga com o bloco recolhido.                     │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
  * O HISTÓRICO DE PLANILHAS GERADAS.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
@@ -130,15 +150,30 @@ export function HistoricoDePlanilhas({
   });
 
   return (
-    <Secao
-      rotulo="Histórico"
-      titulo={registros.length === 0 ? "Planilhas geradas" : `${registros.length} ${registros.length === 1 ? "planilha gerada" : "planilhas geradas"}`}
-    >
-      <ListaResponsiva
-        itens={registros}
-        colunas={colunas}
-        vazio={<EstadoVazio titulo="Nenhuma planilha gerada ainda." />}
-      />
-    </Secao>
+    <details className="rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)]">
+      <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-3 px-4 py-2.5">
+        <span className="text-[0.625rem] font-semibold tracking-[0.13em] uppercase text-[var(--tinta-fraca)]">
+          Histórico
+        </span>
+        <span className="text-[0.8125rem] text-[var(--tinta-suave)]">
+          {registros.length === 0
+            ? "nenhuma planilha gerada ainda"
+            : `${registros.length} ${registros.length === 1 ? "planilha gerada" : "planilhas geradas"}`}
+        </span>
+      </summary>
+
+      <div className="border-t border-[var(--linha)] px-4 py-3.5">
+        <ListaResponsiva
+          itens={registros}
+          colunas={colunas}
+          vazio={
+            <EstadoVazio
+              titulo="Nenhuma planilha gerada ainda."
+              descricao="Quando você gerar uma planilha, ela aparece aqui para ser baixada de novo. O registro ainda não é guardado entre sessões — abrir a Central depois de fechar o navegador não traz esta lista de volta."
+            />
+          }
+        />
+      </div>
+    </details>
   );
 }

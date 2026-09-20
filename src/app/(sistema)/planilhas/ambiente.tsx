@@ -8,9 +8,11 @@ import { montarContexto } from "@/lib/planilhas/contexto";
 import { montarGradeDoRelatorio } from "@/lib/planilhas/modelos/relatorio-consultoria";
 import { montarGradeDaFichaTecnica } from "@/lib/planilhas/modelos/ficha-tecnica";
 import { montarGradeDeCustos } from "@/lib/planilhas/modelos/custos-precificacao";
-import type { GradeDaPlanilha } from "@/lib/planilhas/grade";
-import type { ModeloPlanilha } from "@/lib/planilhas/tipos";
-import { modeloDisponivel } from "@/lib/planilhas/modelos";
+import { montarGradeEmBranco } from "@/lib/planilhas/modelos/em-branco";
+import type { CelulaGrade, ColunaGrade, FolhaGrade, GradeDaPlanilha } from "@/lib/planilhas/grade";
+import { linhasVazias, nota } from "@/lib/planilhas/grade";
+import type { ContextoPlanilha, ModeloPlanilha } from "@/lib/planilhas/tipos";
+import { MODELO_PADRAO, modeloDisponivel } from "@/lib/planilhas/modelos";
 import { PreviaDaPlanilha } from "@/components/ui/previa-tabular";
 import { BotaoGerarPlanilha } from "./gerar";
 import { SeletorDeCliente } from "./seletor";
@@ -68,10 +70,35 @@ import { SeletorDeModelo } from "./seletor-modelo";
  */
 
 /** Os modelos que sabem montar uma grade hoje. Os outros não têm gerador. */
-const GERADORES: Record<string, (ctx: Parameters<typeof montarGradeDoRelatorio>[0]) => GradeDaPlanilha> = {
+/** Os geradores que montam a planilha A PARTIR DOS DADOS DO CLIENTE. */
+const GERADORES: Record<string, (ctx: ContextoPlanilha) => GradeDaPlanilha> = {
   "relatorio-consultoria": montarGradeDoRelatorio,
   "ficha-tecnica": montarGradeDaFichaTecnica,
   "custos-precificacao": montarGradeDeCustos,
+};
+
+/**
+ * OS GERADORES QUE MONTAM SEM CLIENTE NENHUM — e hoje só existe um.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE UM SEGUNDO MAPA, E NÃO UMA ASSINATURA MAIS FROUXA              │
+ * │                                                                      │
+ * │ A tentação era alargar o mapa acima para `(ctx: ContextoPlanilha |     │
+ * │ null)` e encaixar o modelo em branco junto com os outros. O TypeScript  │
+ * │ recusa, e o erro dele diz algo verdadeiro: uma função que EXIGE        │
+ * │ contexto não pode ocupar o lugar de uma que o aceita ausente — porque   │
+ * │ quem chama pelo mapa prometeria poder não passar nada, e ela receberia  │
+ * │ `null` num lugar onde não sabe lidar com ele.                          │
+ * │                                                                      │
+ * │ A recusa é a certa, e o segundo mapa é o que ela está pedindo: quem     │
+ * │ não precisa de cliente é uma categoria DIFERENTE, e não um caso        │
+ * │ particular da primeira. Os quatro `exige` do catálogo já diziam isso —  │
+ * │ `exige: []` é exatamente a declaração de que este gerador não consome   │
+ * │ fonte nenhuma.                                                        │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+const GERADORES_SEM_CLIENTE: Record<string, (ctx: ContextoPlanilha | null) => GradeDaPlanilha> = {
+  "planilha-em-branco": montarGradeEmBranco,
 };
 
 /**
@@ -101,8 +128,18 @@ export function AmbienteDaPlanilha({
   /** O modelo escolhido pela URL, quando veio de uma tela específica. */
   modeloInicial?: string | null;
 }) {
+  /*
+    A CENTRAL ABRE NA PLANILHA EM BRANCO — e isto é a mudança central da tela.
+
+    O modelo padrão era o relatório de consultoria, que exige cliente. Com ele,
+    a primeira pintura era o vazio "Escolha um cliente", e a grade só existia
+    depois de duas escolhas. A planilha em branco não exige nada: ela abre na
+    primeira pintura, com trinta linhas e doze colunas prontas para digitar.
+
+    Ver `MODELO_PADRAO` em `@/lib/planilhas/modelos`, que é onde a razão mora.
+  */
   const [modeloId, definirModeloId] = useState(
-    modeloInicial && modeloDisponivel(modeloInicial) ? modeloInicial : "relatorio-consultoria"
+    modeloInicial && modeloDisponivel(modeloInicial) ? modeloInicial : MODELO_PADRAO
   );
 
   /*
@@ -122,8 +159,43 @@ export function AmbienteDaPlanilha({
   const [problema, definirProblema] = useState<string | null>(null);
   const [montando, definirMontando] = useState(false);
 
+  /*
+    O QUE FOI DIGITADO NA GRADE — a camada de edição da sessão.
+
+    A chave é `"<aba>::<endereço>"`, que é o formato que `PreviaDaPlanilha`
+    espera. Ela vive aqui, e não dentro da prévia, por um motivo simples: as
+    abas trocam sem desmontar o componente, e um mapa guardado lá dentro
+    perderia as edições da aba que saiu de vista.
+
+    Sem persistência, e a tela diz isso. O banco não está ligado: o mapa é
+    estado de sessão, e recarregar a página limpa a grade — a nota no rodapé
+    da folha livre também diz. Ver o briefing: "NÃO fingir persistência".
+  */
+  const [edicoes, definirEdicoes] = useState<Record<string, CelulaGrade>>({});
+
+  /*
+    AS ABAS ACRESCENTADAS NESTA SESSÃO.
+
+    O `[+]` ao lado da última aba cria uma folha em branco. Ela não sobrevive
+    ao recarregamento, e a tela não promete que sobreviva.
+  */
+  const [folhasExtras, definirFolhasExtras] = useState<FolhaGrade[]>([]);
+
   const cliente = clientes.find((c) => c.id === clienteId) ?? null;
   const modelo = modelos.find((m) => m.id === modeloId) ?? null;
+
+  /*
+    O MODELO PRECISA DE CLIENTE? A RESPOSTA JÁ ESTÁ NO CATÁLOGO.
+
+    `ModeloPlanilha.exige` lista as fontes de que o modelo precisa, e é o mesmo
+    campo que o seletor usa para desabilitar o que ainda não sai. "Planilha em
+    branco" declara `exige: []` — e é exatamente por isso que ela é o padrão.
+
+    Derivar de `exige` em vez de escrever `modeloId === "planilha-em-branco"`
+    é o que faz um modelo novo se comportar certo sozinho: quem declara que não
+    precisa de nada já abre sem nada escolhido.
+  */
+  const precisaDeCliente = (modelo?.exige.length ?? 0) > 0;
 
   /*
     A GRADE É MONTADA UMA VEZ POR ESCOLHA, e não a cada render.
@@ -139,8 +211,48 @@ export function AmbienteDaPlanilha({
   async function carregar(escolhidoCliente: string, escolhidoModelo: string) {
     definirProblema(null);
 
+    /*
+      AS EDIÇÕES SÃO DA PLANILHA ANTERIOR, E SAEM COM ELA.
+
+      A chave é `"<aba>::<endereço>"` — só o nome da aba e a célula. Duas
+      planilhas do mesmo modelo têm abas com o MESMO nome ("Base", "Custos"),
+      então sem esta limpeza o que ela digitou na ficha do Empório apareceria
+      na ficha do outro cliente, no mesmo endereço. É vazamento de dado entre
+      clientes por um caminho que ninguém procuraria: a grade está certa, o
+      que está errado é o que ela digitou por cima.
+    */
+    definirEdicoes({});
+    definirFolhasExtras([]);
+
+    /*
+      ┌──────────────────────────────────────────────────────────────────────┐
+      │ O MODELO EM BRANCO PASSA POR AQUI PRIMEIRO, E POR ÚLTIMO              │
+      │                                                                      │
+      │ Ele não precisa de cliente para montar, então não faz sentido pedir    │
+      │ um. E ele não pode esperar por `montarContexto`, que lê o            │
+      │ repositório inteiro — uma grade de trinta linhas vazias não tem o que  │
+      │ ir buscar lá.                                                       │
+      │                                                                      │
+      │ A ordem importa: testá-lo ANTES do `gerador` faz o retorno sair        │
+      │ limpo, sem passar pelo `montando`, e a planilha em branco aparece sem  │
+      │ um piscar de "carregando" que não teria o que carregar.               │
+      └──────────────────────────────────────────────────────────────────────┘
+    */
+    const semCliente = GERADORES_SEM_CLIENTE[escolhidoModelo];
+    if (semCliente) {
+      definirConsultoriaTitulo(null);
+      definirGrade(semCliente(null));
+      return;
+    }
+
     const gerador = GERADORES[escolhidoModelo];
-    if (!escolhidoCliente || !gerador) {
+
+    /*
+      O MODELO NÃO TEM GERADOR — os que estão EM_PREPARACAO no catálogo. O
+      seletor já os desabilita, e esta guarda existe porque o seletor é
+      interface: quem chega pela URL com `?modelo=` passa por fora dele.
+    */
+    if (!gerador) {
       definirGrade(null);
       definirConsultoriaTitulo(null);
       return;
@@ -172,17 +284,31 @@ export function AmbienteDaPlanilha({
     Um `useEffect` com lista de dependências VAZIA, e não `[clienteId]`. Isso é
     deliberado: com `[clienteId]` o efeito dispararia também nas trocas feitas
     pelo seletor, e o `carregar` do handler rodaria junto — duas leituras por
-    troca. A lista vazia diz o que se quer: buscar uma vez, na montagem, e só
-    quando a montagem já tem cliente.
+    troca. A lista vazia diz o que se quer: buscar uma vez, na montagem.
 
     A trava de `useRef` existe para o StrictMode do React em desenvolvimento,
     que monta o componente duas vezes de propósito. Sem ela, a bancada de
     desenvolvimento faria duas leituras por abertura de tela.
+
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ E ELE RODA SEM CLIENTE — QUE ERA O DEFEITO ANTES DA CORREÇÃO        │
+    │                                                                    │
+    │ Havia um `if (!clienteId) return` aqui. Fazia sentido enquanto a     │
+    │ grade só existia depois de escolher cliente, e passou a ser o que     │
+    │ impedia a regra nova de funcionar: o modelo padrão agora é a          │
+    │ planilha em branco, que NÃO tem cliente — então o efeito saía na      │
+    │ primeira linha e a grade nunca era montada. A tela ficaria vazia até  │
+    │ o primeiro clique, que é exatamente o defeito que esta rodada existe  │
+    │ para consertar.                                                     │
+    │                                                                    │
+    │ `carregar` com cliente vazio já trata o caso: o modelo em branco      │
+    │ monta sem contexto, e os modelos que precisam de cliente devolvem     │
+    │ para o `precisaDeCliente`, no render.                               │
+    └────────────────────────────────────────────────────────────────────┘
   */
   const jaCarregou = useRef(false);
   useEffect(() => {
     if (jaCarregou.current) return;
-    if (!clienteId) return;
     jaCarregou.current = true;
     void carregar(clienteId, modeloId);
     /*
@@ -213,27 +339,78 @@ export function AmbienteDaPlanilha({
         carregando={montando}
       />
 
+      {/*
+        ┌──────────────────────────────────────────────────────────────────┐
+        │ A GRADE NÃO DESAPARECE — É A REGRA CENTRAL DESTA RODADA            │
+        │                                                                  │
+        │ Aqui havia três ramos: sem cliente, "Escolha um cliente"; com      │
+        │ cliente e sem grade, "Monte a planilha"; e só no terceiro a grade. │
+        │ Ou seja: em dois dos três estados a tela não tinha planilha — e o  │
+        │ primeiro deles é justamente o de quem abre a Central.              │
+        │                                                                  │
+        │ A planilha é o centro da tela. Quando o modelo não depende de      │
+        │ cliente, ela está ali desde a primeira pintura, mesmo sem nada     │
+        │ escolhido. Quando depende, o que aparece é a grade do modelo com   │
+        │ o que ele consegue montar — e, se ele não conseguir montar nada,   │
+        │ a aviso fica ACIMA da grade, e não no lugar dela.                  │
+        └──────────────────────────────────────────────────────────────────┘
+      */}
       {problema ? (
         <Aviso tom="atencao" titulo="A planilha não foi montada">
           <p>{problema}</p>
         </Aviso>
       ) : null}
 
-      {!cliente ? (
-        <EstadoVazio
-          titulo="Escolha um cliente"
-          descricao="A planilha é sempre de um cliente. Escolha ao lado e a grade aparece aqui, com as abas do arquivo."
-        />
-      ) : !grade ? (
-        <EstadoVazio
-          titulo={montando ? "Montando a planilha…" : "Monte a planilha"}
-          descricao={`Cliente escolhido: ${cliente.nomeFantasia}. ${modelo ? `Modelo: ${modelo.nome}.` : "Escolha também a planilha."} Clique em abrir planilha para ver a grade.`}
-        />
-      ) : (
+      {precisaDeCliente && !cliente ? (
+        /*
+          ESTE É O ÚNICO CASO EM QUE A GRADE AINDA ESPERA — e ele é honesto.
+
+          Os modelos de ficha, custos e relatório leem dados do cliente: sem
+          cliente não há dado nenhum, e uma grade vazia aqui seria a promessa
+          de um conteúdo que não existe. Em vez disso, a folha em branco do
+          sistema aparece, pronta para digitar — e a frase diz o que falta para
+          a planilha de verdade aparecer.
+
+          Trocar para a planilha em branco é um clique, e o botão está ali.
+        */
+        <div className="space-y-3">
+          <Aviso tom="info" titulo={`"${modelo?.nome ?? "Este modelo"}" é montado a partir dos dados de um cliente`}>
+            <p>
+              Escolha o cliente na barra acima e a planilha aparece aqui com o conteúdo dele. Se o
+              que você quer é uma grade livre para digitar, troque a planilha para{" "}
+              <span className="font-medium">Planilha em branco</span> — ela não depende de cadastro
+              nenhum.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Botao
+                variante="secundario"
+                tamanho="sm"
+                onClick={() => {
+                  definirModeloId(MODELO_PADRAO);
+                  definirGrade(montarGradeEmBranco(null));
+                }}
+              >
+                Abrir uma planilha em branco
+              </Botao>
+            </div>
+          </Aviso>
+
+          <GradeEmBrancoDaSessao
+            edicoes={edicoes}
+            aoEditar={(chave, valor) => definirEdicoes((e) => ({ ...e, [chave]: valor }))}
+          />
+        </div>
+      ) : grade ? (
         <PreviaDaPlanilha
           grade={grade}
-          nomeCliente={cliente.nomeFantasia}
+          nomeCliente={cliente?.nomeFantasia ?? "sem cliente vinculado"}
           altura={620}
+          edicoes={edicoes}
+          aoEditar={(chave, valor) => definirEdicoes((e) => ({ ...e, [chave]: valor }))}
+          folhasExtras={folhasExtras}
+          aoCriarFolha={() =>
+            definirFolhasExtras((f) => [...f, folhaNova(f.length + 1)])
+          }
           acoes={
             <>
               {TELA_DE_ORIGEM[modeloId] ? (
@@ -245,12 +422,27 @@ export function AmbienteDaPlanilha({
                 </a>
               ) : null}
 
-              <BotaoGerarPlanilha
-                modeloId={modeloId}
-                clienteId={cliente.id}
-                nomeCliente={cliente.nomeFantasia}
-              />
+              {cliente ? (
+                <BotaoGerarPlanilha
+                  modeloId={modeloId}
+                  clienteId={cliente.id}
+                  nomeCliente={cliente.nomeFantasia}
+                />
+              ) : null}
             </>
+          }
+        />
+      ) : (
+        /*
+          MONTANDO. A espera acontece com a grade anterior à vista, quando há
+          uma — trocar de cliente não apaga a tela para depois repintá-la.
+        */
+        <EstadoVazio
+          titulo={montando ? "Montando a planilha…" : "Sem conteúdo para mostrar"}
+          descricao={
+            montando
+              ? "Lendo os dados do cliente para montar a grade."
+              : "Este modelo não devolveu nada com os dados de agora. Escolha outro na barra acima."
           }
         />
       )}
@@ -263,11 +455,35 @@ export function AmbienteDaPlanilha({
 // ---------------------------------------------------------------------------
 
 /**
- * A FAIXA DE SELETORES.
+ * A BARRA SUPERIOR — TRÊS SELETORES E TRÊS AÇÕES, NUMA LINHA.
  *
- * Uma linha, três campos e um botão. É o bloco de comando da Central, e ele
- * fica compacto de propósito: nesta tela, cada pixel gasto em cromo é um
- * pixel a menos de planilha.
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ A ÁREA MAIS IMPORTANTE DA TELA É A PLANILHA. NÃO ESTA BARRA.          │
+ * │                                                                      │
+ * │ A versão anterior gastava a altura de um cartão com os seletores e     │
+ * │ mais um cartão com o catálogo dos modelos que ainda não saem. Dois      │
+ * │ blocos de cromo antes da primeira célula.                             │
+ * │                                                                      │
+ * │ Aqui são três campos e três botões, na altura de uma linha. A barra    │
+ * │ não tem título, não tem descrição e não tem moldura de cartão — ela    │
+ * │ é uma faixa de comando, e o que ela comanda é a grade logo abaixo.     │
+ * │                                                                      │
+ * │ Em tela estreita ela QUEBRA, e quebrar é o certo: empilhar é pior que  │
+ * │ cortar, e a grade continua inteira porque o scroll horizontal dela é    │
+ * │ dentro do próprio quadro.                                             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE "ABRIR PLANILHA" SAIU DAQUI                                  │
+ * │                                                                      │
+ * │ Ele existia porque a leitura do repositório é assíncrona, e o botão     │
+ * │ era o momento em que ela decidia pagar esse custo.                      │
+ * │                                                                      │
+ * │ Com a barra compacta, ele virou um passo a mais entre ela e a grade    │
+ * │ — e a grade é o que ela veio ver. O botão continua existindo (ver      │
+ * │ "Recarregar", que aparece só quando há o que recarregar), mas ele      │
+ * │ deixou de ser obrigatório para a planilha aparecer.                    │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 function Seletores({
   modelos,
@@ -293,7 +509,7 @@ function Seletores({
   carregando: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-end gap-x-3 gap-y-3 rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-4 py-3.5">
+    <div className="flex flex-wrap items-end gap-x-3 gap-y-2.5 rounded-[var(--raio)] border border-[var(--linha)] bg-[var(--superficie)] px-4 py-3">
       <Campo rotulo="Cliente" htmlFor="cliente-planilha">
         <SeletorDeCliente clientes={clientes} selecionado={clienteId} aoTrocar={aoTrocarCliente} />
       </Campo>
@@ -319,21 +535,157 @@ function Seletores({
         </p>
       </Campo>
 
-      <div className="pb-0.5">
-        {/*
-          O BOTÃO DE ABRIR.
+      {/*
+        AS AÇÕES FICAM À DIREITA, EMPURRADAS COM `ml-auto`.
 
-          Ele existe porque a carga é um ato — e porque `carregar` é assíncrona.
-          Disparar a leitura no `onChange` de cada seletor faria três leituras
-          ao arrastar o dedo pela lista; com o botão, é uma só, no momento em
-          que ela decide.
-        */}
-        <Botao variante="secundario" tamanho="sm" onClick={aoCarregar} disabled={!clienteEscolhido || carregando}>
-          {carregando ? "Montando…" : "Abrir planilha"}
+        Elas são secundárias ao que está à esquerda: primeiro ela diz DE QUEM e
+        QUAL planilha, depois o que fazer com ela. Quando a barra quebra em
+        tela estreita, o `ml-auto` perde o efeito e as ações vão para a linha
+        de baixo — que é onde elas devem estar mesmo.
+      */}
+      <div className="ml-auto flex flex-wrap items-center gap-2 pb-0.5">
+        <Botao
+          variante="linha"
+          tamanho="sm"
+          onClick={aoCarregar}
+          disabled={!clienteEscolhido || carregando}
+          title={
+            clienteEscolhido
+              ? "Ler de novo os dados deste cliente"
+              : "Escolha um cliente para recarregar"
+          }
+        >
+          {carregando ? "Lendo…" : "Recarregar"}
         </Botao>
+
+        {/*
+          IMPORTAR PDF — o caminho para o qual esta rodada existe.
+
+          Ele é um LINK e não um botão, porque leva a uma rota: a importação
+          tem etapas próprias e vive em `/planilhas/importar`. Fazer dela um
+          estado desta tela obrigaria a esconder a grade — e a grade é a regra.
+        */}
+        <a
+          href={clienteId ? `/planilhas/importar?cliente=${encodeURIComponent(clienteId)}` : "/planilhas/importar"}
+          className={cn(
+            "relative inline-flex h-8 items-center justify-center gap-2 overflow-hidden",
+            "rounded-[var(--raio-sm)] border border-[var(--linha-forte)] px-3",
+            "text-[0.6875rem] font-medium uppercase tracking-[0.13em] text-tinta",
+            "transition-colors duration-200 hover:border-tinta hover:bg-tinta hover:text-off"
+          )}
+        >
+          Importar PDF
+        </a>
+
+        {clienteEscolhido ? (
+          <BotaoGerarPlanilha
+            modeloId={modeloId}
+            clienteId={clienteId}
+            nomeCliente={""}
+            className=""
+          />
+        ) : null}
       </div>
     </div>
   );
+}
+
+/**
+ * A GRADE EM BRANCO, QUANDO O MODELO ESCOLHIDO PRECISA DE CLIENTE.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE UMA SEGUNDA GRADE, E NÃO O VAZIO DE ANTES                    │
+ * │                                                                      │
+ * │ Ela escolheu "Ficha técnica" e ainda não escolheu o cliente. O que a  │
+ * │ tela mostrava era um retângulo tracejado escrito "Escolha um cliente". │
+ * │ Um retângulo vazio é a negação da tela: em vez de dizer o que falta,   │
+ * │ ele diz que não há nada.                                              │
+ * │                                                                      │
+ * │ Aqui ela ganha a planilha de verdade — a mesma grade livre, com as     │
+ * │ letras e os números e a digitação funcionando. O aviso acima diz o que │
+ * │ falta para o conteúdo do cliente aparecer. Se a ficha do cliente é o    │
+ * │ que ela quer, escolhe o cliente. Se é digitar, já pode digitar.        │
+ * │                                                                      │
+ * │ A grade é montada pela MESMA função pura do modelo em branco          │
+ * │ (`montarGradeEmBranco`), e não por uma grade de reserva escrita aqui.   │
+ * │ Uma segunda grade divergiria da primeira no primeiro ajuste de coluna. │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function GradeEmBrancoDaSessao({
+  edicoes,
+  aoEditar,
+}: {
+  edicoes: Readonly<Record<string, CelulaGrade>>;
+  aoEditar: (chave: string, valor: CelulaGrade) => void;
+}) {
+  const grade = montarGradeEmBranco(null);
+  return (
+    <PreviaDaPlanilha
+      grade={grade}
+      nomeCliente="sem cliente vinculado"
+      altura={420}
+      edicoes={edicoes}
+      aoEditar={aoEditar}
+    />
+  );
+}
+
+/**
+ * AS COLUNAS DE UMA ABA NOVA — A–L, vazias.
+ *
+ * Escritas aqui e não importadas de `em-branco.ts` porque lá elas são `const`
+ * de módulo, não exportadas: o modelo em branco é uma GRADE, e a aba nova é
+ * uma folha solta dentro de outra planilha. As medidas são as mesmas do
+ * briefing — doze colunas, a primeira mais larga porque é onde a descrição vai.
+ */
+function colunasLivres(): ColunaGrade[] {
+  return Array.from({ length: 12 }, (_, i) => ({
+    chave: `c${i + 1}`,
+    titulo: "",
+    formato: "texto" as const,
+    largura: i === 0 ? 34 : 15,
+    larguraMinima: i === 0 ? 260 : 118,
+  }));
+}
+
+/**
+ * UMA FOLHA NOVA PARA O `[+]`.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELA NÃO PERSISTE, E POR QUE A TELA DIZ ISSO                  │
+ * │                                                                      │
+ * │ Criar aba é fácil; guardar aba é o que ainda não existe. O Neon não    │
+ * │ está ligado, e uma folha que ela acrescentasse e perdesse ao recarregar │
+ * │ seria a mentira mais cara desta rodada — ela organizaria o trabalho    │
+ * │ inteiro em abas e perderia tudo sem entender por quê.                  │
+ * │                                                                      │
+ * │ Por isso a folha existe NA SESSÃO, funciona enquanto ela trabalha, e   │
+ * │ a assinatura dela diz onde o conteúdo vive. Ver o briefing: "NÃO       │
+ * │ fingir persistência".                                                  │
+ * │                                                                      │
+ * │ O número entra no nome porque dois "+" seguidos criariam duas abas     │
+ * │ "Planilha 2" — e o Excel recusa nomes de aba repetidos, então o         │
+ * │ arquivo baixado sairia com uma delas renomeada, sem aviso.             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function folhaNova(numero: number): FolhaGrade {
+  return {
+    nome: `Planilha ${numero}`,
+    titulo: `PLANILHA ${numero}`,
+    colunas: colunasLivres(),
+    linhas: [
+      ...linhasVazias(30),
+      nota(
+        "Aba criada nesta sessão. O que você digitar aqui vale enquanto a página estiver aberta — o armazenamento definitivo ainda não foi ligado."
+      ),
+    ],
+    congelarLinhas: 0,
+    congelarColunas: 1,
+    mostrarCabecalho: false,
+    editavel: true,
+    assinatura:
+      "Aba livre do Sistema Érika Bruna · sem fórmula nesta versão · conteúdo válido apenas nesta sessão",
+  };
 }
 
 /** Um campo rotulado da faixa de seletores. Altura fixa, para alinharem. */

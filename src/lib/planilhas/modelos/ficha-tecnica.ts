@@ -82,7 +82,7 @@ import { LARGURA } from "../estilos";
  * peso bruto), e no fim o resultado (custo). Ler da esquerda para a direita é
  * refazer a conta mentalmente, que é exatamente como se confere uma planilha.
  */
-const COLUNAS_ITENS: readonly ColunaGrade[] = [
+export const COLUNAS_ITENS: readonly ColunaGrade[] = [
   { chave: "ingrediente", titulo: "Ingrediente", formato: "texto", largura: LARGURA.larga, larguraMinima: pixels(LARGURA.larga) },
   { chave: "pesoLiq", titulo: "Peso Líq", formato: "peso", largura: LARGURA.estreita, larguraMinima: 96 },
   { chave: "unidade", titulo: "Un", formato: "texto", largura: 8, larguraMinima: 44 },

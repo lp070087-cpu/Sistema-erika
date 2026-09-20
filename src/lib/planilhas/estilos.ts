@@ -27,6 +27,7 @@
  */
 
 import type { Style, Worksheet } from "exceljs";
+import { letraDaColuna } from "./grade";
 
 /**
  * A PALETA.
@@ -367,34 +368,35 @@ export function congelar(aba: Worksheet, linhas: number, colunas = 0): void {
       state: "frozen",
       xSplit: colunas,
       ySplit: linhas,
-      topLeftCell: `${letraColuna(colunas + 1)}${linhas + 1}`,
-      activeCell: `${letraColuna(colunas + 1)}${linhas + 1}`,
+      topLeftCell: `${letraDaColuna(colunas + 1)}${linhas + 1}`,
+      activeCell: `${letraDaColuna(colunas + 1)}${linhas + 1}`,
     },
   ];
 }
 
 /**
- * A letra de uma coluna, a partir do número.
+ * A letra de uma coluna — RE-EXPORTADA de `grade.ts`, não reescrita aqui.
  *
- * Cadê a função pronta do exceljs? Não existe — a biblioteca usa números de
- * coluna em toda a API, e só precisa da letra quando se escreve A1 à mão,
- * que é o caso de `topLeftCell`. São nove linhas aqui contra uma dependência
- * a mais.
- *
- * Funciona por decomposição em base 26 com deslocamento: a coluna 27 é "AA",
- * porque 27 = 1×26 + 1. O `- 1` antes de cada divisão é o que corrige o fato
- * de a base começar em 1 e não em 0.
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE A IMPLEMENTAÇÃO SAIU DAQUI                                   │
+ * │                                                                      │
+ * │ Ela nasceu neste arquivo, quando o único consumidor era o             │
+ * │ `topLeftCell` do painel congelado. Fazia sentido pelo motivo certo —  │
+ * │ nove linhas contra uma dependência a mais — e deixou de fazer quando  │
+ * │ a TELA passou a precisar da mesma letra para desenhar a faixa         │
+ * │ A B C D em cima da grade.                                            │
+ * │                                                                      │
+ * │ Um componente de navegador não pode importar daqui: este arquivo      │
+ * │ carrega `exceljs`, e importar dele arrastaria a biblioteca inteira    │
+ * │ para o bundle do cliente. A função é regra da GRADE, não do Excel.    │
+ * │                                                                      │
+ * │ A implementação mora em `grade.ts`, que é puro, e é re-exportada      │
+ * │ aqui para os geradores continuarem chamando pelo nome de sempre.      │
+ * │ Duas cópias divergiriam — e a que divergisse mostraria, na tela, uma  │
+ * │ coluna com nome diferente do que o arquivo chama.                    │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
-export function letraColuna(numero: number): string {
-  let n = numero;
-  let letra = "";
-  while (n > 0) {
-    const resto = (n - 1) % 26;
-    letra = String.fromCharCode(65 + resto) + letra;
-    n = Math.floor((n - 1) / 26);
-  }
-  return letra || "A";
-}
+export { letraDaColuna as letraColuna };
 
 /** Assinatura do arquivo, no rodapé de cada aba. */
 export function escreverAssinatura(

@@ -354,9 +354,29 @@ export type SituacaoFicha = "COMPLETA" | "AGUARDANDO_DADOS" | "EM_REVISAO";
  * │                           uma balança, não com um cadastro.           │
  * │   QUANTIDADE_ILEGIVEL   — a quantidade não é número ("a gosto").      │
  * │   SEM_UNIDADE_COMPATIVEL— o preço é por unidade de outra grandeza.    │
+ * │   AGUARDANDO_CONFERENCIA— a linha não fecha, e quem decide é ela.      │
  * │                                                                      │
  * │ Um único "faltam dados" juntaria quatro problemas distintos num       │
  * │ aviso só, e a consultora não saberia o que fazer com ele.             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O ÚLTIMO CASO NÃO VEM DO MOTOR — VEM DA IMPORTAÇÃO DE DOCUMENTO       │
+ * │                                                                      │
+ * │ Os quatro primeiros são o motor dizendo "com o que tenho, não dá".     │
+ * │ O quinto é diferente, e é por isso que ele não podia ser nenhum deles: │
+ * │ ali o motor CONSEGUE calcular — o número está completo e legível — e a │
+ * │ conta seria feita com um dado que ninguém confirmou.                   │
+ * │                                                                      │
+ * │ O caso que o justifica: uma leitura automática multiplica por mil. Um  │
+ * │ documento diz "5000 kg" onde dizia "0,5 kg". A quantidade é um número  │
+ * │ legível, o preço é um preço, a unidade é um peso — `resolverItem`      │
+ * │ devolveria "calculado" com toda a confiança, e o prato carregaria um   │
+ * │ custo cinco mil vezes maior.                                           │
+ * │                                                                      │
+ * │ Por isso a linha não entra no motor: o motor não tem como saber que o  │
+ * │ número ainda está em dúvida. Quem sabe é `podeCalcular` — ver          │
+ * │ `planilhas/importacao/validar.ts` — e é ela que marca a linha.         │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 export type EstadoCalculoItem =
@@ -364,7 +384,8 @@ export type EstadoCalculoItem =
   | "SEM_PRECO"
   | "SEM_PESO_ETAPA"
   | "QUANTIDADE_ILEGIVEL"
-  | "SEM_UNIDADE_COMPATIVEL";
+  | "SEM_UNIDADE_COMPATIVEL"
+  | "AGUARDANDO_CONFERENCIA";
 
 export const ROTULO_ESTADO_ITEM: Record<EstadoCalculoItem, string> = {
   OK: "calculado",
@@ -372,6 +393,7 @@ export const ROTULO_ESTADO_ITEM: Record<EstadoCalculoItem, string> = {
   SEM_PESO_ETAPA: "falta o peso",
   QUANTIDADE_ILEGIVEL: "quantidade não numérica",
   SEM_UNIDADE_COMPATIVEL: "unidade incompatível",
+  AGUARDANDO_CONFERENCIA: "aguardando conferência",
 };
 
 /** O que fazer a respeito de cada motivo — em uma frase, para a tela. */
@@ -384,6 +406,14 @@ export const ACAO_DO_ESTADO_ITEM: Record<EstadoCalculoItem, string> = {
     "A quantidade desta linha não é um número. Se ela não tiver medida exata, deixe fora da soma.",
   SEM_UNIDADE_COMPATIVEL:
     "O preço deste insumo está numa unidade de grandeza diferente da quantidade da ficha.",
+  /*
+    A frase não repete o aviso que ela já leu na conferência: manda de volta
+    para lá. A conferência é o lugar onde o dado se resolve — é lá que estão
+    as duas leituras possíveis do número que a leitura automática não soube
+    escolher, e é lá que ela decide qual vale.
+  */
+  AGUARDANDO_CONFERENCIA:
+    "Esta linha ainda não foi confirmada na conferência. Volte à conferência e resolva o que está marcado.",
 };
 
 export type Ficha = {

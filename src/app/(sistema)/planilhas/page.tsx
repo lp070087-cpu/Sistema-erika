@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { CabecalhoPagina, Rotulo } from "@/components/ui/rotulo";
-import { EstadoVazio, Painel } from "@/components/ui/superficie";
+import { Painel } from "@/components/ui/superficie";
 import { obterRepositorioOperacao } from "@/lib/dados";
 import { MODELOS } from "@/lib/planilhas/modelos";
 import { listarPlanilhasGeradas } from "@/lib/planilhas/historico";
@@ -20,9 +20,18 @@ export const metadata: Metadata = { title: "Planilhas" };
  * │ cada uma com título e descrição, e a planilha em si ocupava um terço   │
  * │ da altura.                                                            │
  * │                                                                      │
- * │ Agora ela é um AMBIENTE: os seletores em cima, e abaixo deles a grade  │
- * │ com as abas das folhas. Só. O histórico continua no fim, discreto, e   │
- * │ a faixa verde continua no fim como sempre esteve.                      │
+ * │ Agora ela é um AMBIENTE: uma barra de comando de uma linha, e abaixo   │
+ * │ dela a grade com as abas das folhas. Só. O histórico virou um acordeão │
+ * │ de uma linha, e a faixa verde fecha a página.                          │
+ * │                                                                      │
+ * │ ┌──────────────────────────────────────────────────────────────────┐ │
+ * │ │ A GRADE NÃO DEPENDE MAIS DE NADA — E ESSA É A MUDANÇA INTEIRA.    │ │
+ * │ │                                                                  │ │
+ * │ │ Antes: sem cliente, um retângulo tracejado no lugar da planilha.  │ │
+ * │ │ Agora: a planilha em branco, com as letras e os números, na        │ │
+ * │ │ primeira pintura. Escolher cliente e modelo troca o CONTEÚDO da    │ │
+ * │ │ grade; não cria a grade.                                          │ │
+ * │ └──────────────────────────────────────────────────────────────────┘ │
  * │                                                                      │
  * │ Isto é o que sobrou para o SERVIDOR fazer: ler a lista de clientes do  │
  * │ repositório e entregá-la. Todo o resto — escolher modelo, montar       │
@@ -99,28 +108,58 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
         descricao="Transforme os dados da consultoria em documentos organizados e prontos para análise ou envio."
       />
 
-      {clientes.length === 0 ? (
-        <EstadoVazio
-          titulo="Nenhum cliente cadastrado"
-          descricao="As planilhas saem dos dados de um cliente. Assim que houver um cadastro, ele aparece aqui para ser escolhido."
-        />
-      ) : (
-        <AmbienteDaPlanilha
-          modelos={MODELOS}
-          clientes={clientes}
-          /*
-            O cliente da URL entra como cliente INICIAL. Isso é diferente de
-            abrir a tela com todos os clientes listados e nenhum escolhido:
-            quem chega de `/clientes/[id]` já disse de quem quer a planilha, e
-            obrigá-la a escolher de novo seria repetir a pergunta.
-          */
-          clienteInicial={clienteDaUrl?.id ?? null}
-          modeloInicial={modeloId ?? null}
-        />
-      )}
+      {/*
+        ┌──────────────────────────────────────────────────────────────────┐
+        │ A AUSÊNCIA DE CLIENTE NÃO SUBSTITUI MAIS A GRADE                    │
+        │                                                                  │
+        │ Havia um `clientes.length === 0 ? <EstadoVazio/> : <Ambiente/>`.   │
+        │ A intenção era avisar que a planilha sai dos dados de um cliente —  │
+        │ e o efeito era a tela abrir SEM planilha nenhuma, num retângulo     │
+        │ tracejado. Era o defeito que esta rodada existe para consertar,     │
+        │ na sua forma mais visível.                                        │
+        │                                                                  │
+        │ O aviso continua existindo, e mudou de lugar: ele agora é uma       │
+        │ frase DENTRO do ambiente, onde o seletor está — que é onde ele      │
+        │ aponta e onde ela pode agir. A grade, essa, aparece de qualquer     │
+        │ jeito: a planilha em branco não precisa de cadastro nenhum.         │
+        └──────────────────────────────────────────────────────────────────┘
+      */}
+      <AmbienteDaPlanilha
+        modelos={MODELOS}
+        clientes={clientes}
+        /*
+          O cliente da URL entra como cliente INICIAL. Isso é diferente de
+          abrir a tela com todos os clientes listados e nenhum escolhido:
+          quem chega de `/clientes/[id]` já disse de quem quer a planilha, e
+          obrigá-la a escolher de novo seria repetir a pergunta.
+        */
+        clienteInicial={clienteDaUrl?.id ?? null}
+        modeloInicial={modeloId ?? null}
+      />
 
+      {/*
+        O HISTÓRICO VEM DEPOIS DA ÁREA DE TRABALHO, e recolhido.
+
+        Ele é onde ela busca uma planilha antiga — uma visita ocasional, e não
+        a primeira coisa que se olha. Ver `historico.tsx`, que explica a
+        escolha do acordeão nativo.
+      */}
       <HistoricoDePlanilhas registros={geradas} />
 
+      {/*
+        ┌──────────────────────────────────────────────────────────────────┐
+        │ A FAIXA VERDE FICA AQUI, E ELA NÃO É MAIS UM CONVITE À GRADE        │
+        │                                                                  │
+        │ Ela já estava no fim, e a posição não mudou — o que mudou é o que   │
+        │ vem antes dela. Antes, o fim da tela era logo depois de uma grade   │
+        │ curta, e a faixa escura competia com ela pela atenção. Agora ela    │
+        │ fecha a página, depois do trabalho e do histórico.                  │
+        │                                                                  │
+        │ A identidade dela não foi tocada: mesmo verde, mesma assinatura,    │
+        │ mesmo texto. O briefing permite que ela fique e proíbe que ela      │
+        │ dispute com a grade — e é a posição que resolve isso.               │
+        └──────────────────────────────────────────────────────────────────┘
+      */}
       <Painel escuro className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Rotulo claro>Um arquivo de verdade</Rotulo>

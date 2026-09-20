@@ -40,6 +40,7 @@ import { escreverGrade } from "./escrever-grade";
 import { montarGradeDoRelatorio } from "./modelos/relatorio-consultoria";
 import { montarGradeDaFichaTecnica } from "./modelos/ficha-tecnica";
 import { montarGradeDeCustos } from "./modelos/custos-precificacao";
+import { montarGradeEmBranco } from "./modelos/em-branco";
 
 /**
  * O REGISTRO DOS MODELOS QUE TÊM GERADOR.
@@ -67,6 +68,15 @@ const GERADORES: Record<string, (ctx: ContextoPlanilha) => GradeDaPlanilha> = {
   "relatorio-consultoria": montarGradeDoRelatorio,
   "ficha-tecnica": montarGradeDaFichaTecnica,
   "custos-precificacao": montarGradeDeCustos,
+  /*
+    A PLANILHA EM BRANCO ACEITA O CONTEXTO E NÃO PRECISA DELE.
+
+    A assinatura dela é `(ctx?: ContextoPlanilha | null)`, e ela encaixa aqui
+    porque uma função que aceita menos exigência é atribuível a uma que exige
+    mais. É o que faz o mesmo mapa servir para os quatro — e o que evita um
+    segundo caminho de geração só para o modelo que não lê dado nenhum.
+  */
+  "planilha-em-branco": montarGradeEmBranco,
 };
 
 /** Os modelos que o sistema sabe gerar hoje. Conferível no catálogo. */
@@ -136,6 +146,98 @@ export class PlanilhaIndisponivelError extends Error {
 }
 
 /**
+ * O WORKBOOK COM A IDENTIDADE DA MARCA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO VIROU FUNÇÃO                                            │
+ * │                                                                      │
+ * │ Estas seis linhas nasceram dentro de `gerarPlanilha`, e estavam no     │
+ * │ lugar certo enquanto só existia UM caminho para produzir um arquivo —  │
+ * │ o dos modelos que saem dos dados do cliente.                           │
+ * │                                                                      │
+ * │ A planilha importada de PDF abriu um segundo caminho. Ela não tem      │
+ * │ cliente, não tem consultoria e não tem `ContextoPlanilha`: o que ela   │
+ * │ tem é uma `GradeDaPlanilha` pronta, montada na tela a partir do que a  │
+ * │ Érika conferiu.                                                        │
+ * │                                                                      │
+ * │ A saída fácil seria copiar estas seis linhas para dentro do novo       │
+ * │ caminho. Elas são poucas e não parecem importantes — e é exatamente    │
+ * │ por isso que a cópia seria o defeito: no dia em que o nome da empresa  │
+ * │ mudasse, um dos dois arquivos continuaria assinando o nome antigo, e   │
+ * │ ninguém notaria até alguém abrir as propriedades do documento.         │
+ * │                                                                      │
+ * │ Como função, os dois caminhos escrevem o MESMO arquivo por dentro. O   │
+ * │ que muda é só de onde vem a grade.                                     │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function novoWorkbook(titulo: string, geradoEm: Date): ExcelJS.Workbook {
+  const wb = new ExcelJS.Workbook();
+
+  /*
+    METADADOS DO ARQUIVO.
+
+    `creator` e `title` aparecem nas propriedades do documento e no rodapé de
+    algumas telas de impressão. É o mesmo motivo de a planilha usar as cores
+    da marca: quem recebe o arquivo, recebe junto um sinal de onde ele veio.
+  */
+  wb.creator = "Sistema Érika Bruna";
+  wb.lastModifiedBy = "Sistema Érika Bruna";
+  wb.title = titulo;
+  wb.subject = "Ficha técnica · consultoria gastronômica";
+  wb.company = "Érika Bruna · Consultoria Gastronômica";
+  wb.created = geradoEm;
+  wb.modified = geradoEm;
+
+  return wb;
+}
+
+/**
+ * EMPACOTA UMA GRADE JÁ MONTADA NUM ARQUIVO PRONTO PARA DOWNLOAD.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ A REGRA DO BRIEFING, CUMPRIDA PELO CAMINHO MAIS CURTO                │
+ * │                                                                      │
+ * │ ┌──────────────────────────────────────────────────────────────────┐ │
+ * │ │ "A planilha exibida e a planilha baixada precisam continuar vindo  │ │
+ * │ │  da mesma estrutura lógica. Não criar um segundo modelo           │ │
+ * │ │  independente para exportação."                                    │ │
+ * │ └──────────────────────────────────────────────────────────────────┘ │
+ * │                                                                      │
+ * │ Ela recebe a `GradeDaPlanilha` — o MESMO objeto que a tela desenhou —  │
+ * │ e a entrega ao mesmo `escreverGrade` que os quatro modelos usam. Não   │
+ * │ existe conversão, não existe tradução, não existe um formato           │
+ * │ intermediário de exportação. O que ela viu é o que ela baixa.          │
+ * │                                                                      │
+ * │ `nomeArquivo` e `nomeExibido` são passados de fora porque quem os      │
+ * │ monta precisa saber de quem é a planilha — e nesta função não há        │
+ * │ cliente nenhum. Ver `nomeSeguroDoArquivo` / `nomeLegivelDoArquivo`      │
+ * │ para os dois formatos.                                                 │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export async function arquivoDaGrade(
+  grade: GradeDaPlanilha,
+  opcoes: {
+    nomeArquivo: string;
+    nomeExibido: string;
+    geradoEm?: Date;
+  }
+): Promise<ArquivoGerado> {
+  const geradoEm = opcoes.geradoEm ?? new Date();
+  const wb = novoWorkbook(opcoes.nomeExibido, geradoEm);
+
+  escreverGrade(wb, grade);
+
+  const buffer = await wb.xlsx.writeBuffer();
+
+  return {
+    conteudo: Buffer.from(buffer),
+    nomeArquivo: opcoes.nomeArquivo,
+    nomeExibido: opcoes.nomeExibido,
+    abas: grade.folhas.map((folha) => folha.nome),
+  };
+}
+
+/**
  * Gera a planilha e devolve o arquivo pronto para download.
  *
  * `async` porque a serialização do exceljs é assíncrona — ela monta o ZIP
@@ -171,22 +273,7 @@ export async function gerarPlanilha(
     );
   }
 
-  const wb = new ExcelJS.Workbook();
-
-  /*
-    METADADOS DO ARQUIVO.
-
-    `creator` e `title` aparecem nas propriedades do documento e no rodapé de
-    algumas telas de impressão. É o mesmo motivo de a planilha usar as cores
-    da marca: quem recebe o arquivo, recebe junto um sinal de onde ele veio.
-  */
-  wb.creator = "Sistema Érika Bruna";
-  wb.lastModifiedBy = "Sistema Érika Bruna";
-  wb.title = `${modelo.nome} — ${ctx.cliente.nomeFantasia}`;
-  wb.subject = `${modelo.nome} · consultoria gastronômica`;
-  wb.company = "Érika Bruna · Consultoria Gastronômica";
-  wb.created = ctx.geradoEm;
-  wb.modified = ctx.geradoEm;
+  const wb = novoWorkbook(`${modelo.nome} — ${ctx.cliente.nomeFantasia}`, ctx.geradoEm);
 
   escreverGrade(wb, gerador(ctx));
 
