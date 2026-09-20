@@ -37,6 +37,8 @@ import type {
   Consultoria,
   Contrato,
   Ficha,
+  Ingrediente,
+  LinhaIngredienteDoCliente,
   Tarefa,
 } from "@/lib/dados";
 
@@ -125,6 +127,38 @@ export type ContextoPlanilha = {
    */
   fichas?: readonly Ficha[];
   /**
+   * A biblioteca de insumos — com preço de referência, unidade e as pesagens.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ POR QUE A FICHA TÉCNICA NÃO SAI SEM ISTO                           │
+   * │                                                                    │
+   * │ A ficha guarda o `ingredienteId` e a quantidade. Ela NÃO guarda o  │
+   * │ nome do insumo, nem a unidade, nem as pesagens — e não deve         │
+   * │ guardar: nome de insumo é dado da biblioteca, e duplicá-lo dentro   │
+   * │ da ficha faria uma ficha antiga continuar dizendo "batata inglesa"  │
+   * │ depois de a biblioteca renomear para "batata asterix".              │
+   * │                                                                    │
+   * │ A consequência é que sem esta lista o gerador escreveria uma coluna │
+   * │ "INGREDIENTE" com o id dentro — `in_mandioca` — e uma coluna de     │
+   * │ custo vazia, porque o custo depende do preço, que também mora aqui. │
+   * │ Uma ficha técnica sem nome de insumo e sem custo não é uma ficha     │
+   * │ técnica; é uma lista de códigos.                                    │
+   * └────────────────────────────────────────────────────────────────────┘
+   *
+   * Como todo o resto do contexto, chega COMPLETA e quem filtra é o modelo.
+   */
+  ingredientes?: readonly Ingrediente[];
+  /**
+   * O preço que vale para ESTE cliente, insumo por insumo.
+   *
+   * `LinhaIngredienteDoCliente` já traz a resolução pronta: o preço do
+   * cliente quando ele existe, o da biblioteca quando não. Trazer a lista
+   * resolvida em vez das duas cruas evita que cada modelo refaça a escolha —
+   * e uma escolha refeita é uma chance de um modelo mostrar o custo de outro
+   * cliente sem avisar.
+   */
+  ingredientesDoCliente?: readonly LinhaIngredienteDoCliente[];
+  /**
    * O que a consultora escreveu sobre este cliente, se escreveu.
    *
    * Existe separado de `observacoes` do cliente porque é um texto do
@@ -186,7 +220,22 @@ export type ModeloPlanilha = {
    * Quando o modelo de pratos por praça for implementado, ele traz o
    * `processos` junto: a lista cresce com o gerador, não antes dele.
    */
-  exige: readonly ("consultoria" | "contrato" | "tarefas" | "acompanhamentos" | "fichas")[];
+  exige: readonly (
+    | "consultoria"
+    | "contrato"
+    | "tarefas"
+    | "acompanhamentos"
+    | "fichas"
+    /**
+     * A biblioteca de insumos e o preço por cliente.
+     *
+     * Entrou nesta lista junto com os dois modelos que a consomem — ficha
+     * técnica e custos. Antes dela, os dois declaravam só "fichas" e o
+     * contexto não carregava insumo nenhum: a planilha sairia com
+     * `in_mandioca` na coluna de nome e vazio na de custo.
+     */
+    | "ingredientes"
+  )[];
   /** Decisões pendentes que travam este modelo, quando houver. */
   pendencias?: readonly string[];
 };

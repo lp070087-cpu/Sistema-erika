@@ -66,28 +66,49 @@ export async function montarContexto(
     ? await operacao.obterConsultoria(opcoes.consultoriaId)
     : await operacao.consultoriaDoCliente(clienteId);
 
-  const [tarefas, acompanhamentos, fichas] = await Promise.all([
-    operacao.listarTarefas(),
-    operacao.listarAcompanhamentos(),
-    /*
-      As fichas entram AGORA, e não quando o primeiro gerador de ficha
-      existir.
+  const [tarefas, acompanhamentos, fichas, ingredientes, ingredientesDoCliente] =
+    await Promise.all([
+      operacao.listarTarefas(),
+      operacao.listarAcompanhamentos(),
+      /*
+        As fichas entram AGORA, e não quando o primeiro gerador de ficha
+        existir.
 
-      A ordem inversa — escrever o gerador e só então ampliar o contexto —
-      tem uma armadilha conhecida: o formato do arquivo é decidido enquanto
-      o contexto é estreito, e a primeira versão da aba nasce sem o que não
-      estava à mão. Depois, acrescentar o que faltou é mudar formato já
-      combinado. Carregar antes custa um `await` a mais hoje, na demonstração
-      em memória, e evita essa dívida.
+        A ordem inversa — escrever o gerador e só então ampliar o contexto —
+        tem uma armadilha conhecida: o formato do arquivo é decidido enquanto
+        o contexto é estreito, e a primeira versão da aba nasce sem o que não
+        estava à mão. Depois, acrescentar o que faltou é mudar formato já
+        combinado. Carregar antes custa um `await` a mais hoje, na demonstração
+        em memória, e evita essa dívida.
 
-      `listarFichas()` e não `listarFichasDoCliente(clienteId)`: é a mesma
-      escolha do bloco abaixo, e pelo mesmo motivo — o contrato tem o método
-      por cliente, e usar o recorte amplo aqui faz a regra "só dado deste
-      cliente" viver em UM lugar (o modelo que escreve a aba) em vez de
-      depender de cada chamador lembrar de pedir a versão filtrada.
-    */
-    operacao.listarFichas(),
-  ]);
+        `listarFichas()` e não `listarFichasDoCliente(clienteId)`: é a mesma
+        escolha do bloco abaixo, e pelo mesmo motivo — o contrato tem o método
+        por cliente, e usar o recorte amplo aqui faz a regra "só dado deste
+        cliente" viver em UM lugar (o modelo que escreve a aba) em vez de
+        depender de cada chamador lembrar de pedir a versão filtrada.
+      */
+      operacao.listarFichas(),
+      /*
+        OS INSUMOS — e a diferença entre as duas listas.
+
+        `listarIngredientes()` é a BIBLIOTECA: o nome, a unidade de compra, o
+        preço de referência e as pesagens de cada insumo. É o que permite
+        escrever "Mandioca" em vez de `in_mandioca`, e calcular custo.
+
+        `listarIngredientesDoCliente(clienteId)` é a MESMA biblioteca com o
+        preço DESTE cliente resolvido — o preço dele quando existe, o de
+        referência quando não. Vem por cliente porque é assim que o contrato
+        a expõe, e é o recorte certo: preço é do par (cliente, insumo).
+
+        As duas são necessárias e não se substituem. Sem a biblioteca não há
+        nome nem pesagem; sem a do cliente o custo sairia pelo preço genérico
+        enquanto a tela de ficha mostra o preço real dele — dois números
+        diferentes para o mesmo prato, que é o defeito mais caro que esta
+        pasta pode produzir.
+      */
+      operacao.listarIngredientes(),
+      operacao.listarIngredientesDoCliente(clienteId),
+    ]);
 
   return {
     cliente,
@@ -98,6 +119,8 @@ export async function montarContexto(
     tarefas,
     acompanhamentos,
     fichas,
+    ingredientes,
+    ingredientesDoCliente,
     observacoes: opcoes.observacoes ?? null,
     geradoEm: opcoes.geradoEm ?? new Date(),
   };

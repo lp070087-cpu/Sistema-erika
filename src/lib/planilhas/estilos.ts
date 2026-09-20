@@ -163,6 +163,54 @@ export const ESTILO_CELULA_FAIXA: Partial<Style> = {
 };
 
 /**
+ * A LINHA DE SUBTOTAL — fecha um bloco sem ser o total da folha.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE SUBTOTAL E TOTAL NÃO PODEM TER A MESMA CARA                 │
+ * │                                                                      │
+ * │ Uma ficha técnica tem, no mínimo, dois fechamentos: o custo dos itens │
+ * │ e o custo total da receita. Se os dois tivessem o mesmo peso visual,   │
+ * │ quem lê a planilha impressa não saberia qual número citar — e citar o  │
+ * │ subtotal como se fosse o custo da receita é um erro de leitura que     │
+ * │ custa dinheiro.                                                       │
+ * │                                                                      │
+ * │ Por isso o subtotal é claro (fundo oliva pálido, texto escuro) e o     │
+ * │ total é escuro (fundo verde médio, texto branco). A diferença se lê à  │
+ * │ distância, e sobrevive à impressão em preto e branco, onde o fundo     │
+ * │ claro vira branco e o escuro vira preto.                              │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export const ESTILO_SUBTOTAL: Partial<Style> = {
+  font: { name: "Calibri", size: 10, bold: true, color: { argb: COR.profundo } },
+  fill: { type: "pattern", pattern: "solid", fgColor: { argb: COR.olivaPalha } },
+  alignment: { vertical: "middle", horizontal: "left" },
+  border: {
+    top: { style: "thin", color: { argb: COR.linha } },
+    bottom: { style: "hair", color: { argb: COR.linha } },
+  },
+};
+
+/** A linha de TOTAL — o fechamento da folha. O peso visual mais forte. */
+export const ESTILO_TOTAL: Partial<Style> = {
+  font: { name: "Calibri", size: 11, bold: true, color: { argb: COR.branco } },
+  fill: { type: "pattern", pattern: "solid", fgColor: { argb: COR.medio } },
+  alignment: { vertical: "middle", horizontal: "left" },
+  border: {
+    top: { style: "medium", color: { argb: COR.profundo } },
+  },
+};
+
+/**
+ * Formato de percentual do Excel.
+ *
+ * O `%` está ENTRE ASPAS, o que faz dele texto literal em vez de operador.
+ * Sem as aspas, o Excel multiplicaria o valor por cem na exibição — e
+ * "42,9" apareceria como "4.290,0%". É o tipo de erro que passa despercebido
+ * porque o número continua parecendo um número.
+ */
+export const FORMATO_PERCENTUAL = '0.0"%"';
+
+/**
  * As larguras de coluna de uma aba.
  *
  * Excel mede largura em "caracteres da fonte padrão", e não em pixels. O

@@ -1,28 +1,22 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 /**
  * O SELETOR DE CLIENTE DA CENTRAL.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE ISTO É UM CLIENT COMPONENT, E POR QUE USA A URL              │
+ * │ POR QUE ELE DEIXOU DE ESCREVER NA URL                                │
  * │                                                                      │
- * │ Um `<select>` precisa de `onChange` para reagir, e `onChange` só      │
- * │ existe no navegador. A página da Central é um Server Component, então  │
- * │ o seletor mora aqui — e é o único pedaço da tela que precisa de        │
- * │ JavaScript.                                                            │
+ * │ Ele já fez `router.replace`, guardando a escolha em `?cliente=`. Isso  │
+ * │ tinha uma vantagem real — o endereço virava compartilhável — e um      │
+ * │ preço que só apareceu quando a tela virou ambiente de planilha: cada    │
+ * │ troca de cliente era uma ida ao servidor. Com a grade montada no       │
+ * │ cliente, navegar para buscar dado que já está em memória é voltar ao   │
+ * │ servidor para pedir o que se tem na mão.                              │
  * │                                                                      │
- * │ A escolha vai para a URL (`?cliente=...`) e não para estado local.     │
- * │ Isso parece mais trabalhoso para guardar um id, e é o que torna o     │
- * │ endereço compartilhável: a Érika escolhe o cliente, copia o link da    │
- * │ barra e guarda nos favoritos. Com estado local, o mesmo link abriria   │
- * │ no cliente errado — ou em nenhum.                                     │
- * │                                                                      │
- * │ `router.replace` e não `push`: trocar de cliente é ajustar o filtro da │
- * │ tela atual, e encher o histórico do navegador com uma entrada por      │
- * │ cliente escolhido faria o botão "voltar" ter de ser apertado dez vezes │
- * │ para sair da tela.                                                     │
+ * │ Agora a escolha é estado do `AmbienteDaPlanilha`, que já é dono do     │
+ * │ modelo e da grade. O endereço deixa de refletir o cliente — o que se   │
+ * │ perde é o link compartilhável, e o que se ganha é a troca instantânea  │
+ * │ entre clientes, que é o gesto que se repete dez vezes numa sessão.     │
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * O `<select>` nativo é escolha deliberada: ele já vem com busca por
@@ -32,21 +26,19 @@ import { useRouter } from "next/navigation";
 export function SeletorDeCliente({
   clientes,
   selecionado,
+  aoTrocar,
 }: {
   clientes: readonly { id: string; nomeFantasia: string; cidade: string }[];
   selecionado: string;
+  /** Quem reage é o ambiente, que também guarda a grade. */
+  aoTrocar: (id: string) => void;
 }) {
-  const router = useRouter();
-
   return (
     <select
       id="cliente-planilha"
       value={selecionado}
-      onChange={(e) => {
-        const id = e.target.value;
-        router.replace(id ? `/planilhas?cliente=${encodeURIComponent(id)}` : "/planilhas");
-      }}
-      className="mt-1.5 h-10 w-full max-w-[28rem] cursor-pointer rounded-[var(--raio-sm)] border border-[var(--linha-forte)] bg-white/70 px-3 text-[0.9375rem] text-tinta focus:border-oliva focus:bg-white focus:outline-none"
+      onChange={(e) => aoTrocar(e.target.value)}
+      className="h-9 w-full max-w-[19rem] cursor-pointer rounded-[var(--raio-sm)] border border-[var(--linha-forte)] bg-white/70 px-3 text-[0.875rem] text-tinta focus:border-oliva focus:bg-white focus:outline-none"
     >
       <option value="">Escolha um cliente…</option>
       {clientes.map((c) => (

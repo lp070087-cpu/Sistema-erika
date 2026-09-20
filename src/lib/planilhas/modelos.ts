@@ -39,16 +39,18 @@
 import type { ModeloPlanilha } from "./tipos";
 
 /**
- * Os nomes das abas do relatório, na ordem em que o arquivo as traz.
+ * Os nomes das abas de cada modelo, na ordem em que o arquivo as traz.
  *
- * EXPORTADO porque o gerador usa esta lista como nome de aba de verdade — e
- * não uma cópia dela. Se os nomes divergissem, o card da Central prometeria
- * "Acompanhamentos" e o arquivo traria "Histórico": ninguém notaria até um
- * cliente reclamar que a aba não existe.
+ * EXPORTADOS porque cada gerador usa a própria lista como nome de aba de
+ * verdade — e não uma cópia dela. Se os nomes divergissem, o card da Central
+ * prometeria "Acompanhamentos" e o arquivo traria "Histórico": ninguém
+ * notaria até um cliente reclamar que a aba não existe.
  *
  * `as const` para o índice devolver o literal, e não `string | undefined`.
  */
 export const ABAS_RELATORIO = ["Resumo", "Tarefas", "Acompanhamentos", "Informações"] as const;
+export const ABAS_FICHA = ["Fichas", "Base", "Informações"] as const;
+export const ABAS_CUSTOS = ["Custos", "Composição", "Informações"] as const;
 
 export const MODELOS: readonly ModeloPlanilha[] = [
   {
@@ -64,13 +66,10 @@ export const MODELOS: readonly ModeloPlanilha[] = [
     id: "ficha-tecnica",
     nome: "Ficha técnica",
     descricao:
-      "As fichas de preparo do cliente, com ingredientes, quantidades e modo de fazer.",
-    estado: "EM_PREPARACAO",
-    motivo:
-      "As fichas já existem no sistema, com ingredientes, pesos e custo calculado. O que ainda não está fechado é o formato do arquivo: quantas colunas a ficha merece e como abrir o detalhe de cada item sem transformar a aba numa grade ilegível.",
-    abas: ["Fichas", "Itens", "Informações"],
-    exige: ["fichas"],
-    pendencias: ["4", "5"],
+      "As fichas de preparo do cliente numa grade só: ingredientes, peso líquido, preço por quilo, peso bruto, custo e o fechamento de cada receita. Inclui a base de insumos do cliente.",
+    estado: "DISPONIVEL",
+    abas: ABAS_FICHA,
+    exige: ["fichas", "ingredientes"],
   },
   {
     id: "pratos-por-praca",
@@ -94,17 +93,10 @@ export const MODELOS: readonly ModeloPlanilha[] = [
     id: "custos-precificacao",
     nome: "Custos e precificação",
     descricao:
-      "A planilha de custo e preço de venda, com CMV, markup e margem por prato.",
-    estado: "AGUARDANDO_DEFINICAO",
-    motivo:
-      "É a planilha que mais depende de você. O sistema já calcula o custo da receita a partir dos preços e das pesagens, e já calcula CMV e markup a partir de um preço de venda. O que ainda não existe é a sua regra: qual margem é a alvo, e a partir de que porta ela muda.",
-    abas: ["Resumo de custos", "Ingredientes", "Precificação", "Informações"],
-    /*
-      Só `fichas`: ingrediente também ainda não está no contexto de planilha.
-      A lista cresce junto com o gerador, não antes dele.
-    */
-    exige: ["fichas"],
-    pendencias: ["4", "5", "6", "7", "9", "11", "19"],
+      "O custo real de cada prato ao lado do preço de venda, com CMV real e markup real. Só calcula o que tem número dos dois lados.",
+    estado: "DISPONIVEL",
+    abas: ABAS_CUSTOS,
+    exige: ["fichas", "ingredientes"],
   },
   {
     id: "plano-de-acao",
@@ -120,15 +112,15 @@ export const MODELOS: readonly ModeloPlanilha[] = [
   },
 ];
 
-/**
- * O único modelo com gerador implementado nesta fase.
- *
- * A lista acima pode dizer DISPONIVEL para um modelo sem gerador; o portão
- * de verdade fica em `gerador.ts`, que recusa produzir o que não tem
- * implementação. Esta constante existe para os dois lados concordarem quando
- * um modelo novo entrar.
- */
-export const MODELO_FUNCIONAL = "relatorio-consultoria";
+/*
+  AQUI HAVIA `MODELO_FUNCIONAL = "relatorio-consultoria"`.
+
+  Fazia sentido enquanto havia UM modelo com gerador, e virou o tipo de
+  constante que envelhece mal: com três modelos funcionando, ela diria que os
+  outros dois não funcionam. Quem responde "este modelo gera arquivo?" agora é
+  `MODELOS_COM_GERADOR`, em `gerador.ts` — a lista ao lado da oficina, e não o
+  catálogo adivinhando o que a oficina sabe fazer.
+*/
 
 export function obterModelos(): readonly ModeloPlanilha[] {
   return MODELOS;

@@ -34,8 +34,43 @@
 import "server-only";
 import ExcelJS from "exceljs";
 import type { ContextoPlanilha, ArquivoGerado } from "./tipos";
-import { MODELO_FUNCIONAL, obterModelo } from "./modelos";
-import { escreverRelatorioConsultoria } from "./modelos/relatorio-consultoria";
+import type { GradeDaPlanilha } from "./grade";
+import { obterModelo } from "./modelos";
+import { escreverGrade } from "./escrever-grade";
+import { montarGradeDoRelatorio } from "./modelos/relatorio-consultoria";
+import { montarGradeDaFichaTecnica } from "./modelos/ficha-tecnica";
+import { montarGradeDeCustos } from "./modelos/custos-precificacao";
+
+/**
+ * O REGISTRO DOS MODELOS QUE TÊM GERADOR.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE UM MAPA, E NÃO UM `if MODELO_FUNCIONAL`                      │
+ * │                                                                      │
+ * │ Antes havia uma constante única dizendo qual modelo era o funcional —  │
+ * │ e uma comparação que barrava todo o resto. Funciona com um modelo, e   │
+ * │ vira um `if` de quatro ramos com quatro modelos.                       │
+ * │                                                                      │
+ * │ Aqui o registro é DADO. Adicionar um modelo passa a ser acrescentar    │
+ * │ uma linha, e a lista de modelos do catálogo continua sendo a fonte da  │
+ * │ verdade sobre o ESTADO: se o catálogo diz "em preparação" e existe     │
+ * │ gerador, o portão abaixo barra — na ordem certa, porque o catálogo é   │
+ * │ quem promete o que a tela mostra.                                     │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * Cada valor é uma FUNÇÃO QUE DEVOLVE A GRADE, e não uma que escreve no
+ * ExcelJS. É a diferença que faz a prévia da tela e o arquivo baixado saírem
+ * da mesma fonte: a página `/planilhas` importa as mesmas três funções puras
+ * e desenha o que elas devolvem.
+ */
+const GERADORES: Record<string, (ctx: ContextoPlanilha) => GradeDaPlanilha> = {
+  "relatorio-consultoria": montarGradeDoRelatorio,
+  "ficha-tecnica": montarGradeDaFichaTecnica,
+  "custos-precificacao": montarGradeDeCustos,
+};
+
+/** Os modelos que o sistema sabe gerar hoje. Conferível no catálogo. */
+export const MODELOS_COM_GERADOR = Object.keys(GERADORES);
 
 /**
  * ┌──────────────────────────────────────────────────────────────────────┐
@@ -128,7 +163,8 @@ export async function gerarPlanilha(
     throw new PlanilhaIndisponivelError(modelo.id, modelo.motivo ?? "Modelo em preparação.");
   }
 
-  if (modeloId !== MODELO_FUNCIONAL) {
+  const gerador = GERADORES[modeloId];
+  if (!gerador) {
     throw new PlanilhaIndisponivelError(
       modeloId,
       `O modelo "${modelo.nome}" está marcado como disponível, mas não tem gerador implementado.`
@@ -146,13 +182,13 @@ export async function gerarPlanilha(
   */
   wb.creator = "Sistema Érika Bruna";
   wb.lastModifiedBy = "Sistema Érika Bruna";
-  wb.title = `Relatório de consultoria — ${ctx.cliente.nomeFantasia}`;
-  wb.subject = "Relatório de consultoria gastronômica";
+  wb.title = `${modelo.nome} — ${ctx.cliente.nomeFantasia}`;
+  wb.subject = `${modelo.nome} · consultoria gastronômica`;
   wb.company = "Érika Bruna · Consultoria Gastronômica";
   wb.created = ctx.geradoEm;
   wb.modified = ctx.geradoEm;
 
-  escreverRelatorioConsultoria(wb, ctx);
+  escreverGrade(wb, gerador(ctx));
 
   const buffer = await wb.xlsx.writeBuffer();
 
@@ -162,9 +198,9 @@ export async function gerarPlanilha(
     // atravessando a fronteira da rota vira um objeto vazio, e o download
     // chegaria corrompido sem nenhum erro aparecendo.
     conteudo: Buffer.from(buffer),
-    nomeArquivo: nomeSeguroDoArquivo(ctx),
-    nomeExibido: nomeLegivelDoArquivo(ctx),
-    abas: [...(modelo.abas ?? [])],
+    nomeArquivo: nomeSeguroDoArquivo(ctx, modeloId),
+    nomeExibido: nomeLegivelDoArquivo(ctx, modeloId),
+    abas: (modelo.abas ?? []).slice(),
   };
 }
 
@@ -190,10 +226,19 @@ export async function gerarPlanilha(
  * │ "emporio-verde-cia". Nenhuma letra importante se perde.                │
  * └──────────────────────────────────────────────────────────────────────┘
  */
-export function nomeSeguroDoArquivo(ctx: ContextoPlanilha): string {
+export function nomeSeguroDoArquivo(ctx: ContextoPlanilha, modeloId?: string): string {
   const cliente = slug(ctx.cliente.nomeFantasia);
   const data = dataISO(ctx.geradoEm);
-  return `consultoria-${cliente}-${data}.xlsx`;
+  /*
+    O prefixo vem do MODELO, e não da palavra "consultoria".
+
+    Com um modelo só, "consultoria-" descrevia todos os arquivos. Com três, a
+    pasta de downloads receberia "consultoria-emporio-2026-09-19.xlsx" três
+    vezes — do relatório, da ficha técnica e dos custos — e a única forma de
+    saber qual é qual seria abrir cada um.
+  */
+  const prefixo = slug(obterModelo(modeloId ?? "")?.nome ?? "planilha");
+  return `${prefixo}-${cliente}-${data}.xlsx`;
 }
 
 /**
@@ -203,8 +248,9 @@ export function nomeSeguroDoArquivo(ctx: ContextoPlanilha): string {
  * recebe o outro. Dois nomes derivados de uma fonte só, para nunca
  * divergirem sobre de quem é a planilha.
  */
-export function nomeLegivelDoArquivo(ctx: ContextoPlanilha): string {
-  return `Relatório de consultoria — ${ctx.cliente.nomeFantasia} — ${dataCurtaISO(ctx.geradoEm)}.xlsx`;
+export function nomeLegivelDoArquivo(ctx: ContextoPlanilha, modeloId?: string): string {
+  const nome = obterModelo(modeloId ?? "")?.nome ?? "Planilha";
+  return `${nome} — ${ctx.cliente.nomeFantasia} — ${dataCurtaISO(ctx.geradoEm)}.xlsx`;
 }
 
 /**

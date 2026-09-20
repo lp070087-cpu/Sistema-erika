@@ -1,48 +1,43 @@
-﻿/**
+/**
  * MODELO: RELATÓRIO DE CONSULTORIA.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ O QUE ESTE ARQUIVO É, E O QUE ELE NÃO É                              │
+ * │ O QUE MUDOU AQUI, E POR QUE MUDOU                                    │
  * │                                                                      │
- * │ É o PRIMEIRO modelo funcional da Central de Planilhas — o único que   │
- * │ gera arquivo de verdade nesta fase. Os outros quatro estão descritos  │
- * │ e não implementados, e cada um diz por quê.                            │
+ * │ Este arquivo escrevia célula no ExcelJS. Agora ele DESCREVE uma grade, │
+ * │ e quem escreve no Excel é `../escrever-grade`.                        │
  * │                                                                      │
- * │ Não é uma ficha técnica, não é custo, não é precificação. Este        │
- * │ relatório ORGANIZA o que já está registrado sobre uma consultoria:    │
- * │ quem é o cliente, o que foi combinado, o que está pendente, o que     │
- * │ aconteceu nos encontros. Nenhuma célula aqui é resultado de conta que  │
- * │ a Érika não tenha feito.                                              │
+ * │ A troca não é de estilo. Antes, o conteúdo desta planilha existia duas │
+ * │ vezes — uma aqui, para o arquivo, e outra na tela, para a prévia. As   │
+ * │ duas eram mantidas por disciplina, e disciplina falha em silêncio: a   │
+ * │ tela continuaria dizendo o nome antigo de uma coluna que o arquivo     │
+ * │ já tinha renomeado.                                                    │
+ * │                                                                      │
+ * │ Agora existe uma resposta só. `montarGrade` devolve a grade; o gerador │
+ * │ grava a grade no Excel; a tela desenha a MESMA grade. É por isso que   │
+ * │ a função é exportada — a página `/planilhas` a chama.                  │
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ POR QUE QUATRO ABAS, E POR QUE NESTA ORDEM                          │
+ * │ POR QUE QUATRO FOLHAS, E POR QUE NESTA ORDEM                          │
  * │                                                                      │
- * │ RESUMO          — a primeira coisa que se lê. Uma página, não uma     │
- * │                   tabela: quem é o cliente, o que está combinado, em   │
- * │                   que ponto está, e o que ainda falta. Quem abre a     │
- * │                   planilha para "entender rápido" não precisa ir além  │
- * │                   desta aba.                                          │
+ * │ RESUMO          — quem é o cliente, o que está combinado, em que ponto │
+ * │                   está, o que falta. Quem abre a planilha para "entender│
+ * │                   rápido" não precisa ir além desta aba.               │
  * │                                                                      │
- * │ TAREFAS         — a lista do que ela precisa fazer. É a aba que ela   │
- * │                   abre no dia a dia, e por isso vem antes do histórico.│
+ * │ TAREFAS         — a lista do que ela precisa fazer. É a aba do dia a   │
+ * │                   dia, e por isso vem antes do histórico.              │
  * │                                                                      │
  * │ ACOMPANHAMENTOS — o que aconteceu em cada encontro, do mais recente    │
  * │                   para o mais antigo. É a memória do trabalho.         │
  * │                                                                      │
  * │ INFORMAÇÕES     — de onde vieram os dados, o que a planilha não        │
- * │                   calcula e o que ainda depende de decisão. Esta aba   │
- * │                   existe porque uma planilha que sai daqui vai ser     │
- * │                   lida longe do sistema, por alguém que não viu a tela │
- * │                   e não sabe o que está olhando.                       │
- * │                                                                      │
- * │ A ordem vai do resumo para o detalhe, e termina explicando a origem.   │
- * │ É a mesma ordem em que se conta uma história.                          │
+ * │                   calcula e o que ainda depende de decisão. Existe      │
+ * │                   porque a planilha vai ser lida longe do sistema.      │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
-import type { Workbook, Worksheet } from "exceljs";
-import type { Acompanhamento, Consultoria, Tarefa } from "@/lib/dados";
+import type { Acompanhamento, Tarefa } from "@/lib/dados";
 import {
   ROTULO_MODALIDADE,
   ROTULO_PRIORIDADE,
@@ -61,650 +56,391 @@ import {
   recorteDoCliente,
   situacaoDoPrazo,
 } from "../relatorio";
-import {
-  ESTILO_CELULA,
-  ESTILO_NOTA,
-  ESTILO_PENDENCIA,
-  ESTILO_TEXTO,
-  FORMATO_DATA,
-  LARGURA,
-  aplicarCabecalho,
-  congelar,
-  escreverAssinatura,
-  escreverCampo,
-  escreverRotuloBloco,
-  escreverTabela,
-} from "../estilos";
+import type { ColunaGrade, FolhaGrade, GradeDaPlanilha, LinhaGrade } from "../grade";
+import { campo, dados, nota, pendencia, pixels, secao } from "../grade";
+import { LARGURA } from "../estilos";
 
-/**
- * Gera o relatório dentro de um `Workbook` já criado.
- *
- * Recebe o workbook em vez de criá-lo porque quem decide o formato do
- * arquivo é o gerador, não o modelo. Assim um segundo modelo pode entrar no
- * MESMO arquivo — "relatório + fichas em uma planilha só" — sem reescrever
- * nada aqui.
- */
-export function escreverRelatorioConsultoria(wb: Workbook, ctx: ContextoPlanilha): void {
-  const subtitulo = subtituloDoArquivo(ctx);
-
-  /*
-    O RECORTE VEM DE `../relatorio`, e não de um `filter` escrito aqui.
-
-    Estas três decisões — quais linhas entram, em que ordem saem e como a
-    distância até o prazo é escrita — precisam ser IDÊNTICAS às que a prévia
-    da Central de Planilhas mostra na tela. Enquanto moravam neste arquivo, a
-    tela não tinha como mostrá-las sem reescrevê-las, e a prévia passaria a
-    divergir do arquivo no dia em que uma das duas mudasse.
-
-    Aqui elas continuam morando do lado de dentro — o segundo modelo a
-    esquecer o filtro não tem como esquecer, porque não escreve o próprio.
-  */
-  const { tarefas, acompanhamentos } = recorteDoCliente(ctx);
-
-  escreverResumo(wb.addWorksheet(ABAS_RELATORIO[0]), ctx, tarefas, subtitulo, ctx.geradoEm);
-  escreverTarefas(wb.addWorksheet(ABAS_RELATORIO[1]), tarefas, subtitulo, ctx.geradoEm);
-  escreverAcompanhamentos(
-    wb.addWorksheet(ABAS_RELATORIO[2]),
-    acompanhamentos,
-    subtitulo,
-    ctx.geradoEm
-  );
-  escreverInformacoes(
-    wb.addWorksheet(ABAS_RELATORIO[3]),
-    ctx,
-    tarefas,
-    acompanhamentos,
-    subtitulo,
-    ctx.geradoEm
-  );
-
-  /*
-    A aba ativa é a PRIMEIRA, e não a última escrita. Sem esta linha o Excel
-    abre o arquivo na aba INFORMAÇÕES — que é onde o código parou de escrever
-    — e a pessoa cai num bloco de notas sobre metodologia em vez do resumo do
-    cliente. É um detalhe de uma linha que decide qual é a primeira impressão
-    do arquivo.
-  */
-  wb.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: 'visible' }];
-}
-
-/**
- * A segunda linha de todo cabeçalho: de quem é a planilha e quando saiu.
- *
- * Repetida nas quatro abas de propósito. Uma aba impressa sozinha, ou
- * copiada para outro arquivo, precisa continuar dizendo a quem se refere —
- * e "Planilha1" não diz nada.
- */
-function subtituloDoArquivo(ctx: ContextoPlanilha): string {
+/** O subtítulo de toda folha: de quem é a planilha e quando saiu. */
+export function subtituloDoRelatorio(ctx: ContextoPlanilha): string {
   const partes = [ctx.cliente.nomeFantasia];
   if (ctx.consultoria) partes.push(ctx.consultoria.titulo);
   partes.push(`gerado em ${dataCurta(ctx.geradoEm)}`);
   return partes.join(" · ");
 }
 
+/** A grade do relatório de consultoria, a partir do contexto. */
+export function montarGradeDoRelatorio(ctx: ContextoPlanilha): GradeDaPlanilha {
+  const { tarefas, acompanhamentos } = recorteDoCliente(ctx);
+  const subtitulo = subtituloDoRelatorio(ctx);
+
+  return {
+    titulo: "RELATÓRIO DE CONSULTORIA",
+    subtitulo,
+    folhas: [
+      folhaResumo(ctx, tarefas),
+      folhaTarefas(tarefas, subtitulo, ctx.geradoEm),
+      folhaAcompanhamentos(acompanhamentos, subtitulo, ctx.geradoEm),
+      folhaInformacoes(ctx, tarefas, acompanhamentos, subtitulo),
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
-// ABA 1 — RESUMO
+// FOLHA 1 — RESUMO
 // ---------------------------------------------------------------------------
 
 /**
- * O resumo é a única aba que NÃO é uma tabela.
+ * As colunas do resumo.
  *
- * É uma página: blocos de rótulo e valor, um embaixo do outro. Tabela serve
- * para listar muitos itens iguais; o resumo tem sete fatos diferentes sobre
- * um cliente só, e forçar isso numa grade de linhas e colunas criaria uma
- * coluna "Campo" que ninguém filtra e uma coluna "Valor" com tipos mistos.
+ * Existem mesmo sendo um par rótulo/valor: no Excel, a largura da coluna é uma
+ * só para a aba inteira, e uma folha sem coluna declarada não tem largura
+ * nenhuma. Quatro colunas porque é o número que a tabela de jornada no meio da
+ * folha usa — e a coluna 1 é compartilhada pelos rótulos e pela primeira
+ * coluna da jornada, exatamente como a Érika faz na planilha dela.
  */
-function escreverResumo(
-  aba: Worksheet,
+const COLUNAS_RESUMO: readonly ColunaGrade[] = [
+  { chave: "a", titulo: "", formato: "texto", largura: LARGURA.larga },
+  { chave: "b", titulo: "", formato: "texto", largura: LARGURA.texto },
+  { chave: "c", titulo: "", formato: "texto", largura: LARGURA.media },
+  { chave: "d", titulo: "", formato: "texto", largura: LARGURA.larga },
+];
+
+function folhaResumo(
   ctx: ContextoPlanilha,
   tarefas: readonly Tarefa[],
-  subtitulo: string,
-  geradoEm: Date
-): void {
+  // A assinatura do rodapé é montada por `folhaInformacoes`, que é a última
+  // aba. Esta folha não recebe o subtítulo — ela o PRODUZ, no `geradoEm`.
+): FolhaGrade {
   const { cliente, consultoria } = ctx;
-  const colunas = 4;
-  let linha = aplicarCabecalho(aba, "RELATÓRIO DE CONSULTORIA", subtitulo, colunas);
+  const linhas: LinhaGrade[] = [];
 
-  /*
-    As larguras do resumo são largas de propósito. A largura de uma coluna no
-    Excel é uma só para a aba inteira — a coluna 1 é usada tanto pelos rótulos
-    do resumo quanto pela coluna "Etapa" da tabela de jornada. Escolher
-    `larga` atende aos dois; `estreita` apertaria os rótulos.
-  */
-  aba.getColumn(1).width = LARGURA.larga;
-  aba.getColumn(2).width = LARGURA.texto;
-  aba.getColumn(3).width = LARGURA.media;
-  aba.getColumn(4).width = LARGURA.media;
+  // ── O CLIENTE ────────────────────────────────────────────────────────
+  linhas.push(secao("O CLIENTE"));
+  linhas.push(campo("Nome fantasia", cliente.nomeFantasia));
+  linhas.push(campo("Contato", cliente.nomeContato));
+  linhas.push(campo("Tipo de negócio", ROTULO_TIPO_NEGOCIO[cliente.tipoNegocio]));
+  linhas.push(campo("Cidade", cliente.cidade));
+  linhas.push(campo("Situação", ROTULO_SITUACAO_CLIENTE[cliente.situacao]));
+  linhas.push(campo("Modalidade", ROTULO_MODALIDADE[cliente.modalidade]));
+  linhas.push(campo("Funcionários (declarado)", cliente.funcionariosDeclarados, "numero"));
+  linhas.push(campo("Cliente desde", cliente.iniciadoEm, "data"));
+  linhas.push(campo("Última atividade", cliente.ultimaAtividadeEm, "data"));
 
-  // ── O CLIENTE ──────────────────────────────────────────────────────────
-  linha = escreverRotuloBloco(aba, linha, "O CLIENTE", colunas);
-  linha = escreverCampo(aba, linha, "Nome fantasia", cliente.nomeFantasia);
-  linha = escreverCampo(aba, linha, "Contato", cliente.nomeContato);
-  linha = escreverCampo(aba, linha, "Tipo de negócio", ROTULO_TIPO_NEGOCIO[cliente.tipoNegocio]);
-  linha = escreverCampo(aba, linha, "Cidade", cliente.cidade);
-  linha = escreverCampo(aba, linha, "Situação", ROTULO_SITUACAO_CLIENTE[cliente.situacao]);
-  linha = escreverCampo(aba, linha, "Modalidade", ROTULO_MODALIDADE[cliente.modalidade]);
-  linha = escreverCampo(aba, linha, "Funcionários (declarado)", cliente.funcionariosDeclarados);
-  linha = escreverCampo(aba, linha, "Cliente desde", cliente.iniciadoEm, FORMATO_DATA);
-  linha = escreverCampo(aba, linha, "Última atividade", cliente.ultimaAtividadeEm, FORMATO_DATA);
-  linha += 1;
+  // ── O QUE FOI DECLARADO ──────────────────────────────────────────────
+  linhas.push(secao("O QUE O CLIENTE DECLAROU"));
+  linhas.push(nota(cliente.problemaDeclarado || "Nada registrado no cadastro."));
 
-  // ── O QUE FOI DECLARADO ────────────────────────────────────────────────
-  linha = escreverRotuloBloco(aba, linha, "O QUE O CLIENTE DECLAROU", colunas);
-  linha = escreverTextoCorrido(
-    aba,
-    linha,
-    cliente.problemaDeclarado || "Nada registrado no cadastro.",
-    colunas
-  );
-  linha += 1;
-
-  // ── A CONSULTORIA ──────────────────────────────────────────────────────
-  linha = escreverRotuloBloco(aba, linha, "A CONSULTORIA", colunas);
+  // ── A CONSULTORIA ────────────────────────────────────────────────────
+  linhas.push(secao("A CONSULTORIA"));
   if (!consultoria) {
-    linha = escreverTextoCorrido(
-      aba,
-      linha,
-      "Nenhuma consultoria registrada para este cliente. O que está acima são os dados do " +
-        "cadastro — o trabalho ainda não começou.",
-      colunas
+    linhas.push(
+      nota(
+        "Nenhuma consultoria registrada para este cliente. O que está acima são os dados do " +
+          "cadastro — o trabalho ainda não começou."
+      )
     );
-    linha += 1;
   } else {
-    linha = escreverCampo(aba, linha, "Título", consultoria.titulo);
-    linha = escreverCampo(aba, linha, "Status", ROTULO_STATUS_CONSULTORIA[consultoria.status]);
-    linha = escreverCampo(aba, linha, "Iniciada em", consultoria.iniciadaEm, FORMATO_DATA);
-    linha = escreverCampo(
-      aba,
-      linha,
-      "Último acompanhamento",
-      consultoria.ultimoAcompanhamentoEm ?? "nenhum ainda",
-      consultoria.ultimoAcompanhamentoEm ? FORMATO_DATA : undefined
+    linhas.push(campo("Título", consultoria.titulo));
+    linhas.push(campo("Status", ROTULO_STATUS_CONSULTORIA[consultoria.status]));
+    linhas.push(campo("Iniciada em", consultoria.iniciadaEm, "data"));
+    linhas.push(
+      campo(
+        "Último acompanhamento",
+        consultoria.ultimoAcompanhamentoEm ?? "nenhum ainda",
+        consultoria.ultimoAcompanhamentoEm ? "data" : undefined
+      )
     );
-    linha = escreverCampo(aba, linha, "Próxima ação", consultoria.proximaAcao || "nada marcado");
-    linha = escreverCampo(
-      aba,
-      linha,
-      "Próxima ação em",
-      consultoria.proximaAcaoEm ?? "sem data marcada",
-      consultoria.proximaAcaoEm ? FORMATO_DATA : undefined
+    linhas.push(campo("Próxima ação", consultoria.proximaAcao || "nada marcado"));
+    linhas.push(
+      campo(
+        "Próxima ação em",
+        consultoria.proximaAcaoEm ?? "sem data marcada",
+        consultoria.proximaAcaoEm ? "data" : undefined
+      )
     );
-    linha += 1;
 
-    // ── ESCOPO ───────────────────────────────────────────────────────────
-    linha = escreverRotuloBloco(aba, linha, "ESCOPO COMBINADO", colunas);
+    // ── ESCOPO ─────────────────────────────────────────────────────────
+    linhas.push(secao("ESCOPO COMBINADO"));
     if (consultoria.escopo.length === 0) {
-      linha = escreverTextoCorrido(aba, linha, "Escopo ainda não escrito.", colunas);
+      linhas.push(nota("Escopo ainda não escrito."));
     } else {
       consultoria.escopo.forEach((item, i) => {
-        linha = escreverItem(aba, linha, item, colunas, i);
+        linhas.push(nota(`${String(i + 1).padStart(2, "0")}   ${item}`));
       });
     }
-    linha += 1;
 
-    // ── JORNADA ──────────────────────────────────────────────────────────
-    linha = escreverRotuloBloco(aba, linha, "ETAPAS DA JORNADA", colunas);
-    linha = escreverTabela<Consultoria["jornada"][number]>(
-      aba,
-      linha,
-      [
-        { titulo: "Etapa", largura: LARGURA.larga, valor: (e) => e.etapa },
-        { titulo: "Estado", largura: LARGURA.media, valor: (e) => e.estado },
-        {
-          titulo: "Progresso",
-          largura: LARGURA.estreita,
-          valor: (e) =>
-            e.progresso !== undefined && e.total !== undefined
-              ? `${e.progresso} de ${e.total}`
+    // ── JORNADA ────────────────────────────────────────────────────────
+    linhas.push(secao("ETAPAS DA JORNADA"));
+    linhas.push({ tipo: "cabecalho" });
+    for (const etapa of consultoria.jornada) {
+      linhas.push(
+        dados({
+          a: etapa.etapa,
+          b: etapa.estado,
+          c:
+            etapa.progresso !== undefined && etapa.total !== undefined
+              ? `${etapa.progresso} de ${etapa.total}`
               : "—",
-        },
-        { titulo: "Nota", largura: LARGURA.larga, valor: (e) => e.nota },
-      ],
-      consultoria.jornada
-    );
-    linha += 1;
+          d: etapa.nota,
+        })
+      );
+    }
   }
 
-  // ── O QUE ESTÁ PENDENTE ────────────────────────────────────────────────
+  // ── O QUE ESTÁ PENDENTE ──────────────────────────────────────────────
   //
   // Bloco derivado de CONTAGEM, não de cálculo. "4 tarefas em aberto" é
   // `filter().length` — conferível contando as linhas da aba TAREFAS. Não há
   // percentual de conclusão, porque somar etapas de naturezas diferentes
-  // exigiria pesos, e peso é decisão da Érika (pendência 11).
-  linha = escreverRotuloBloco(aba, linha, "O QUE ESTÁ PENDENTE", colunas);
+  // exigiria pesos, e peso é decisão dela.
+  linhas.push(secao("O QUE ESTÁ PENDENTE"));
   const abertas = tarefas.filter((t) => t.status !== "CONCLUIDA");
-  linha = escreverCampo(aba, linha, "Tarefas em aberto", abertas.length);
-  linha = escreverCampo(
-    aba,
-    linha,
-    "Das quais, prioridade alta",
-    abertas.filter((t) => t.prioridade === "ALTA").length
+  linhas.push(campo("Tarefas em aberto", abertas.length, "numero"));
+  linhas.push(
+    campo("Das quais, prioridade alta", abertas.filter((t) => t.prioridade === "ALTA").length, "numero")
   );
-  linha = escreverCampo(aba, linha, "Tarefas concluídas", tarefas.length - abertas.length);
-  linha += 1;
+  linhas.push(campo("Tarefas concluídas", tarefas.length - abertas.length, "numero"));
 
-  // ── A NOTA QUE EXPLICA O ESTADO DO ARQUIVO ─────────────────────────────
-  //
-  // Fica na aba de resumo, e não só na INFORMAÇÕES, porque é a aba que vai
-  // ser lida. Uma nota no fim de uma aba que ninguém abre não é aviso: é
-  // arquivo morto.
-  //
-  // ┌────────────────────────────────────────────────────────────────────┐
-  // │ ESTA NOTA JÁ DISSE OUTRA COISA, E A OUTRA COISA DEIXOU DE SER VERDADE│
-  // │                                                                    │
-  // │ Ela afirmava que o sistema não calcula custo, CMV, preço de venda,  │
-  // │ índice de cocção nem fator de correção, porque essas contas         │
-  // │ dependeriam de regras ainda não definidas. Isso era verdade quando  │
-  // │ foi escrito e não é mais: a ficha técnica calcula o custo da receita │
-  // │ a partir do preço de cada ingrediente, o CMV e o markup a partir do  │
-  // │ preço de venda informado, e o fator de correção a partir das         │
-  // │ PESAGENS dela — limpeza e cocção medidas, não tabeladas.             │
-  // │                                                                    │
-  // │ O que continua verdadeiro é a razão de fundo, e ela é outra: este    │
-  // │ relatório não traz custo porque custo é propriedade da FICHA, não do │
-  // │ relacionamento com o cliente. A mesma casa vende dois pratos com     │
-  // │ custos que não têm nada a ver um com o outro, e somá-los aqui daria  │
-  // │ um número que não corresponde a nada.                                │
-  // └────────────────────────────────────────────────────────────────────┘
-  linha = escreverRotuloBloco(aba, linha, "SOBRE ESTA PLANILHA", colunas);
-  linha = escreverNota(
-    aba,
-    linha,
-    "Gerada pelo Sistema Érika Bruna a partir dos dados registrados no sistema. Os valores e " +
-      "datas aqui são os que estão no cadastro — nada foi recalculado, corrigido ou estimado.",
-    colunas
+  linhas.push(
+    nota(
+      "Este relatório organiza o que está registrado sobre o cliente: cadastro, escopo, tarefas e " +
+        "encontros. Os valores de custo, CMV e preço de venda são de cada PRATO e moram na ficha " +
+        "técnica — somá-los aqui daria um número que não corresponde a nada. Onde um número " +
+        "dependeria de uma decisão sua, ele fica em branco até você informá-lo."
+    )
   );
-  linha = escreverNota(
-    aba,
-    linha,
-    "Este relatório não traz custo, CMV nem preço de venda, e não é por falta de cálculo: essas " +
-      "contas são de cada PRATO, e moram na ficha técnica do prato — não no retrato do cliente. " +
-      "O que o sistema não faz, em lugar nenhum, é escolher o número por você: o custo usa os " +
-      "preços e as pesagens que você registrou, e onde o número dependeria de uma decisão sua " +
-      "ele fica em branco até você informá-lo.",
-    colunas
-  );
-  linha = escreverNota(
-    aba,
-    linha,
-    `Emitida em ${dataCurta(geradoEm)}. Se um dado aqui estiver errado, corrija no sistema e ` +
-      "gere a planilha de novo — este arquivo é uma fotografia, não a fonte.",
-    colunas
-  );
+
+  return {
+    nome: ABAS_RELATORIO[0],
+    titulo: "RELATÓRIO DE CONSULTORIA",
+    colunas: COLUNAS_RESUMO,
+    linhas,
+    congelarLinhas: 0,
+    mostrarCabecalho: false,
+    assinatura: `Emitida em ${dataCurta(ctx.geradoEm)}. Se um dado aqui estiver errado, corrija no sistema e gere a planilha de novo — este arquivo é uma fotografia, não a fonte.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// ABA 2 — TAREFAS
+// FOLHA 2 — TAREFAS
 // ---------------------------------------------------------------------------
+
+const COLUNAS_TAREFAS: readonly ColunaGrade[] = [
+  { chave: "tarefa", titulo: "Tarefa", formato: "texto", largura: LARGURA.muitoLarga, larguraMinima: pixels(LARGURA.larga) },
+  { chave: "status", titulo: "Status", formato: "texto", largura: LARGURA.media },
+  { chave: "prioridade", titulo: "Prioridade", formato: "texto", largura: LARGURA.estreita },
+  { chave: "prazo", titulo: "Prazo", formato: "data", largura: LARGURA.media, larguraMinima: 100 },
+  { chave: "situacao", titulo: "Situação do prazo", formato: "texto", largura: LARGURA.media },
+];
 
 /**
  * A lista de tarefas, com o prazo em data E em distância.
  *
- * As duas colunas juntas porque uma sozinha engana: "12/03/2026" não diz
- * nada sem saber que hoje é 17/03, e "3 dias" não diz quando foi combinado.
- * A distância é o que muda a decisão de quem lê; a data é o que serve de
- * prova. É a mesma dupla que a tela de tarefas do sistema já usa.
+ * As duas colunas juntas porque uma sozinha engana: "12/03/2026" não diz nada
+ * sem saber que hoje é 17/03, e "em 3 dias" não diz quando foi combinado.
  */
-function escreverTarefas(
-  aba: Worksheet,
+function folhaTarefas(
   tarefas: readonly Tarefa[],
   subtitulo: string,
   geradoEm: Date
-): void {
-  const colunas = 5;
-  let linha = aplicarCabecalho(aba, "TAREFAS", subtitulo, colunas);
-
-  if (tarefas.length === 0) {
-    linha = escreverTextoCorrido(
-      aba,
-      linha,
-      "Nenhuma tarefa registrada para este cliente.",
-      colunas
-    );
-    escreverAssinatura(aba, linha + 1, colunas, "Gerado pelo Sistema Érika Bruna.");
-    return;
-  }
-
-  // A ordem vem de `../relatorio`, a mesma que a prévia da tela usa.
+): FolhaGrade {
+  const linhas: LinhaGrade[] = [];
   const ordenadas = ordenarTarefasDoRelatorio(tarefas);
 
-  congelar(aba, 4);
+  if (ordenadas.length === 0) {
+    linhas.push(nota("Nenhuma tarefa registrada para este cliente."));
+  } else {
+    linhas.push({ tipo: "cabecalho" });
+    for (const t of ordenadas) {
+      linhas.push(
+        dados({
+          tarefa: t.titulo,
+          status: ROTULO_STATUS_TAREFA[t.status],
+          prioridade: ROTULO_PRIORIDADE[t.prioridade],
+          /*
+            A `Date` crua, e não a data já formatada. Assim o Excel guarda um
+            número de série de data, e ordenar, filtrar por período e usar em
+            fórmula funcionam. Data escrita como texto bonito ordena
+            alfabeticamente — e "01/12/2026" ficaria antes de "05/03/2026".
+          */
+          prazo: t.prazo,
+          situacao: situacaoDoPrazo(t, geradoEm),
+        })
+      );
+    }
+  }
 
-  linha = escreverTabela<Tarefa>(
-    aba,
-    linha,
-    [
-      { titulo: "Tarefa", largura: LARGURA.muitoLarga, valor: (t) => t.titulo },
-      { titulo: "Status", largura: LARGURA.media, valor: (t) => ROTULO_STATUS_TAREFA[t.status] },
-      {
-        titulo: "Prioridade",
-        largura: LARGURA.estreita,
-        valor: (t) => ROTULO_PRIORIDADE[t.prioridade],
-      },
-      {
-        titulo: "Prazo",
-        largura: LARGURA.media,
-        valor: (t) => t.prazo,
-        formato: FORMATO_DATA,
-      },
-      {
-        titulo: "Situação do prazo",
-        largura: LARGURA.media,
-        valor: (t) => situacaoDoPrazo(t, geradoEm),
-      },
-    ],
-    ordenadas
-  );
-
-  /*
-    A coluna Prazo recebe a `Date` crua, e não `dataCurta(t.prazo)`. Isso é
-    deliberado: assim o Excel guarda um número de série de data, e ordenar,
-    filtrar por período e usar em fórmula funcionam. Uma data escrita como
-    texto bonito ordena alfabeticamente — e "01/12/2026" ficaria antes de
-    "05/03/2026". Onde não há prazo, a célula fica vazia: ausência de dado
-    não é a string "—".
-  */
-
-  escreverAssinatura(
-    aba,
-    linha,
-    colunas,
-    "Gerado pelo Sistema Érika Bruna. As datas estão gravadas como data, e não como texto — dá para ordenar e filtrar pelo próprio Excel."
-  );
+  return {
+    nome: ABAS_RELATORIO[1],
+    titulo: "TAREFAS",
+    colunas: COLUNAS_TAREFAS,
+    linhas,
+    congelarLinhas: 3,
+    mostrarCabecalho: true,
+    assinatura:
+      "As datas estão gravadas como data, e não como texto — dá para ordenar e filtrar pelo próprio Excel.",
+  };
 }
 
 // ---------------------------------------------------------------------------
-// ABA 3 — ACOMPANHAMENTOS
+// FOLHA 3 — ACOMPANHAMENTOS
 // ---------------------------------------------------------------------------
+
+const COLUNAS_ACOMPANHAMENTOS: readonly ColunaGrade[] = [
+  { chave: "data", titulo: "Data", formato: "data", largura: LARGURA.media, larguraMinima: 100 },
+  { chave: "tipo", titulo: "Tipo", formato: "texto", largura: LARGURA.media },
+  { chave: "modalidade", titulo: "Modalidade", formato: "texto", largura: LARGURA.estreita },
+  { chave: "titulo", titulo: "Título", formato: "texto", largura: LARGURA.larga, larguraMinima: 200 },
+  { chave: "resumo", titulo: "Resumo", formato: "texto", largura: LARGURA.texto, larguraMinima: 320 },
+  { chave: "pendencias", titulo: "Pendências", formato: "texto", largura: LARGURA.larga, larguraMinima: 220 },
+];
 
 /**
  * O histórico dos encontros, do mais recente para o mais antigo.
  *
- * As pendências de cada encontro ficam numa coluna só, uma por linha dentro
- * da célula. A alternativa seria uma linha por pendência, o que repetiria a
- * data e o tipo do encontro em cada uma — e transformaria "quantas reuniões
- * houve" numa tarefa de deduplicação para quem lê.
+ * As pendências de cada encontro ficam numa coluna só, uma por linha dentro da
+ * célula. A alternativa — uma linha por pendência — repetiria a data e o tipo
+ * do encontro em cada uma e transformaria "quantas reuniões houve" numa tarefa
+ * de deduplicação.
  */
-function escreverAcompanhamentos(
-  aba: Worksheet,
+function folhaAcompanhamentos(
   acompanhamentos: readonly Acompanhamento[],
   subtitulo: string,
   geradoEm: Date
-): void {
-  const colunas = 6;
-  let linha = aplicarCabecalho(aba, "ACOMPANHAMENTOS", subtitulo, colunas);
-
-  if (acompanhamentos.length === 0) {
-    linha = escreverTextoCorrido(
-      aba,
-      linha,
-      "Nenhum acompanhamento registrado para este cliente.",
-      colunas
-    );
-    escreverAssinatura(aba, linha + 1, colunas, "Gerado pelo Sistema Érika Bruna.");
-    return;
-  }
-
+): FolhaGrade {
+  const linhas: LinhaGrade[] = [];
   const ordenados = ordenarAcompanhamentosDoRelatorio(acompanhamentos);
 
-  congelar(aba, 4);
+  if (ordenados.length === 0) {
+    linhas.push(nota("Nenhum acompanhamento registrado para este cliente."));
+  } else {
+    linhas.push({ tipo: "cabecalho" });
+    for (const a of ordenados) {
+      linhas.push(
+        dados({
+          data: a.data,
+          tipo: ROTULO_TIPO_ACOMPANHAMENTO[a.tipo],
+          modalidade: ROTULO_MODALIDADE[a.modalidade],
+          titulo: a.titulo,
+          resumo: a.resumo,
+          pendencias: a.pendencias.length === 0 ? "—" : a.pendencias.map((p) => `• ${p}`).join("\n"),
+        })
+      );
+    }
+  }
 
-  linha = escreverTabela<Acompanhamento>(
-    aba,
-    linha,
-    [
-      { titulo: "Data", largura: LARGURA.media, valor: (a) => a.data, formato: FORMATO_DATA },
-      {
-        titulo: "Tipo",
-        largura: LARGURA.media,
-        valor: (a) => ROTULO_TIPO_ACOMPANHAMENTO[a.tipo],
-      },
-      {
-        titulo: "Modalidade",
-        largura: LARGURA.estreita,
-        valor: (a) => ROTULO_MODALIDADE[a.modalidade],
-      },
-      { titulo: "Título", largura: LARGURA.larga, valor: (a) => a.titulo },
-      { titulo: "Resumo", largura: LARGURA.texto, valor: (a) => a.resumo },
-      {
-        titulo: "Pendências",
-        largura: LARGURA.larga,
-        valor: (a) =>
-          a.pendencias.length === 0 ? "—" : a.pendencias.map((p) => `• ${p}`).join("\n"),
-      },
-    ],
-    ordenados
-  );
-
-  escreverAssinatura(
-    aba,
-    linha,
-    colunas,
-    `Gerado pelo Sistema Érika Bruna em ${dataCurta(geradoEm)}. Os encontros estão do mais recente para o mais antigo.`
-  );
+  return {
+    nome: ABAS_RELATORIO[2],
+    titulo: "ACOMPANHAMENTOS",
+    colunas: COLUNAS_ACOMPANHAMENTOS,
+    linhas,
+    congelarLinhas: 3,
+    mostrarCabecalho: true,
+    assinatura: `Gerado em ${dataCurta(geradoEm)}. Os encontros estão do mais recente para o mais antigo.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// ABA 4 — INFORMAÇÕES
+// FOLHA 4 — INFORMAÇÕES
 // ---------------------------------------------------------------------------
 
+const COLUNAS_INFORMACOES: readonly ColunaGrade[] = [
+  { chave: "a", titulo: "", formato: "texto", largura: LARGURA.larga },
+  { chave: "b", titulo: "", formato: "texto", largura: LARGURA.muitoLarga },
+  { chave: "c", titulo: "", formato: "texto", largura: LARGURA.larga },
+];
+
 /**
- * A aba que explica o arquivo.
+ * A folha que explica o arquivo.
  *
- * Existe porque a planilha vai ser aberta FORA do sistema — anexada num
- * e-mail, num grupo de WhatsApp, impressa numa reunião. Quem recebe não tem
- * como saber que a coluna "Situação do prazo" foi calculada na data de
- * geração, nem que a ausência de uma coluna de custo é decisão e não
- * esquecimento. Esta aba é o rótulo do produto.
+ * Existe porque a planilha vai ser aberta FORA do sistema — anexada num e-mail,
+ * num grupo de WhatsApp, impressa numa reunião. Quem recebe não tem como saber
+ * que a coluna "Situação do prazo" foi calculada na data de geração, nem que a
+ * ausência de uma coluna de custo é decisão e não esquecimento.
  */
-function escreverInformacoes(
-  aba: Worksheet,
+function folhaInformacoes(
   ctx: ContextoPlanilha,
   tarefas: readonly Tarefa[],
   acompanhamentos: readonly Acompanhamento[],
-  subtitulo: string,
-  geradoEm: Date
-): void {
+  subtitulo: string
+): FolhaGrade {
   const { cliente, consultoria } = ctx;
-  const colunas = 3;
-  let linha = aplicarCabecalho(aba, "INFORMAÇÕES", subtitulo, colunas);
+  const linhas: LinhaGrade[] = [];
 
-  aba.getColumn(1).width = LARGURA.larga;
-  aba.getColumn(2).width = LARGURA.muitoLarga;
-  aba.getColumn(3).width = LARGURA.larga;
-
-  // ── DE ONDE VIERAM OS DADOS ────────────────────────────────────────────
-  //
-  // Os identificadores aparecem porque esta planilha é uma fotografia de um
-  // registro que existe no sistema, e a fotografia precisa ser rastreável:
-  // com o id, dá para achar o cliente exato de onde ela saiu.
-  linha = escreverRotuloBloco(aba, linha, "DE ONDE VIERAM OS DADOS", colunas);
-  linha = escreverCampo(aba, linha, "Cliente", cliente.nomeFantasia);
-  linha = escreverCampo(aba, linha, "Identificador do cliente", cliente.id);
-  linha = escreverCampo(
-    aba,
-    linha,
-    "Consultoria",
-    consultoria ? `${consultoria.titulo} (${consultoria.id})` : "não vinculada"
+  linhas.push(secao("DE ONDE VIERAM OS DADOS"));
+  linhas.push(campo("Cliente", cliente.nomeFantasia));
+  linhas.push(campo("Identificador do cliente", cliente.id));
+  linhas.push(
+    campo(
+      "Consultoria",
+      consultoria ? `${consultoria.titulo} (${consultoria.id})` : "não vinculada"
+    )
   );
-  linha = escreverCampo(aba, linha, "Tarefas incluídas", tarefas.length);
-  linha = escreverCampo(aba, linha, "Acompanhamentos incluídos", acompanhamentos.length);
-  linha = escreverCampo(aba, linha, "Emitida em", geradoEm, FORMATO_DATA);
-  linha += 1;
+  linhas.push(campo("Tarefas incluídas", tarefas.length, "numero"));
+  linhas.push(campo("Acompanhamentos incluídos", acompanhamentos.length, "numero"));
+  linhas.push(campo("Emitida em", ctx.geradoEm, "data"));
 
-  // ── O QUE ESTA PLANILHA NÃO CALCULA ────────────────────────────────────
-  //
-  // Em vermelho, e não em nota de rodapé cinza. É a parte do arquivo que
-  // protege a Érika de mandar para um cliente um documento que PARECE ter
-  // custo e não tem.
-  //
-  // ┌────────────────────────────────────────────────────────────────────┐
-  // │ ESTA LISTA ENCOLHEU, E ENCOLHEU PORQUE O SISTEMA ANDOU               │
-  // │                                                                    │
-  // │ Ela tinha quatro linhas, e três delas diziam que a conta dependia de │
-  // │ uma metodologia que ninguém tinha respondido. Duas dessas contas     │
-  // │ passaram a existir — o custo da receita e o fator de correção — e a  │
-  // │ terceira (CMV e markup) existe a partir de um preço de venda que a   │
-  // │ consultora informa. Manter as frases antigas faria este arquivo      │
-  // │ dizer, sobre uma ficha que a Érika pode abrir no sistema, que ela    │
-  // │ não existe.                                                          │
-  // │                                                                    │
-  // │ O que sobrou é a única linha que continua verdadeira: este relatório │
-  // │ não traz custo porque custo é do PRATO, e ele fala do cliente. E o   │
-  // │ resto da lista agora mora onde a pergunta é feita — na aba da ficha  │
-  // │ técnica, quando ela existir.                                         │
-  // └────────────────────────────────────────────────────────────────────┘
-  linha = escreverRotuloBloco(aba, linha, "O QUE ESTA PLANILHA NÃO CALCULA", colunas);
-  linha = escreverPendencia(
-    aba,
-    linha,
-    "Custo, CMV e preço de venda — são de cada PRATO, e moram na ficha técnica dele. Somar o " +
-      "custo de dois pratos num relatório de cliente daria um número que não corresponde a nada.",
-    colunas
+  linhas.push(secao("O QUE ESTA PLANILHA NÃO CALCULA"));
+  linhas.push(
+    pendencia(
+      "Custo, CMV e preço de venda — são de cada PRATO, e moram na ficha técnica dele. Somar o " +
+        "custo de dois pratos num relatório de cliente daria um número que não corresponde a nada."
+    )
   );
-  linha = escreverNota(
-    aba,
-    linha,
-    "Estas colunas não aparecem em nenhuma aba deste arquivo, de propósito. Não é ausência de " +
-      "cálculo: é o cálculo estar no lugar certo. A ficha técnica calcula o custo do prato a " +
-      "partir dos preços e das pesagens registrados, e o sistema não mostra número inventado em " +
-      "lugar nenhum.",
-    colunas
+  linhas.push(
+    nota(
+      "Estas colunas não aparecem em nenhuma aba deste arquivo, de propósito. Não é ausência de " +
+        "cálculo: é o cálculo estar no lugar certo. A ficha técnica calcula o custo do prato a " +
+        "partir dos preços e das pesagens registrados, e o sistema não mostra número inventado."
+    )
   );
-  linha += 1;
 
-  // ── COMO LER O ARQUIVO ─────────────────────────────────────────────────
-  linha = escreverRotuloBloco(aba, linha, "COMO LER ESTE ARQUIVO", colunas);
-  for (const texto of [
-    "As datas estão gravadas como data de verdade, e não como texto: dá para ordenar, filtrar " +
-      "por período e usar em fórmula sem converter nada. O formato exibido é dia/mês/ano e pode " +
-      "ser trocado no Excel sem alterar o valor.",
-    "As tabelas têm filtro na linha de cabeçalho, e o cabeçalho fica congelado ao rolar. A faixa " +
-      "clara alternada é só leitura — não significa nada além de linha sim, linha não.",
-    "A coluna \"Situação do prazo\" foi calculada na data de emissão desta planilha. Se o arquivo " +
-      "for aberto uma semana depois, a coluna continua dizendo o que dizia — para atualizar, gere " +
-      "a planilha de novo no sistema.",
-  ]) {
-    linha = escreverTextoCorrido(aba, linha, texto, colunas);
-  }
-  linha += 1;
-
-  // ── O QUE AINDA DEPENDE DE DECISÃO ─────────────────────────────────────
-  //
-  // Cabeçalho e conteúdo foram reescritos junto com o bloco de cima, e pelo
-  // mesmo motivo: "como o custo de um prato é apurado" deixou de ser pergunta
-  // aberta quando a ficha passou a apurá-lo. Uma lista de pendências que
-  // pergunta o que já foi respondido ensina a consultora a não ler a lista.
-  linha = escreverRotuloBloco(aba, linha, "O QUE AINDA DEPENDE DE VOCÊ", colunas);
-  for (const texto of [
-    "Qual margem de segurança usar — o sistema tem o campo, e não tem o número.",
-    "Se a margem muda por tipo de prato ou de serviço, e a partir de que porte.",
-    "Quais planilhas você usa hoje no dia a dia, para o sistema nascer parecido com o que você já faz.",
-  ]) {
-    linha = escreverPendencia(aba, linha, texto, colunas);
-  }
-  linha += 1;
-
-  linha = escreverNota(
-    aba,
-    linha,
-    "Esta planilha foi gerada pelo Sistema Érika Bruna. O arquivo é uma fotografia dos dados no " +
-      "momento da emissão: alterações feitas no sistema depois disso não aparecem aqui.",
-    colunas
+  linhas.push(secao("COMO LER ESTE ARQUIVO"));
+  linhas.push(
+    nota(
+      "As datas estão gravadas como data de verdade, e não como texto: dá para ordenar, filtrar " +
+        "por período e usar em fórmula sem converter nada."
+    )
   );
+  linhas.push(
+    nota(
+      "As tabelas têm filtro na linha de cabeçalho, e o cabeçalho fica congelado ao rolar. A faixa " +
+        "clara alternada é só leitura — não significa nada além de linha sim, linha não."
+    )
+  );
+  linhas.push(
+    nota(
+      "A coluna \"Situação do prazo\" foi calculada na data de emissão desta planilha. Se o arquivo " +
+        "for aberto uma semana depois, a coluna continua dizendo o que dizia — para atualizar, gere " +
+        "a planilha de novo no sistema."
+    )
+  );
+
+  linhas.push(secao("O QUE AINDA DEPENDE DE VOCÊ"));
+  linhas.push(pendencia("Qual margem de segurança usar — o sistema tem o campo, e não tem o número."));
+  linhas.push(
+    pendencia("Se a margem muda por tipo de prato ou de serviço, e a partir de que porte.")
+  );
+  linhas.push(
+    pendencia(
+      "Quais planilhas você usa hoje no dia a dia, para o sistema nascer parecido com o que você já faz."
+    )
+  );
+
+  linhas.push(
+    nota(
+      "Esta planilha foi gerada pelo Sistema Érika Bruna. O arquivo é uma fotografia dos dados no " +
+        "momento da emissão: alterações feitas no sistema depois disso não aparecem aqui."
+    )
+  );
+
+  return {
+    nome: ABAS_RELATORIO[3],
+    titulo: "INFORMAÇÕES",
+    colunas: COLUNAS_INFORMACOES,
+    linhas,
+    congelarLinhas: 0,
+    mostrarCabecalho: false,
+    assinatura: `Gerada pelo Sistema Érika Bruna · ${subtitulo}`,
+  };
 }
-
-// ---------------------------------------------------------------------------
-// Auxiliares de escrita
-// ---------------------------------------------------------------------------
-
-/** Uma linha de texto corrido atravessando a largura da aba. */
-function escreverTextoCorrido(
-  aba: Worksheet,
-  linha: number,
-  texto: string,
-  totalColunas: number
-): number {
-  return escreverLinhaMesclada(aba, linha, texto, totalColunas, ESTILO_TEXTO);
-}
-
-/** Uma linha de nota — itálico, cinza, para o que explica e não avisa. */
-function escreverNota(
-  aba: Worksheet,
-  linha: number,
-  texto: string,
-  totalColunas: number
-): number {
-  return escreverLinhaMesclada(aba, linha, texto, totalColunas, ESTILO_NOTA);
-}
-
-/** Uma linha de pendência — vermelha, para o que trava. */
-function escreverPendencia(
-  aba: Worksheet,
-  linha: number,
-  texto: string,
-  totalColunas: number
-): number {
-  return escreverLinhaMesclada(aba, linha, texto, totalColunas, ESTILO_PENDENCIA);
-}
-
-/**
- * O corpo comum das três: mesclar, escrever, ajustar a altura.
- *
- * As três fazem exatamente a mesma operação com estilo diferente, e a altura
- * é o motivo de estarem juntas: célula mesclada NÃO auto-ajusta a altura no
- * Excel, então um parágrafo de quatro linhas apareceria cortado em duas. Como
- * a biblioteca não expõe auto-ajuste, a altura é estimada — e ter isso num
- * lugar só evita que a terceira variante esqueça o ajuste.
- */
-function escreverLinhaMesclada(
-  aba: Worksheet,
-  linha: number,
-  texto: string,
-  totalColunas: number,
-  estilo: (typeof ESTILO_TEXTO) | (typeof ESTILO_NOTA) | (typeof ESTILO_PENDENCIA)
-): number {
-  aba.mergeCells(linha, 1, linha, totalColunas);
-  const cell = aba.getCell(linha, 1);
-  cell.value = texto;
-  cell.style = estilo;
-  aba.getRow(linha).height = alturaAproximada(texto);
-  return linha + 1;
-}
-
-/** Um item numerado, para listas curtas como o escopo. */
-function escreverItem(
-  aba: Worksheet,
-  linha: number,
-  texto: string,
-  totalColunas: number,
-  indice: number
-): number {
-  aba.mergeCells(linha, 1, linha, totalColunas);
-  const cell = aba.getCell(linha, 1);
-  cell.value = `${String(indice + 1).padStart(2, "0")}   ${texto}`;
-  cell.style = ESTILO_CELULA;
-  aba.getRow(linha).height = alturaAproximada(texto);
-  return linha + 1;
-}
-
-/**
- * Uma altura de linha que caiba o texto.
- *
- * Não é exata, e não precisa ser: o Excel não auto-ajusta linha de célula
- * mesclada por API, e o erro nas duas direções é barato — uma linha de altura
- * a mais é espaço em branco, a menos corta texto. Por isso a conta arredonda
- * para cima, com folga.
- *
- * O divisor 110 é quantos caracteres cabem por linha na largura mesclada das
- * abas deste modelo. 15 pontos é a altura de uma linha de Calibri 10. Os dois
- * números são estimativa declarada, não medição — e é por isso que a folga
- * existe em vez de um ajuste exato.
- */
-function alturaAproximada(texto: string, caracteresPorLinha = 110): number {
-  const quebrasExplicitas = texto.split("\n").length;
-  const quebrasPorComprimento = Math.ceil(texto.length / caracteresPorLinha);
-  const linhas = Math.max(quebrasExplicitas, quebrasPorComprimento);
-  return Math.max(15, linhas * 15);
-}
-
