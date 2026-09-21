@@ -507,6 +507,18 @@ function resolvidoAguardandoConferencia(linha: LinhaConferida, ingrediente: Ingr
     */
     precoEfetivo: null,
     origemDoPreco: "AUSENTE",
+    /*
+      E OS TRÊS CAMPOS DO "PREÇO DE HOJE" TAMBÉM SÃO NULOS — PELO MESMO MOTIVO.
+
+      Eles existem para responder "o preço mudou desde que esta linha foi
+      escrita?". Numa linha que ainda não foi confirmada, essa pergunta não tem
+      resposta: não há preço guardado para comparar, e afirmar `precoMudou:
+      false` seria dizer que está tudo igual — uma informação, e falsa. `null`
+      aqui quer dizer "não julgado", que é o estado real da linha.
+    */
+    precoAtual: null,
+    precoMudou: false,
+    custoAtual: null,
     quantidade: quantidade?.valor ?? null,
     /* A transformação fica: ela é medida, não calculada. Ver o tipo. */
     transformacao,

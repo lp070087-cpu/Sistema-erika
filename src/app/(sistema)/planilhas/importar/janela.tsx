@@ -5,7 +5,8 @@ import { Aviso, EstadoVazio } from "@/components/ui/superficie";
 import { Botao } from "@/components/ui/botao";
 import { cn } from "@/lib/utils/cn";
 import { PreviaDaPlanilha } from "@/components/ui/previa-tabular";
-import { leitorLocal } from "@/lib/planilhas/importacao/leitor-local";
+import { extrairDeTexto, NOME_DO_LEITOR_DE_TEXTO } from "@/lib/planilhas/importacao/leitor-texto";
+import { origemDe, type IdDaOrigem, type Origem } from "@/lib/planilhas/importacao/origens";
 import {
   aplicarCorrecoes,
   gradeDaImportacao,
@@ -17,8 +18,10 @@ import {
 import { conferirDocumento, type Conferencia } from "@/lib/planilhas/importacao/validar";
 import type { CabecalhoExtraido, LinhaExtraida } from "@/lib/planilhas/importacao/tipos";
 import type { GradeDaPlanilha } from "@/lib/planilhas/grade";
-import { EnvioDeArquivo, type ArquivoEscolhido } from "./envio";
+import { EnvioDeArquivo, type EntradaDaImportacao } from "./envio";
 import { TelaDeConferencia } from "./conferencia";
+import { PainelDoDestino } from "./destino-painel";
+import { DESTINO_PADRAO, type IdDoDestino } from "@/lib/planilhas/importacao/destino";
 
 /**
  * A JANELA DA IMPORTAÇÃO — as quatro etapas, na ordem do briefing.
@@ -89,7 +92,7 @@ import { TelaDeConferencia } from "./conferencia";
  * exige mexer num lugar só. Ver `Passos`, que desenha o trilho a partir dela.
  */
 export const ETAPAS = [
-  { id: "arquivo", rotulo: "Arquivo", descricao: "escolher o PDF" },
+  { id: "arquivo", rotulo: "Origem", descricao: "de onde vem o dado" },
   { id: "leitura", rotulo: "Leitura", descricao: "o que deu para ler" },
   { id: "conferencia", rotulo: "Conferência", descricao: "o que você confirma" },
   { id: "previa", rotulo: "Prévia", descricao: "como o arquivo sai" },
@@ -97,9 +100,59 @@ export const ETAPAS = [
 
 export type IdDaEtapa = (typeof ETAPAS)[number]["id"];
 
-export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | null }) {
+export function JanelaDaImportacao({
+  nomeCliente,
+  clienteId: clienteIdDaUrl = "",
+  origem: idDaOrigem,
+  destino: destinoDaUrl,
+}: {
+  nomeCliente?: string | null;
+  /**
+   * O id do cliente da URL, quando veio um.
+   *
+   * `""` — e não `null` — porque é assim que `Ficha.clienteId` declara "sem
+   * cliente": string vazia. Converter para `null` na fronteira criaria uma
+   * segunda convenção para a mesma ausência, e a ficha criada pela importação
+   * apareceria como "sem cliente" mesmo tendo um.
+   */
+  clienteId?: string;
+  /** A porta por onde esta importação entrou. `?origem=` da URL, já validado. */
+  origem?: IdDaOrigem;
+  /** O destino pré-selecionado. `?destino=` da URL, já validado. */
+  destino?: IdDoDestino;
+}) {
+  /*
+    A PORTA, RESOLVIDA UMA VEZ.
+
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ POR QUE A JANELA RECEBE A ORIGEM, E NÃO A ESCOLHE                 │
+    │                                                                    │
+    │ Quem escolhe é o botão IMPORTAR — ver `ComandoDeImportacao`, que é    │
+    │ quem monta os dois links de origem. Aqui a origem já chegou decidida  │
+    │ pela URL, e a janela só a usa.                                        │
+    │                                                                    │
+    │ Isso é o que mantém UM fluxo em vez de quatro: o trilho, a          │
+    │ conferência, a normalização, a prévia e o download são os mesmos.    │
+    │ O que muda por porta são três frases e o leitor — e é por isso que   │
+    │ `origemDe` devolve um objeto com rótulo, instrução e leitor, em vez  │
+    │ de a tela ter um `switch`.                                          │
+    └────────────────────────────────────────────────────────────────────┘
+  */
+  const origem: Origem = origemDe(idDaOrigem ?? "pdf");
+
+  /*
+    O DESTINO, RESOLVIDO UMA VEZ — pelo mesmo motivo da origem.
+
+    Ele chega pela URL, já validado pela página (`destinoDe`), e a janela só o
+    repassa. Quem escolhe entre os três é o `PainelDoDestino`, e a partir daí a
+    escolha é estado dele: trocar de destino ali NÃO muda a URL, do mesmo jeito
+    que trocar de modelo na planilha não muda. O endereço diz de onde ela veio,
+    não o que ela está decidindo agora.
+  */
+  const destinoInicial: IdDoDestino = destinoDaUrl ?? DESTINO_PADRAO;
+
   const [etapa, definirEtapa] = useState<IdDaEtapa>("arquivo");
-  const [escolhido, definirEscolhido] = useState<ArquivoEscolhido | null>(null);
+  const [escolhido, definirEscolhido] = useState<EntradaDaImportacao | null>(null);
 
   /*
     O DOCUMENTO LIDO, OU A RESPOSTA DE QUE NÃO HOUVE LEITURA.
@@ -157,18 +210,35 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
       cabecalho: conferencia.cabecalho,
       linhas: conferencia.linhas,
       ...ajustesDeGeracao,
-      origem: escolhido ? `documento importado (${escolhido.nome})` : "linhas digitadas na conferência",
+      origem: nomeDaProcedencia(escolhido, origem),
       cliente: nomeCliente ?? null,
     }),
-    [conferencia, ajustesDeGeracao, escolhido, nomeCliente]
+    [conferencia, ajustesDeGeracao, escolhido, nomeCliente, origem]
   );
 
   const grade: GradeDaPlanilha = useMemo(() => gradeDaImportacao(entradaDaGrade), [entradaDaGrade]);
 
   /* ── AS AÇÕES ───────────────────────────────────────────────────────── */
 
-  async function lerArquivo(arquivo: ArquivoEscolhido): Promise<void> {
-    definirEscolhido(arquivo);
+  /**
+   * A LEITURA — uma só, para as quatro portas.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ O QUE MUDA ENTRE UMA PORTA E OUTRA CABE EM DUAS LINHAS             │
+   * │                                                                    │
+   * │ A entrada é um ARQUIVO ou um TEXTO COLADO. No primeiro caso, quem   │
+   * │ lê é o leitor da origem — que para o texto é o leitor de arquivo de  │
+   * │ texto, e para os outros é o leitor delas. No segundo, não há leitor  │
+   * │ nenhum a chamar: o texto já é o dado, e ele entra por              │
+   * │ `extrairDeTexto` — a MESMA função que o leitor de arquivo de texto   │
+   * │ usa por dentro.                                                     │
+   * │                                                                    │
+   * │ Depois disso o caminho é idêntico: `ResultadoDaExtracao` entra, as   │
+   * │ linhas e o cabeçalho saem, e a conferência não sabe de onde vieram.  │
+   * └────────────────────────────────────────────────────────────────────┘
+   */
+  async function lerEntrada(entrada: EntradaDaImportacao): Promise<void> {
+    definirEscolhido(entrada);
     definirEtapa("leitura");
 
     /*
@@ -177,16 +247,20 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
       É o que permite dizer "não está configurado" em vez de "falhou": as duas
       levam a caminhos diferentes, e só a tela sabe de qual delas se trata.
     */
-    if (!leitorLocal.disponivel()) {
+    if (!origem.leitor.disponivel()) {
       definirResultado({
         estado: "INDISPONIVEL",
-        motivo: leitorLocal.motivoDaIndisponibilidade(),
+        motivo: origem.leitor.motivoDaIndisponibilidade(),
       });
       return;
     }
 
     try {
-      const saida = await leitorLocal.extract(arquivo.arquivo);
+      const saida =
+        entrada.tipo === "colado"
+          ? extrairDeTexto(entrada.texto, NOME_DO_LEITOR_DE_TEXTO)
+          : await origem.leitor.extract(entrada.arquivo.arquivo);
+
       if (saida.estado !== "OK") {
         definirResultado({ estado: saida.estado, motivo: saida.motivo });
         return;
@@ -198,7 +272,7 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
       definirResultado({
         estado: "FALHOU",
         motivo:
-          "A leitura do arquivo foi interrompida. O arquivo continua o mesmo — tente escolhê-lo de novo.",
+          "A leitura foi interrompida. O arquivo continua o mesmo — tente escolhê-lo de novo.",
       });
     }
   }
@@ -296,12 +370,13 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
       {etapa === "arquivo" ? (
         <SecaoDaEtapa
           numero={1}
-          titulo="Arquivo"
-          explicacao="O PDF da ficha, do caderno de receitas ou da planilha antiga — o que você tiver em mãos."
+          titulo={`Origem — ${origem.rotulo}`}
+          explicacao={origem.explicacao}
         >
           <EnvioDeArquivo
+            origem={origem}
             escolhido={escolhido}
-            aoEscolher={(a) => void lerArquivo(a)}
+            aoEscolher={(a) => void lerEntrada(a)}
             aoLimpar={() => {
               definirEscolhido(null);
               definirResultado(null);
@@ -320,12 +395,18 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
           ) : null}
 
           {/*
-            O CAMINHO SEM PDF, e ele não é um consolo.
+            O CAMINHO SEM ARQUIVO, e ele não é um consolo.
 
             Um recurso que só funciona com leitor configurado deixaria a tela
             sem saída hoje. Aqui ela entra na conferência com a grade vazia e
             digita — e o cálculo que sai no fim é exatamente o mesmo, porque é
             o mesmo motor.
+
+            Ele aparece em TODAS as portas, e não só nas que não leem: mesmo
+            com a planilha lida, ela pode querer acrescentar à mão. E na porta
+            de texto ele convive com o campo de colar, porque são coisas
+            diferentes — uma cola uma lista inteira, o outro abre a
+            conferência pronta para digitar linha a linha.
           */}
           <div className="mt-5 border-t border-[var(--linha)] pt-4">
             <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">
@@ -358,7 +439,10 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
           {resultado === null ? (
             <EstadoVazio titulo="Nada foi lido ainda" descricao="Escolha um arquivo para começar." />
           ) : resultado.estado === "INDISPONIVEL" || resultado.estado === "FALHOU" ? (
-            <Aviso tom={resultado.estado === "FALHOU" ? "critico" : "atencao"} titulo={leitorLocal.nome}>
+            <Aviso
+              tom={resultado.estado === "FALHOU" ? "critico" : "atencao"}
+              titulo={origem.leitor.nome}
+            >
               <p>{resultado.motivo}</p>
               <p className="mt-2">
                 Você pode seguir para a conferência e digitar as linhas — o cálculo que sai no fim é
@@ -369,13 +453,21 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
                   Seguir para a conferência
                 </Botao>
                 <Botao variante="linha" tamanho="sm" onClick={() => definirEtapa("arquivo")}>
-                  Trocar o arquivo
+                  {escolhido?.tipo === "colado" ? "Trocar a lista" : "Trocar o arquivo"}
                 </Botao>
               </div>
             </Aviso>
           ) : resultado.estado === "VAZIO" ? (
-            <Aviso tom="atencao" titulo="O arquivo não tem texto para ler">
+            <Aviso tom="atencao" titulo="O que chegou não tem uma lista dentro">
               <p>{resultado.motivo}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Botao variante="secundario" tamanho="sm" onClick={() => definirEtapa("conferencia")}>
+                  Digitar as linhas na conferência
+                </Botao>
+                <Botao variante="linha" tamanho="sm" onClick={() => definirEtapa("arquivo")}>
+                  {escolhido?.tipo === "colado" ? "Trocar a lista" : "Trocar o arquivo"}
+                </Botao>
+              </div>
             </Aviso>
           ) : (
             <Aviso tom="sucesso" titulo="Arquivo lido">
@@ -408,14 +500,17 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
               rodou. Dizer de onde vieram as linhas é a diferença entre uma tela
               honesta e uma tela que parece quebrada.
             */
-            <Aviso tom="atencao" titulo="Estas linhas não vieram do seu arquivo">
+            <Aviso tom="atencao" titulo={`Estas linhas não vieram de ${nomeDaEntrada(escolhido)}`}>
               <p>
-                Nada foi extraído de <span className="font-medium">{escolhido.nome}</span>: esta
-                instalação não tem leitura automática de documentos configurada. O que aparecer
-                abaixo é o que você digitar — e passa pelas mesmas contas.
+                Nada foi extraído dali: {origem.leitor.disponivel()
+                  ? "a leitura não chegou a produzir linhas."
+                  : `esta instalação não tem ${origem.leitor.nome.toLowerCase()} configurado.`}{" "}
+                O que aparecer abaixo é o que você digitar — e passa pelas mesmas contas.
               </p>
             </Aviso>
           ) : null}
+
+          <Procedencia escolhido={escolhido} resultado={resultado} />
 
           <CabecalhoDoPrato
             conferencia={conferencia}
@@ -437,18 +532,45 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
             aoAjustar={ajustarPeso}
           />
 
-          <div className="flex flex-wrap items-center gap-3 border-t border-[var(--linha)] pt-4">
-            <Botao
-              variante="primario"
-              tamanho="md"
-              onClick={() => definirEtapa("previa")}
-              disabled={!podeConferir}
-            >
-              Gerar planilha
+          {/*
+            O DESTINO — a etapa que faltava entre conferir e gerar.
+
+            ┌────────────────────────────────────────────────────────────────┐
+            │ POR QUE ELE SUBSTITUIU O BOTÃO SOLTO "GERAR PLANILHA"          │
+            │                                                                │
+            │ Antes, o único caminho depois da conferência era a planilha. O  │
+            │ briefing pede três destinos, e pede que a conferência seja      │
+            │ preservada em todos — então o botão único virou uma escolha, e  │
+            │ o painel abaixo é quem decide para onde vai.                    │
+            │                                                                │
+            │ O botão GERAR PLANILHA continua existindo, agora DENTRO do      │
+            │ destino de mesmo nome e um nível adiante: escolher "Gerar        │
+            │ planilha" e confirmar é o que leva à etapa 4. Nada do caminho   │
+            │ antigo se perdeu — ele passou a ter uma pergunta antes.         │
+            │                                                                │
+            │ A frase que explicava o botão apagado mudou de casa, e não de   │
+            │ conteúdo: quem responde por que o botão está apagado agora é    │
+            │ `vereditoDoDestino`, em `destino.ts` — e as regras são outras   │
+            │ porque os três destinos têm pré-requisitos diferentes.          │
+            └────────────────────────────────────────────────────────────────┘
+          */}
+          <PainelDoDestino
+            conferencia={conferencia}
+            ajustesDaLinha={ajustesDaLinha}
+            ajustesDoCabecalho={ajustesDoCabecalho}
+            nomeCliente={nomeCliente ?? null}
+            clienteId={clienteIdDaUrl}
+            destinoInicial={destinoInicial}
+            aoGerarPlanilha={() => definirEtapa("previa")}
+          />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Botao variante="linha" tamanho="sm" onClick={() => definirEtapa("arquivo")}>
+              {escolhido !== null ? "Trocar a origem" : "Escolher um arquivo"}
             </Botao>
             <p className="text-[0.8125rem] text-[var(--tinta-suave)]">
-              A planilha é montada aqui dentro. Nada é baixado agora — o arquivo sai na próxima
-              etapa, quando você mandar.
+              A conferência acima é o que o sistema entendeu — confira e corrija antes de
+              escolher o destino.
             </p>
           </div>
         </SecaoDaEtapa>
@@ -464,6 +586,7 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
             grade={grade}
             nome={nomeDoArquivo(escolhido, conferencia, nomeCliente ?? null)}
           />
+
 
           <PreviaDaPlanilha
             grade={grade}
@@ -845,15 +968,72 @@ function textoDaPesagem(texto: string, unidade: string | null): { peso: number; 
 
 /** O nome do arquivo que vai ser baixado. */
 function nomeDoArquivo(
-  escolhido: ArquivoEscolhido | null,
+  escolhido: EntradaDaImportacao | null,
   conferencia: Conferencia,
   cliente: string | null
 ): string {
   const prato = conferencia.cabecalho.titulo;
   if (prato && prato.trim() !== "") return prato.trim();
-  if (escolhido) return escolhido.nome.replace(/\.pdf$/i, "");
+
+  if (escolhido?.tipo === "arquivo") {
+    /*
+      QUALQUER EXTENSÃO SAI, E NÃO SÓ `.pdf`.
+
+      Era `.replace(/\.pdf$/i, "")`, escrito quando havia uma porta só. Com
+      planilha e texto entrando, um `.xlsx` sobreviveria ao `replace` e o
+      arquivo baixado se chamaria "lista-de-insumos.xlsx.xlsx". O `\\.[a-z0-9]+$`
+      cobre as quatro portas e não depende de lembrar de acrescentar a próxima.
+    */
+    return escolhido.arquivo.nome.replace(/\.[a-z0-9]+$/i, "");
+  }
+
   if (cliente) return `Ficha — ${cliente}`;
   return "Ficha importada";
+}
+
+/** Como chamar a entrada numa frase: "o arquivo lista.xlsx" ou "a lista colada". */
+function nomeDaEntrada(entrada: EntradaDaImportacao): string {
+  return entrada.tipo === "colado" ? "a lista colada" : `o arquivo ${entrada.arquivo.nome}`;
+}
+
+/**
+ * A PROCEDÊNCIA — de onde vieram as linhas que estão na tela.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO É UMA LINHA DISCRETA E NÃO UM AVISO                     │
+ * │                                                                      │
+ * │ No caso de sucesso, ela não precisa de alarme nenhum: o trabalho       │
+ * │ dela foi lido e está abaixo. Mas ela PRECISA saber que leitor leu, e   │
+ * │ de qual arquivo ou aba — porque é isso que permite abrir o original    │
+ * │ ao lado e conferir linha por linha.                                    │
+ * │                                                                      │
+ * │ No caso de não haver leitura, quem avisa é o `Aviso` acima, com o      │
+ * │ motivo escrito. Este componente fica calado ali, e é de propósito:     │
+ * │ duas frases sobre o mesmo problema — uma explicando e outra            │
+ * │ repetindo — ensinam ela a ignorar as duas.                             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function Procedencia({
+  escolhido,
+  resultado,
+}: {
+  escolhido: EntradaDaImportacao | null;
+  resultado: { estado: "INDISPONIVEL" | "VAZIO" | "FALHOU"; motivo: string } | { estado: "OK" } | null;
+}) {
+  if (escolhido === null || resultado?.estado !== "OK") return null;
+
+  return (
+    <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
+      Linhas lidas de {nomeDaEntrada(escolhido)}. Confira contra o original antes de confirmar.
+    </p>
+  );
+}
+
+/** A procedência gravada na planilha gerada — o rodapé diz de onde o dado veio. */
+function nomeDaProcedencia(escolhido: EntradaDaImportacao | null, origem: Origem): string {
+  if (escolhido === null) return "linhas digitadas na conferência";
+  if (escolhido.tipo === "colado") return "lista colada na importação";
+  return `${origem.rotulo.toLowerCase()} importado (${escolhido.arquivo.nome})`;
 }
 
 // ---------------------------------------------------------------------------

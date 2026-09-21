@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CabecalhoPagina } from "@/components/ui/rotulo";
 import { obterRepositorioOperacao } from "@/lib/dados";
+import { ORIGEM_PADRAO, origemDaUrl, origemDe } from "@/lib/planilhas/importacao/origens";
+import { destinoDaUrl } from "@/lib/planilhas/importacao/destino";
 import { JanelaDaImportacao } from "./janela";
 
 export const metadata: Metadata = { title: "Importar documento" };
@@ -37,11 +39,54 @@ export const metadata: Metadata = { title: "Importar documento" };
  */
 
 type Props = {
-  searchParams: Promise<{ cliente?: string }>;
+  searchParams: Promise<{ cliente?: string; origem?: string; destino?: string }>;
 };
 
 export default async function PaginaImportar({ searchParams }: Props) {
-  const { cliente: clienteId } = await searchParams;
+  const {
+    cliente: clienteId,
+    origem: origemDaUrl_,
+    destino: destinoDaUrl_,
+  } = await searchParams;
+
+  /*
+    A PORTA, VALIDADA PELA CAMADA QUE A CONHECE.
+
+    O `?origem=` é texto da URL, e por isso não é confiável: qualquer valor
+    pode chegar ali. `origemDaUrl` devolve `null` para tudo o que não é uma
+    das quatro — e o `?? ORIGEM_PADRAO` cobre o link antigo, que não trazia
+    parâmetro nenhum.
+
+    É de propósito que a validação more em `origens.ts` e não aqui: a lista
+    das quatro portas é dele, e uma segunda cópia da lista nesta página
+    ficaria para trás no dia em que a quinta porta chegasse.
+  */
+  const idDaOrigem = origemDaUrl(origemDaUrl_) ?? ORIGEM_PADRAO;
+  const origem = origemDe(idDaOrigem);
+
+  /*
+    O DESTINO, VALIDADO PELA MESMA CAMADA QUE O CONHECE.
+
+    Quem pré-seleciona é o link: `/ingredientes` manda `?destino=ingredientes`,
+    `/fichas` manda `?destino=ficha`, a Central manda `?destino=planilha`. Não é
+    a janela que adivinha pelo caminho de volta — o briefing pede que o
+    contexto pré-selecione, e um parâmetro explícito é o contexto dito em voz
+    alta, em vez de inferido.
+
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ O QUE A PRÉ-SELEÇÃO **NÃO** FAZ                                    │
+    │                                                                    │
+    │ Ela não pula a conferência, e não decide sozinha. O que ela faz é    │
+    │ abrir o painel de destino já com o botão certo embaixo do dedo —    │
+    │ as três opções continuam visíveis e trocáveis, e o botão continua    │
+    │ desabilitado enquanto `vereditoDoDestino` recusar.                  │
+    │                                                                    │
+    │ Sem parâmetro nenhum, `undefined` chega à janela e o padrão é        │
+    │ PLANILHA: o link antigo, que não trazia destino, segue fazendo       │
+    │ exatamente o que fazia.                                             │
+    └────────────────────────────────────────────────────────────────────┘
+  */
+  const idDoDestino = destinoDaUrl(destinoDaUrl_);
 
   /*
     O CLIENTE É OPCIONAL AQUI, e isso é diferente da Central.
@@ -64,8 +109,8 @@ export default async function PaginaImportar({ searchParams }: Props) {
     <div className="space-y-5">
       <CabecalhoPagina
         rotulo="Documentos"
-        titulo="Importar documento"
-        descricao="Traga uma ficha em PDF, confira o que o sistema leu e gere a planilha — ou monte as linhas à mão."
+        titulo={`Importar ${origem.rotulo.toLowerCase()}`}
+        descricao={`${origem.descricao} Confira o que o sistema leu, ajuste o que precisar e gere a planilha — ou monte as linhas à mão.`}
       />
 
       <Link
@@ -75,7 +120,12 @@ export default async function PaginaImportar({ searchParams }: Props) {
         ← Voltar para a Central de Planilhas
       </Link>
 
-      <JanelaDaImportacao nomeCliente={nomeCliente} />
+      <JanelaDaImportacao
+        nomeCliente={nomeCliente}
+        clienteId={clienteId ?? ""}
+        origem={idDaOrigem}
+        destino={idDoDestino}
+      />
     </div>
   );
 }

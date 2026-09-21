@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Botao } from "@/components/ui/botao";
 import { Campo, CampoSelecao } from "@/components/ui/campo";
 import { Gaveta } from "@/components/ui/gaveta";
@@ -14,11 +15,27 @@ import {
   recusaDaCompra,
   valorEmReais,
 } from "@/lib/dados";
-import type { Ingrediente, RecusaDeCompra, UnidadeComum } from "@/lib/dados";
+import type {
+  FichaDoIngrediente,
+  Ingrediente,
+  RecusaDeCompra,
+  UnidadeComum,
+} from "@/lib/dados";
 import {
+  arquivarIngrediente,
+  desarquivarIngrediente,
   excluirIngrediente,
   salvarCadastroDoIngrediente,
 } from "@/lib/dados/demonstracao";
+
+/**
+ * OS USOS QUE IMPEDEM A EXCLUSÃO usam o tipo do domínio, e não um paralelo.
+ *
+ * `FichaDoIngrediente` é a mesma estrutura que a seção "Onde este insumo
+ * entra" já renderiza — ficha, cliente e a linha exata. Copiar os quatro
+ * campos para um tipo local criaria um segundo desenho do mesmo dado, e os
+ * dois divergiriam na primeira vez que a linha ganhasse um campo.
+ */
 
 /**
  * OS DADOS DO INSUMO — nome, categoria, fornecedor e compra.
@@ -104,7 +121,29 @@ function numeroNoCampo(valor: number): string {
   return String(valor).replace(".", ",");
 }
 
-export function IdentidadeDoInsumo({ ingrediente }: { ingrediente: Ingrediente }) {
+export function IdentidadeDoInsumo({
+  ingrediente,
+  emUso,
+  arquivado,
+}: {
+  ingrediente: Ingrediente;
+  /**
+   * O insumo já saiu de circulação nesta sessão. Muda o texto do bloco de
+   * bloqueio: oferecer "Arquivar" a quem já está arquivado seria um botão que
+   * não faz nada, e um botão que não faz nada ensina que os botões mentem.
+   */
+  arquivado: boolean;
+  /**
+   * As fichas que usam este insumo HOJE. Vazio significa que a exclusão é
+   * segura; com uma ou mais, ela fica bloqueada e a tela diz quais são.
+   *
+   * Vem por prop, e não de uma consulta daqui, porque quem já cruzou fichas ×
+   * insumos é o detalhe do insumo. Duas fontes para a mesma pergunta dariam
+   * duas respostas quando uma delas ficasse para trás — e a exclusão é
+   * irreversível.
+   */
+  emUso: readonly FichaDoIngrediente[];
+}) {
   // Assina o store: salvar repinta o cabeçalho da tela, que é quem mostra o
   // nome e a categoria que este formulário acabou de alterar.
   useDemonstracao();
@@ -181,6 +220,16 @@ export function IdentidadeDoInsumo({ ingrediente }: { ingrediente: Ingrediente }
   }
 
   const registros = ingrediente.historico.length;
+
+  /*
+    ── FICHAS, E NÃO LINHAS ────────────────────────────────────────────────
+
+    `emUso` é uma lista de LINHAS de ficha. Uma ficha que usa o mesmo insumo
+    duas vezes ocupa duas linhas — e o texto não pode dizer "2 fichas" quando
+    embaixo, na lista, aparece um nome só. O título conta fichas distintas; a
+    lista mostra as linhas, que é onde a quantidade de cada uso aparece.
+  */
+  const quantasFichas = new Set(emUso.map((u) => u.ficha.id)).size;
 
   return (
     <>
@@ -301,37 +350,151 @@ export function IdentidadeDoInsumo({ ingrediente }: { ingrediente: Ingrediente }
             abriu o formulário com a intenção de mexer no insumo.
           */}
           <div className="border-t border-[var(--linha)] pt-5">
-            {!excluindo ? (
-              <Botao
-                variante="linha"
-                tamanho="sm"
-                className="text-[#8a2b20] hover:bg-[rgba(138,43,32,0.07)]"
-                onClick={() => setExcluindo(true)}
-              >
-                Excluir insumo
-              </Botao>
+            {emUso ? (
+              /*
+                ── INSUMO EM USO: A EXCLUSÃO ESTÁ BLOQUEADA, E DIZ POR QUÊ ──
+                "Não deixar uma ficha silenciosamente sem custo."
+
+                O caminho antigo APAGAVA. O insumo saía da biblioteca, e a
+                ficha que o usava continuava abrindo — com o preço guardado na
+                linha, mas sem cadastro nenhum para explicar de onde aquele
+                número veio. O custo do prato ficava sem procedência, e a
+                consultora não tinha como descobrir o que tinha acontecido.
+
+                O bloqueio não é uma parede: ele mostra QUAL ficha usa, com o
+                endereço para abri-la, e oferece a saída que preserva o
+                passado — arquivar. A regra vem da decisão de negócio, e o
+                texto diz isso em vez de só negar o clique.
+              */
+              <div className="rounded-[var(--raio)] border border-[var(--linha)] border-l-2 border-l-dourado bg-[rgba(201,165,78,0.09)] px-4 py-3.5">
+                <p className="text-[0.875rem] font-semibold text-tinta">
+                  {quantasFichas === 1
+                    ? "Este insumo está em uso e não pode ser excluído"
+                    : `Este insumo está em uso em ${quantasFichas} fichas e não pode ser excluído`}
+                </p>
+                <p className="mt-1.5 text-[0.875rem] leading-relaxed text-[var(--tinta-suave)]">
+                  Excluir agora deixaria {quantasFichas === 1 ? "esta ficha" : "estas fichas"}{" "}
+                  sem o cadastro que explica o custo delas. Tire o insumo{" "}
+                  {quantasFichas === 1 ? "dessa ficha" : "dessas fichas"} — ou troque-o por
+                  outro — e a exclusão volta a aparecer aqui.
+                </p>
+
+                {/*
+                  A CHAVE É O PAR (ficha, posição), E NÃO SÓ A FICHA.
+
+                  Uma ficha pode usar o MESMO insumo em duas linhas — a batata
+                  que entra no recheio e a que vira acompanhamento. Com
+                  `key={ficha.id}`, as duas linhas teriam a mesma chave e o
+                  React manteria só uma: o bloqueio diria "2 fichas" e listaria
+                  uma, e o nome da segunda sumiria sem erro nenhum. É o mesmo
+                  defeito que a colisão de id já causou uma vez neste projeto.
+                */}
+                <ul className="mt-3 divide-y divide-[var(--linha)] border-t border-[var(--linha)]">
+                  {emUso.map(({ ficha, cliente, item }, indice) => (
+                    <li
+                      key={`${ficha.id}-${indice}`}
+                      className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5"
+                    >
+                      <Link
+                        href={`/fichas/${ficha.id}`}
+                        className="text-[0.9375rem] text-tinta hover:text-oliva"
+                      >
+                        {ficha.nome}
+                      </Link>
+                      <span className="text-[0.8125rem] text-[var(--tinta-fraca)]">
+                        {cliente.nomeFantasia} ·{" "}
+                        <span className="tabular">
+                          {item.quantidade} {item.unidade}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/*
+                  ARQUIVADO E NÃO-ARQUIVADO SÃO DOIS ESTADOS, E A TELA DIZ QUAL.
+
+                  Arquivar é a saída que preserva o passado — mas ela só é uma
+                  saída se houver volta. Um insumo arquivado sem o caminho de
+                  desarquivamento é uma exclusão com outro nome: sai da
+                  biblioteca, ninguém acha mais, e a única forma de recuperá-lo
+                  seria pela memória de quem arquivou.
+                */}
+                <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--linha)] pt-3.5">
+                  {arquivado ? (
+                    <>
+                      <Botao
+                        variante="secundario"
+                        tamanho="sm"
+                        onClick={() => {
+                          desarquivarIngrediente(ingrediente.id);
+                          fechar();
+                        }}
+                      >
+                        Devolver à biblioteca
+                      </Botao>
+                      <span className="max-w-[52ch] text-[0.8125rem] leading-snug text-[var(--tinta-fraca)]">
+                        Ele já está arquivado: fora das listas e das buscas, indisponível para
+                        fichas novas. As fichas abaixo continuam abrindo com o preço do dia em
+                        que foram escritas, e não mudam quando ele volta.
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Botao
+                        variante="secundario"
+                        tamanho="sm"
+                        onClick={() => {
+                          arquivarIngrediente(ingrediente.id);
+                          fechar();
+                        }}
+                      >
+                        Arquivar em vez de excluir
+                      </Botao>
+                      <span className="max-w-[52ch] text-[0.8125rem] leading-snug text-[var(--tinta-fraca)]">
+                        Ele sai das listas e das buscas, e nenhuma ficha nova consegue escolhê-lo.
+                        As fichas que já o usam continuam abrindo, com o preço do dia em que foram
+                        escritas.
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
             ) : (
-              <AoExcluir
-                nome={ingrediente.nome}
-                aoConfirmar={() => {
-                  excluirIngrediente(ingrediente.id);
-                  fechar();
-                }}
-                consequencia={
-                  <>
-                    Ele sai da biblioteca e deixa de aparecer nas listas e nas
-                    buscas.{" "}
-                    {registros > 1 ? (
-                      <>Os {registros} registros de preço dele saem junto. </>
-                    ) : null}
-                    As fichas que usam este insumo{" "}
-                    <strong className="font-semibold">não</strong> são apagadas:
-                    elas passam a mostrar a linha sem preço. Nesta sessão a
-                    exclusão pode ser desfeita recarregando a página — depois
-                    disso, só a lixeira do navegador devolve.
-                  </>
-                }
-              />
+              <div className="space-y-3">
+                <p className="text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
+                  Nenhuma ficha usa este insumo — por isso ele pode ser excluído.
+                </p>
+                {!excluindo ? (
+                  <Botao
+                    variante="linha"
+                    tamanho="sm"
+                    className="text-[#8a2b20] hover:bg-[rgba(138,43,32,0.07)]"
+                    onClick={() => setExcluindo(true)}
+                  >
+                    Excluir insumo
+                  </Botao>
+                ) : (
+                  <AoExcluir
+                    nome={ingrediente.nome}
+                    aoConfirmar={() => {
+                      excluirIngrediente(ingrediente.id);
+                      fechar();
+                    }}
+                    consequencia={
+                      <>
+                        Ele sai da biblioteca e deixa de aparecer nas listas e nas buscas.{" "}
+                        {registros > 1 ? (
+                          <>Os {registros} registros de preço dele saem junto. </>
+                        ) : null}
+                        Nenhuma ficha o usa hoje, então nenhum custo muda por causa disso.
+                        Nesta sessão a exclusão pode ser desfeita recarregando a página —
+                        depois disso, só a lixeira do navegador devolve.
+                      </>
+                    }
+                  />
+                )}
+              </div>
             )}
           </div>
         </div>

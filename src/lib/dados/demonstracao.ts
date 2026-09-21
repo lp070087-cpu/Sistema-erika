@@ -189,6 +189,23 @@ let insumosExcluidos = new Set<string>();
 let fichasExcluidas = new Set<string>();
 
 /*
+  ── ARQUIVADOS: QUEM SAI DE CIRCULAÇÃO SEM SAIR DA HISTÓRIA ───────────
+
+  Este conjunto e o de cima parecem o mesmo e respondem perguntas diferentes.
+  `insumosExcluidos` diz "este cadastro não existe mais"; `insumosArquivados`
+  diz "este cadastro existe, mas não quero mais vê-lo nas listas".
+
+  A diferença aparece na ficha antiga. Um insumo EXCLUÍDO sai da biblioteca e
+  a ficha que o usava perde o nome — o custo do dia continua guardado na
+  linha, mas não há mais cadastro para explicar de onde veio aquele número.
+  Um insumo ARQUIVADO continua existindo, e a ficha antiga abre inteira,
+  com nome, categoria e o preço daquele dia.
+
+  Ver `arquivarIngrediente` para a decisão de negócio por trás da separação.
+*/
+let insumosArquivados = new Set<string>();
+
+/*
   ── O CADASTRO DO CLIENTE, E A MESMA SEPARAÇÃO ────────────────────────
 
   `cadastrosDeCliente` guarda só o que se CORRIGE num cadastro: nome
@@ -445,11 +462,96 @@ export function insumoFoiExcluido(ingredienteId: string): boolean {
   return insumosExcluidos.has(ingredienteId);
 }
 
+// ---------------------------------------------------------------------------
+// Arquivar — a saída honesta quando o insumo está em uso
+// ---------------------------------------------------------------------------
+
+/**
+ * O INSUMO QUE SAI DE CIRCULAÇÃO SEM QUE O PASSADO MUDE.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ARQUIVAR E EXCLUIR SÃO COISAS DIFERENTES                     │
+ * │                                                                      │
+ * │ Duas perguntas, e não uma:                                            │
+ * │                                                                      │
+ * │   "Não quero mais este insumo nas minhas listas" → ARQUIVAR.          │
+ * │   "Este insumo nunca existiu" → EXCLUIR.                             │
+ * │                                                                      │
+ * │ Elas parecem a mesma coisa e produzem resultados opostos quando há    │
+ * │ uma ficha que já usou o insumo. Excluir reescreve o passado: a ficha  │
+ * │ de março passaria a apontar para um cadastro inexistente, e o custo   │
+ * │ dela deixaria de ter explicação. Arquivar preserva o passado e tira   │
+ * │ o insumo do caminho: ele para de aparecer nas buscas e nas listas, e   │
+ * │ nenhuma ficha NOVA consegue escolhê-lo — mas quem já o usou continua  │
+ * │ abrindo, custando e explicando o preço do dia em que foi escrita.      │
+ * │                                                                      │
+ * │ ┌──────────────────────────────────────────────────────────────────┐ │
+ * │ │ O ARQUIVAMENTO É EM MEMÓRIA, E A ARQUITETURA É DE BANCO          │ │
+ * │ │                                                                  │ │
+ * │ │ Não há persistência: o Neon não está conectado. O que existe aqui │ │
+ * │ │ é a representação do estado (um insumo arquivado) e o caminho      │ │
+ * │ │ que as telas percorrem para lê-lo. Quando o banco existir, o       │ │
+ * │ │ `Set` vira a coluna `arquivadoEm` do insumo, e NENHUMA tela muda  │ │
+ * │ │ de forma — elas já perguntam `ingredienteArquivado(id)`, ou leem   │ │
+ * │ │ a lista que já aplica a regra, em vez de olhar o banco.           │ │
+ * │ │                                                                  │ │
+ * │ │ Inventar uma tabela agora criaria uma segunda fonte de verdade    │ │
+ * │ │ para uma decisão que já está tomada em tipo.                      │ │
+ * │ └──────────────────────────────────────────────────────────────────┘ │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function arquivarIngrediente(ingredienteId: string): void {
+  insumosArquivados.add(ingredienteId);
+  avisar();
+}
+
+/** Devolve um insumo arquivado à circulação. */
+export function desarquivarIngrediente(ingredienteId: string): void {
+  insumosArquivados.delete(ingredienteId);
+  avisar();
+}
+
+export function ingredienteArquivado(ingredienteId: string): boolean {
+  return insumosArquivados.has(ingredienteId);
+}
+
+/**
+ * A LISTA DO CENÁRIO, SEM OS ARQUIVADOS.
+ *
+ * Existe pela mesma razão de `semExcluidos`: a regra é uma só, e mora aqui.
+ * Se cada lista filtrasse por conta própria, o dia em que uma delas esquecesse
+ * seria o dia em que um insumo arquivado reapareceria numa tela — e só nela.
+ */
+export function semArquivados<
+  T extends { id: string },
+>(itens: readonly T[]): readonly T[] {
+  return itens.filter((i) => !insumosArquivados.has(i.id));
+}
+
 /** A lista do cenário, sem o que foi apagado nesta sessão. */
 export function semExcluidos<
   T extends { id: string },
 >(itens: readonly T[]): readonly T[] {
   return itens.filter((i) => !insumosExcluidos.has(i.id));
+}
+
+/**
+ * O INSUMO NÃO PERTENCE À BIBLIOTECA? — PERGUNTA ÚNICA, PARA A BUSCA.
+ *
+ * A busca global não recebe `{ id }`: ela indexa itens com id PREFIXADO —
+ * `ingrediente:in_demo_7`, `cliente:cli_3` — justamente para que o id de um
+ * insumo nunca colida com o de uma ficha na mesma lista. Então `semExcluidos`
+ * e `semArquivados`, que comparam o id cru, não têm como ser aplicados lá.
+ *
+ * A alternativa era a busca importar os dois conjuntos e remontar a regra. Aí
+ * existiriam duas implementações da mesma decisão de negócio, e no dia em que
+ * uma mudasse a busca voltaria a mostrar arquivados — em silêncio, e só nela.
+ *
+ * Aqui a pergunta é feita uma vez, em função pura, e quem tem o id prefixado
+ * separa o prefixo antes de chamar.
+ */
+export function insumoForaDaBiblioteca(ingredienteId: string): boolean {
+  return insumosExcluidos.has(ingredienteId) || insumosArquivados.has(ingredienteId);
 }
 
 /**
@@ -475,6 +577,46 @@ export function fichaFoiExcluida(fichaId: string): boolean {
 /** As fichas do cenário, sem as apagadas, com as edições aplicadas. */
 export function fichasVisiveis(fichas: readonly Ficha[]): readonly Ficha[] {
   return fichas.filter((f) => !fichasExcluidas.has(f.id)).map(fichaDaSessao);
+}
+
+/**
+ * O ACERVO INTEIRO: as fichas do cenário e as criadas nesta sessão.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO VIROU FUNÇÃO AQUI, E NÃO CONTINUOU EM CADA TELA          │
+ * │                                                                      │
+ * │ A regra existia em duas telas — `/fichas` e a aba de fichas do        │
+ * │ cliente — como o mesmo `useMemo` escrito duas vezes:               │
+ * │ `[...fichasDaSessao(), ...fichasVisiveis(doCenario)]`, com o filtro   │
+ * │ das que já estão nas novas e a ordenação por data. As duas concordam  │
+ * │ hoje. No dia em que uma passar a ordenar por outro critério, ou a     │
+ * │ esquecer de tirar as duplicadas, a mesma ficha apareceria duas vezes  │
+ * │ numa lista e uma vez na outra, e a diferença não significaria nada.   │
+ * │                                                                      │
+ * │ ┌──────────────────────────────────────────────────────────────────┐ │
+ * │ │ O QUE ISTO **NÃO** RESOLVE, E É HONESTO DIZER                     │ │
+ * │ │                                                                  │ │
+ * │ │ A planilha NÃO chama esta função. `montarContexto` lê o           │ │
+ * │ │ REPOSITÓRIO, que não enxerga o que a sessão criou — então a       │ │
+ * │ │ ficha criada agora não entra no modelo "Ficha técnica" sem que o  │ │
+ * │ │ contexto seja sobreposto antes de gerar. São dois trabalhos: um   │ │
+ * │ │ aqui (o acervo das LISTAS, que já está certo e agora é um só) e    │ │
+ * │ │ outro na geração (o contexto, que ainda lê do repositório).       │ │
+ * │ └──────────────────────────────────────────────────────────────────┘ │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function acervoDeFichas(
+  doCenario: readonly Ficha[],
+  /** Só as de um cliente. Omitido, o acervo inteiro. */
+  clienteId?: string
+): readonly Ficha[] {
+  const novas = fichasDaSessao().filter((f) => !clienteId || f.clienteId === clienteId);
+  const idsNovas = new Set(novas.map((f) => f.id));
+
+  return [
+    ...novas,
+    ...fichasVisiveis(doCenario).filter((f) => !idsNovas.has(f.id)),
+  ].sort((a, b) => b.atualizadaEm.getTime() - a.atualizadaEm.getTime());
 }
 
 /** Sobe a cada escrita. É o que o React observa para saber que mudou. */
@@ -520,6 +662,7 @@ export function limparDemonstracao(): void {
   transformacoes = new Map();
   insumosExcluidos = new Set();
   fichasExcluidas = new Set();
+  insumosArquivados = new Set();
   cadastrosDeCliente = new Map();
   inicioDoAtendimento = new Map();
   eventosDaSessao = [];
@@ -540,6 +683,7 @@ export function temAlteracoes(): boolean {
     transformacoes.size > 0 ||
     insumosExcluidos.size > 0 ||
     fichasExcluidas.size > 0 ||
+    insumosArquivados.size > 0 ||
     cadastrosDeCliente.size > 0 ||
     inicioDoAtendimento.size > 0 ||
     eventosDaSessao.length > 0
@@ -794,9 +938,170 @@ export function fichasDaSessao(): readonly Ficha[] {
  * topo da lista como item próprio, a alterada substitui uma linha que já
  * estava lá.
  */
+/**
+ * QUEM ASSINA O QUE ESTE STORE GRAVA.
+ *
+ * Antes esta frase era uma constante privada em DUAS telas — `nova.tsx` e
+ * `detalhe.tsx` — cada uma com a sua cópia. Duas cópias da mesma assinatura
+ * concordam hoje e divergem no dia em que alguém corrigir a redação numa
+ * delas; o histórico passaria a ter duas assinaturas diferentes para o mesmo
+ * trabalho, e a diferença não significaria nada.
+ *
+ * A frase não é um nome próprio de propósito: ela registra que a alteração
+ * veio desta sessão de trabalho, sem atribuí-la a uma pessoa que não a fez.
+ */
+export const ASSINATURA_DA_SESSAO = "sessão de trabalho";
+
+/**
+ * UM ID QUE NÃO COLIDE COM OS DO CENÁRIO.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O PREFIXO É A DECLARAÇÃO DE QUE O REGISTRO NÃO ESTÁ NO BANCO          │
+ * │                                                                      │
+ * │ Todo id do cenário começa com `in_` (insumo) ou `fi_` (ficha). Um id  │
+ * │ de sessão começa com `in_demo_` / `fi_demo_` — e é por esse prefixo    │
+ * │ que as telas decidem "isto é do cenário ou acabou de nascer?".        │
+ * │                                                                      │
+ * │ É a mesma ideia do "excluído é anotado, e não removido": o id carrega  │
+ * │ a procedência, e quem lê não precisa perguntar ao servidor.           │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELE MORA AQUI, E NÃO EM CADA TELA                            │
+ * │                                                                      │
+ * │ Ele existia DUAS VEZES: uma em `fichas/nova.tsx` (`fi_demo_`) e uma    │
+ * │ em `ingredientes/novo.tsx` (`in_demo_`). O corpo das duas era o mesmo  │
+ * │ slug, caractere por caractere; só o prefixo mudava.                   │
+ * │                                                                      │
+ * │ Duas cópias de uma regra de identidade é uma divergência agendada — e  │
+ * │ o sintoma, quando ela chega, é cruel: o registro existe, mas NENHUMA   │
+ * │ tela o reconhece como seu. Ele fica invisível, e o botão parece não    │
+ * │ ter funcionado.                                                      │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE A HORA SOZINHA NÃO BASTA                                    │
+ * │                                                                      │
+ * │ A primeira versão terminava com `Date.now().toString(36)` e pronto.   │
+ * │ A bancada mostrou o defeito: `Date.now()` tem resolução de            │
+ * │ MILISSEGUNDO, então duas chamadas no mesmo milissegundo devolvem o     │
+ * │ MESMO id.                                                            │
+ * │                                                                      │
+ * │ E o estrago é silencioso: `criarFicha` acrescenta a lista, e a lista   │
+ * │ passa a ter dois itens com o mesmo id. A lista do React usa o id como  │
+ * │ `key`; dois iguais fazem o React reaproveitar o mesmo nó, e uma das    │
+ * │ duas fichas some da tela sem que ninguém tenha apagado nada.          │
+ * │                                                                      │
+ * │ Hoje o clique humano não alcança isso. Mas "não alcança hoje" não é    │
+ * │ garantia — e a função promete unicidade, então ela tem de entregar.    │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * O sufixo é a hora em base 36 MAIS um contador da sessão. A hora separa
+ * duas sessões (e dois recarregamentos); o contador separa duas chamadas
+ * dentro da mesma sessão, que é o caso que a hora não separa.
+ *
+ * O CONTADOR NÃO É ZERADO POR `limparDemonstracao`, E ISSO É DELIBERADO.
+ * Zerá-lo traria a colisão de volta: limpar e criar no mesmo milissegundo
+ * devolveria exatamente o id anterior — e a lista, recém-limpa, receberia um
+ * id que ela já tinha visto.
+ */
+let contadorDeId = 0;
+
+export function idDaSessao(prefixo: "in" | "fi", nome: string): string {
+  const slug = nome
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30);
+
+  contadorDeId += 1;
+  return `${prefixo}_demo_${slug || "registro"}_${Date.now().toString(36)}_${contadorDeId.toString(36)}`;
+}
+
 export function criarFicha(ficha: Ficha): void {
   fichasNovas = [...fichasNovas, ficha];
   avisar();
+}
+
+/**
+ * DUPLICA UMA FICHA — o segundo prato que começa do primeiro.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO EXISTE                                                  │
+ * │                                                                      │
+ * │ Um acervo de restaurante é feito de variações. "Costela ao molho      │
+ * │ madeira" e "costela ao vinho" diferem em dois insumos e mais nada;    │
+ * │ reescrever trinta linhas para chegar à segunda é o caminho mais       │
+ * │ longo, e é o que se faz hoje.                                         │
+ * │                                                                      │
+ * │ E há uma razão a mais, que é de conta e não de conveniência: a cópia  │
+ * │ NASCE CALCULANDO. Os itens apontam para os mesmos insumos da          │
+ * │ biblioteca, com a mesma etapa de peso e a mesma quantidade — então o  │
+ * │ custo dela já aparece montado, e o que ela fizer a partir dali é      │
+ * │ divergência visível, e não uma soma refeita do zero.                  │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE ELA **NÃO** COPIA                                              │
+ * │                                                                      │
+ * │ O HISTÓRICO. Ele é a ata do que aconteceu com a ficha ORIGINAL —      │
+ * │ quem mexeu, quando, e por causa de quê. Uma cópia que herdasse essas  │
+ * │ linhas afirmaria que passou por coisas que nunca aconteceram com ela, │
+ * │ e o rastro perderia exatamente o valor que ele tem: distinguir o que  │
+ * │ foi decidido naquele prato do que só estava lá quando ele foi criado. │
+ * │                                                                      │
+ * │ A cópia começa com UMA linha, dizendo de onde ela veio. É a única     │
+ * │ coisa que se sabe sobre ela, e por isso é a única que se escreve.     │
+ * │                                                                      │
+ * │ O `id`, porque identidade não se copia. E `atualizadaEm`, porque a    │
+ * │ data da outra não descreve esta.                                      │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * O `id` novo chega de fora, e não é gerado aqui. O prefixo `fi_demo_` — que
+ * declara "esta ficha não está no banco" — é uma decisão da tela, e `nova.tsx`
+ * já a toma num só lugar. Uma segunda função de id neste arquivo seria a
+ * segunda chance de as duas discordarem.
+ *
+ * O que é a cópia, hoje, a tela declara em voz alta: ela existe nesta sessão,
+ * e o banco ainda não a guarda.
+ */
+export function duplicarFicha(origem: Ficha, idDoNovo: string): Ficha {
+  const agora = new Date();
+
+  const copia: Ficha = {
+    ...origem,
+    id: idDoNovo,
+    /*
+      A MARCA NO NOME É O QUE RESTA DEPOIS DO AVISO.
+
+      O recado de "nesta sessão" aparece na lista, mas some quando o banco
+      existir. O nome fica. Sem ele, duas fichas com o nome do mesmo prato
+      apareceriam lado a lado no acervo — e nada no registro diria qual delas
+      foi derivada da outra.
+    */
+    nome: `${origem.nome} (cópia)`,
+    /*
+      Os itens são copiados UM A UM. Guardar as mesmas referências faria a
+      cópia e a original compartilharem a linha: editar a quantidade numa
+      mexeria na outra, e a divergência seria silenciosa.
+    */
+    itens: origem.itens.map((item) => ({ ...item })),
+    modoPreparo: [...origem.modoPreparo],
+    finalizacao: [...origem.finalizacao],
+    atualizadaEm: agora,
+    historico: [
+      {
+        em: agora,
+        oQue: `Criada como cópia de "${origem.nome}".`,
+        quem: ASSINATURA_DA_SESSAO,
+      },
+    ],
+  };
+
+  criarFicha(copia);
+  return copia;
 }
 
 /**

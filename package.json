@@ -14,7 +14,12 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "senha:hash": "node scripts/gerar-hash-senha.mjs",
-    "conferir:rendimento": "node scripts/conferir-rendimento.mjs"
+    "conferir:rendimento": "node scripts/conferir-rendimento.mjs",
+    "conferir:arquivamento": "node scripts/conferir-arquivamento.mjs",
+    "conferir:procedencia": "node scripts/conferir-procedencia.mjs",
+    "conferir:retomada": "node scripts/conferir-retomada.mjs",
+    "conferir:destino": "node scripts/conferir-destino.mjs",
+    "conferir:ficha-na-planilha": "node scripts/conferir-ficha-na-planilha.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",

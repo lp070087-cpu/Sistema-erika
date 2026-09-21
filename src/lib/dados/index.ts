@@ -203,9 +203,22 @@ export type {
   TransformacaoDerivada,
 } from "./custos";
 
-export { lerQuantidade, pesarFicha, resolverItem, resumoDaFicha, somarFicha } from "./custos-ficha";
+export {
+  compararCustos,
+  itensComPrecoDeHoje,
+  lerQuantidade,
+  pesarFicha,
+  resolverItem,
+  resumoDaFicha,
+  somarFicha,
+} from "./custos-ficha";
 
-export type { ItemResolvido, PesoDaFicha, ResumoCustoFicha } from "./custos-ficha";
+export type {
+  ComparacaoDeCustos,
+  ItemResolvido,
+  PesoDaFicha,
+  ResumoCustoFicha,
+} from "./custos-ficha";
 
 // --- A calculadora de rendimento -------------------------------------------
 //
@@ -275,16 +288,21 @@ export type {
 // a edição ser verificável agora e trocável por repositório depois.
 
 export {
+  arquivarIngrediente,
+  desarquivarIngrediente,
   ehInsumoDaSessao,
   excluirFicha,
   excluirIngrediente,
   fichaFoiExcluida,
   fichasVisiveis,
+  ingredienteArquivado,
   ingredienteDaSessao,
   insumoFoiExcluido,
+  insumoForaDaBiblioteca,
   limparDemonstracao,
   salvarCadastroDoIngrediente,
   salvarTransformacao,
+  semArquivados,
   semExcluidos,
   temAlteracoes,
   transformacaoDaSessao,

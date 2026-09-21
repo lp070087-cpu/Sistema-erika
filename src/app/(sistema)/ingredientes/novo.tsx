@@ -7,7 +7,7 @@ import { Gaveta } from "@/components/ui/gaveta";
 import { useDemonstracao } from "@/components/ui/use-demonstracao";
 import { valorEmReais } from "@/lib/dados";
 import type { Ingrediente, PesoInformado, Transformacao } from "@/lib/dados";
-import { cadastrarIngrediente } from "@/lib/dados/demonstracao";
+import { cadastrarIngrediente, idDaSessao } from "@/lib/dados/demonstracao";
 
 /**
  * CADASTRAR UM INSUMO — e as duas contas que o sistema faz sozinho.
@@ -84,17 +84,14 @@ function lerNumero(texto: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Um id que não colide com os do cenário, que começam todos com `in_`. */
-function idDeSessao(nome: string): string {
-  const slug = nome
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 30);
-  return `in_demo_${slug || "insumo"}_${Date.now().toString(36)}`;
-}
+/**
+ * O ID DO INSUMO QUE NASCE NA SESSÃO.
+ *
+ * Ele era uma função local aqui, com o corpo idêntico ao de `fichas/nova.tsx`
+ * — só o prefixo mudava. As duas viraram `idDaSessao` no store, que é quem
+ * responde pela identidade do que a sessão cria.
+ */
+const idDeSessao = (nome: string) => idDaSessao("in", nome);
 
 export function NovoIngrediente({
   categorias,

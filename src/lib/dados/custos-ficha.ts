@@ -92,10 +92,28 @@ export { lerQuantidade };
 export type ItemResolvido = {
   item: ItemFicha;
   ingrediente: Ingrediente | null;
-  /** Preço por unidade de compra, já resolvido para o cliente. */
+  /** Preço por unidade de compra que a linha REALMENTE usa. */
   precoEfetivo: number | null;
   /** De onde veio o preço resolvido. A tela mostra isso ao lado do número. */
   origemDoPreco: "CLIENTE" | "BIBLIOTECA" | "FICHA" | "AUSENTE";
+  /*
+    ── O PREÇO QUE VALE HOJE, AO LADO DO QUE A FICHA GUARDOU ─────────────
+
+    `precoAtual` é o preço corrente (cliente, quando houver; senão a
+    biblioteca). Ele NÃO entra no custo — quem entra é `precoEfetivo`, que
+    para uma ficha com preço guardado é o preço do DIA em que ela foi escrita.
+
+    Estes dois campos existem para tornar visível a única coisa que a ficha
+    não pode esconder: que o preço mudou desde que ela foi montada. Sem eles
+    a alta viraria custo novo em silêncio; com eles, a tela mostra quanto
+    subiu e oferece a ação de atualizar — que é uma decisão dela, e não um
+    efeito colateral de abrir a ficha.
+  */
+  precoAtual: number | null;
+  /** `true` quando o preço de hoje difere do preço guardado na linha. */
+  precoMudou: boolean;
+  /** Quanto o custo da linha mudaria se o preço de hoje passasse a valer. */
+  custoAtual: number | null;
   /** Fornecedor efetivo do par, quando houver. */
   fornecedor: string;
   /** Os pesos medidos deste insumo, derivados. */
@@ -126,41 +144,78 @@ export function resolverItem(
   const quantidade = lerQuantidade(item.quantidade);
 
   /*
-    O PREÇO — três fontes, em ordem de precedência decrescente de
-    especificidade:
-
-      1. o preço do cliente para este insumo (o mais específico)
-      2. o preço de referência guardado na própria ficha (o que valia no dia
-         em que ela foi escrita — histórico vivo, não deve ser sobreposto)
-      3. o preço de referência da biblioteca (o genérico)
-
-    A ficha vem ANTES da biblioteca de propósito. Ela guarda o preço do dia
-    em que foi escrita; substituí-lo pelo preço de hoje apagaria justamente o
-    registro que permite ver o efeito de uma alta depois. O preço do cliente
-    vem antes de tudo porque é o preço REAL daquele cliente, e não uma
-    referência genérica.
-
-    Quando os três existem e discordam, a tela mostra a divergência — sem
-    corrigir nada por conta própria.
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │ O PREÇO DA FICHA GANHA DO PREÇO DE HOJE — E ISSO FOI UMA CORREÇÃO     │
+    │                                                                      │
+    │ O comentário aqui EM CIMA sempre disse isto: "a ficha vem ANTES da    │
+    │ biblioteca de propósito; substituí-lo pelo preço de hoje apagaria     │
+    │ justamente o registro que permite ver o efeito de uma alta depois".  │
+    │                                                                      │
+    │ E o código ABAIXO dizia o contrário. Os três `if` eram independentes, │
+    │ então o ÚLTIMO que casasse vencia: a biblioteca sobrescrevia a ficha, │
+    │ e o cliente sobrescrevia os dois. O resultado é que a ficha seguia o  │
+    │ preço de hoje calada. Batata a R$ 10 na criação, R$ 13 depois: a      │
+    │ ficha passava a custar R$ 13 sem que ninguém tivesse pedido, e o      │
+    │ documento histórico passava a afirmar que sempre custou R$ 13.        │
+    │                                                                      │
+    │ A ordem agora é explícita e tem dois planos separados:               │
+    │                                                                      │
+    │   O CUSTO usa `precoEfetivo` — o preço GUARDADO na linha, quando      │
+    │   existe; senão o de hoje. É o retrato do dia em que a ficha foi      │
+    │   montada, e não muda sozinho.                                       │
+    │                                                                      │
+    │   O PRESENTE vai em `precoAtual` / `custoAtual`, calculados à parte.  │
+    │   Eles não entram no custo; existem para a tela poder dizer "o preço   │
+    │   mudou", e para a ação explícita de ATUALIZAR CUSTOS ter para onde    │
+    │   apontar.                                                            │
+    │                                                                      │
+    │ O preço do cliente continua na frente do da biblioteca: entre dois    │
+    │ preços DE HOJE, o real daquele cliente é o mais específico.           │
+    └──────────────────────────────────────────────────────────────────────┘
   */
-  let precoEfetivo: number | null = null;
-  let origemDoPreco: ItemResolvido["origemDoPreco"] = "AUSENTE";
 
-  if (item.precoReferencia !== null && item.precoReferencia > 0) {
-    precoEfetivo = item.precoReferencia;
+  /** O preço corrente do par (cliente, insumo) — o "de hoje". */
+  const precoDeHoje =
+    doCliente?.precoAtual != null && doCliente.precoAtual > 0
+      ? doCliente.precoAtual
+      : ingrediente?.precoAtual != null && ingrediente.precoAtual > 0
+        ? ingrediente.precoAtual
+        : null;
+
+  const guardadoNaLinha =
+    item.precoReferencia !== null && item.precoReferencia > 0
+      ? item.precoReferencia
+      : null;
+
+  let precoEfetivo: number | null;
+  let origemDoPreco: ItemResolvido["origemDoPreco"];
+
+  if (guardadoNaLinha !== null) {
+    precoEfetivo = guardadoNaLinha;
     origemDoPreco = "FICHA";
-  }
-  if (ingrediente?.precoAtual != null && ingrediente.precoAtual > 0) {
-    precoEfetivo = ingrediente.precoAtual;
-    origemDoPreco = "BIBLIOTECA";
-  }
-  if (doCliente?.precoAtual != null && doCliente.precoAtual > 0) {
+  } else if (doCliente?.precoAtual != null && doCliente.precoAtual > 0) {
     precoEfetivo = doCliente.precoAtual;
     origemDoPreco = "CLIENTE";
+  } else if (ingrediente?.precoAtual != null && ingrediente.precoAtual > 0) {
+    precoEfetivo = ingrediente.precoAtual;
+    origemDoPreco = "BIBLIOTECA";
+  } else {
+    precoEfetivo = null;
+    origemDoPreco = "AUSENTE";
   }
 
   const transformacao = derivarTransformacao(ingrediente?.transformacao ?? null);
   const custos = custoPorEtapa(precoEfetivo, transformacao);
+
+  /*
+    O CUSTO DE HOJE — a mesma conta, com o preço corrente.
+
+    Ele só é calculado quando o preço realmente mudou: comparar dois números
+    iguais e chamar isso de "mudança" encheria a tela de avisos que não
+    significam nada.
+  */
+  const precoMudou = guardadoNaLinha !== null && precoDeHoje !== null && precoDeHoje !== guardadoNaLinha;
+  const custosDeHoje = precoMudou ? custoPorEtapa(precoDeHoje, transformacao) : null;
 
   const fornecedor = doCliente?.fornecedor || ingrediente?.fornecedor || "";
 
@@ -196,11 +251,28 @@ export function resolverItem(
     }
   }
 
+  /*
+    O MESMO CÁLCULO, COM O PREÇO DE HOJE.
+
+    `custoAtual` não substitui `custo` — ele é a resposta para "quanto esta
+    linha custaria se a ficha fosse montada hoje?", e só existe quando a
+    pergunta faz sentido (o preço mudou E a linha é calculável). Numa ficha
+    cujo preço não mudou, os dois números seriam idênticos e a tela não teria
+    nada a dizer.
+  */
+  let custoAtual: number | null = null;
+  if (custosDeHoje !== null && estado === "OK" && quantidade !== null) {
+    custoAtual = custoDaQuantidade(quantidade, item.etapa, custosDeHoje)?.valor ?? null;
+  }
+
   return {
     item,
     ingrediente,
     precoEfetivo,
     origemDoPreco,
+    precoAtual: precoDeHoje,
+    precoMudou,
+    custoAtual,
     fornecedor,
     transformacao,
     custos,
@@ -352,6 +424,120 @@ export function resumoDaFicha(
         ? base.custoTotal / (porcoes !== null ? porcoes * ficha.porcaoGramas : ficha.porcaoGramas)
         : null,
   };
+}
+
+/**
+ * QUANTO A FICHA MUDARIA SE OS PREÇOS DE HOJE PASSASSEM A VALER.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ A CONTA EXISTE PARA A AÇÃO SER **CONSCIENTE E VISÍVEL**              │
+ * │                                                                      │
+ * │ O custo guardado de uma ficha é um retrato: ele não se move quando o  │
+ * │ preço da batata sobe. Isso é o certo — mas cria uma pergunta que a    │
+ * │ ficha, sozinha, não responde: "e se eu atualizasse?". Se a resposta   │
+ * │ só aparecesse DEPOIS do clique, atualizar seria um salto no escuro:   │
+ * │ a consultora trocaria o custo dela por um número que ninguém viu.     │
+ * │                                                                      │
+ * │ Esta função responde ANTES. Ela é o que a tela mostra ao lado do      │
+ * │ botão ATUALIZAR CUSTOS, para que a decisão de apertá-lo seja tomada   │
+ * │ olhando para o efeito.                                                │
+ * │                                                                      │
+ * │ ── POR QUE A SOMA É SÓ DAS LINHAS QUE MUDARAM ──────────────────────── │
+ * │                                                                      │
+ * │ Somar a ficha inteira com preço de hoje e subtrair a ficha inteira    │
+ * │ com preço guardado daria o MESMO número — e obrigaria a recalcular    │
+ * │ linhas que não mudaram, o que só cria oportunidade de divergência.    │
+ * │ Aqui, quem não mudou não entra na conta e não aparece no texto.       │
+ * │                                                                      │
+ * │ ── E POR QUE ELA NÃO ATUALIZA NADA ─────────────────────────────────── │
+ * │                                                                      │
+ * │ Ela é uma leitura. Devolver o custo de hoje junto com o de ontem é     │
+ * │ tudo o que ela faz; quem decide trocar é a ação explícita da tela,     │
+ * │ que passa pelo store e deixa registro no histórico. Preço que muda     │
+ * │ em silêncio é exatamente o que a regra de histórico proíbe.           │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type ComparacaoDeCustos = {
+  /** Quantas linhas têm preço de hoje diferente do preço guardado. */
+  linhasMudadas: number;
+  /** Das mudadas, quantas puderam ser somadas nos dois lados da conta. */
+  linhasComparadas: number;
+  /** O custo guardado, somando apenas as linhas que mudaram. */
+  custoGuardado: number;
+  /** O custo das mesmas linhas, com o preço de hoje. */
+  custoDeHoje: number;
+  /** `custoDeHoje − custoGuardado`. Positivo = o prato ficou mais caro. */
+  diferenca: number;
+  /** A diferença sobre o custo guardado das mudadas. `null` se ele é zero. */
+  variacaoPct: number | null;
+  /** `true` quando há ao menos uma linha com preço diferente. */
+  haMudanca: boolean;
+  /**
+   * `false` quando alguma linha mudada não pôde ser comparada — porque não
+   * tem preço guardado, ou porque o peso da etapa não existe.
+   */
+  comparacaoCompleta: boolean;
+};
+
+export function compararCustos(
+  resolvidos: readonly ItemResolvido[]
+): ComparacaoDeCustos {
+  const mudadas = resolvidos.filter((r) => r.precoMudou);
+  const comparaveis = mudadas.filter((r) => r.custo !== null && r.custoAtual !== null);
+
+  const custoGuardado = comparaveis.reduce((soma, r) => soma + (r.custo ?? 0), 0);
+  const custoDeHoje = comparaveis.reduce((soma, r) => soma + (r.custoAtual ?? 0), 0);
+  const diferenca = custoDeHoje - custoGuardado;
+
+  return {
+    linhasMudadas: mudadas.length,
+    linhasComparadas: comparaveis.length,
+    custoGuardado,
+    custoDeHoje,
+    diferenca,
+    variacaoPct: custoGuardado > 0 ? diferenca / custoGuardado : null,
+    haMudanca: mudadas.length > 0,
+    comparacaoCompleta: mudadas.length === comparaveis.length,
+  };
+}
+
+/**
+ * A FICHA COM O PREÇO DE HOJE GRAVADO NAS LINHAS — a única forma de atualizar.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO DEVOLVE UMA FICHA NOVA, E NÃO ESCREVE POR DENTRO         │
+ * │                                                                      │
+ * │ Atualizar custos não é "recalcular": é trocar o preço guardado de cada │
+ * │ linha pelo preço de hoje, de uma vez, de forma que o resultado seja    │
+ * │ gravável pelo caminho de sempre — `salvarItensDaFicha`, com histórico. │
+ * │                                                                      │
+ * │ Uma função que mutasse os itens recebidos escreveria numa lista que    │
+ * │ pode ser a do cenário, e o efeito vazaria para fora da sessão sem      │
+ * │ passar pelo store. Devolvendo uma cópia, quem chama decide o que fazer │
+ * │ com ela — e não existe caminho em que a atualização aconteça por       │
+ * │ acidente.                                                             │
+ * │                                                                      │
+ * │ As linhas que NÃO mudaram ficam exatamente como estavam. Reescrever o  │
+ * │ preço delas com o mesmo número não mudaria a conta e sujaria o diff.   │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function itensComPrecoDeHoje(
+  resolvidos: readonly ItemResolvido[],
+  itens: readonly ItemFicha[]
+): ItemFicha[] {
+  /*
+    A CORRESPONDÊNCIA É POR POSIÇÃO, E ISSO ESTÁ CERTO AQUI.
+
+    `resolvidos` nasce de `ficha.itens.map(...)` — mesma ordem, mesmo
+    comprimento, um para um. Reassociar por id de ingrediente seria pior: um
+    prato pode usar o mesmo insumo em duas linhas com preços guardados
+    diferentes, e as duas seriam tratadas como se fossem a mesma.
+  */
+  return itens.map((item, indice) => {
+    const r = resolvidos[indice];
+    if (r === undefined || !r.precoMudou || r.precoAtual === null) return { ...item };
+    return { ...item, precoReferencia: r.precoAtual };
+  });
 }
 
 // ---------------------------------------------------------------------------

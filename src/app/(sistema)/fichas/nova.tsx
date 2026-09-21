@@ -7,7 +7,7 @@ import { Campo, CampoSelecao } from "@/components/ui/campo";
 import { Gaveta } from "@/components/ui/gaveta";
 import { Aviso } from "@/components/ui/superficie";
 import { RegraAConfirmar } from "@/components/ui/metodologia";
-import { criarFicha } from "@/lib/dados/demonstracao";
+import { ASSINATURA_DA_SESSAO, criarFicha, idDaSessao } from "@/lib/dados/demonstracao";
 import type { EtapaPeso, Ficha, Ingrediente, ItemFicha } from "@/lib/dados";
 
 /**
@@ -59,18 +59,6 @@ import type { EtapaPeso, Ficha, Ingrediente, ItemFicha } from "@/lib/dados";
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
-/** Um id de ficha que nasce na sessão. O prefixo diz que ele não é do banco. */
-function idDaSessao(nome: string): string {
-  const slug = nome
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 30);
-  return `fi_demo_${slug || "ficha"}_${Date.now().toString(36)}`;
-}
-
 type Linha = {
   /** Chave local estável — não é id de banco, e o prefixo diz isso. */
   chave: number;
@@ -81,7 +69,7 @@ type Linha = {
 };
 
 /** Quem assina o que for criado nesta sessão. Não é um nome inventado. */
-const QUEM = "sessão de trabalho";
+const QUEM = ASSINATURA_DA_SESSAO;
 
 export function NovaFicha({
   clientes,
@@ -195,7 +183,7 @@ export function NovaFicha({
     });
 
     const ficha: Ficha = {
-      id: idDaSessao(nome.trim()),
+      id: idDaSessao("fi", nome.trim()),
       clienteId,
       nome: nome.trim(),
       categoria: categoriaFinal,

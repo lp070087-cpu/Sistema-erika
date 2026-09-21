@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Botao, BotaoLink } from "@/components/ui/botao";
+import { AoExcluir } from "@/components/ui/edicao";
 import { Campo, CampoSelecao } from "@/components/ui/campo";
 import { Gaveta, useGaveta } from "@/components/ui/gaveta";
 import { ComercialDaFicha } from "./comercial-da-ficha";
@@ -18,6 +20,7 @@ import {
 } from "@/components/ui/fluxo-rendimento";
 import { DecisoesQueFaltam, RegraAConfirmar } from "@/components/ui/metodologia";
 import { Aviso, Painel, Secao } from "@/components/ui/superficie";
+import { FaixaDeAcao, useAvisoDeAcao } from "@/components/ui/aviso-acao";
 import { LinhaDoTempo } from "@/components/ui/linha-do-tempo";
 import {
   CabecalhoTabela,
@@ -36,8 +39,10 @@ import {
   ROTULO_ETAPA_PESO,
   ROTULO_SITUACAO_FICHA,
   TOM_SITUACAO_FICHA,
+  compararCustos,
   dataCurta,
   desdeQuando,
+  itensComPrecoDeHoje,
   markupEmTexto,
   numeroFixo,
   quadroComercial,
@@ -62,9 +67,14 @@ import type {
 } from "@/lib/dados";
 import { PARAMETROS_VAZIOS } from "@/lib/dados";
 import {
+  ASSINATURA_DA_SESSAO,
+  duplicarFicha,
   estadoDePrecoDaBiblioteca,
+  excluirFicha,
   fichaDaSessao,
   fichasDaSessao,
+  fichaFoiExcluida,
+  idDaSessao,
   ingredientesDaSessao,
   precosDeClienteDaSessao,
   salvarCabecalhoDaFicha,
@@ -135,7 +145,7 @@ import { NovoIngrediente } from "../../ingredientes/novo";
  */
 
 /** Quem assina o que for mexido nesta sessão. Não é um nome inventado. */
-const QUEM = "sessão de trabalho";
+const QUEM = ASSINATURA_DA_SESSAO;
 
 const ROTULO_ORIGEM_PRECO: Record<ItemResolvido["origemDoPreco"], string> = {
   CLIENTE: "preço deste cliente",
@@ -195,6 +205,30 @@ export function DetalheDaFicha({
   const adicionar = useGaveta();
 
   /*
+    ── DUPLICAR E EXCLUIR ──────────────────────────────────────────────────
+
+    Os dois mexem no ACERVO, e não nesta ficha — e é por isso que o retorno
+    deles não é uma faixa aqui: a cópia e a exclusão se provam na lista. A
+    cópia navega para a ficha nova (a prova é a tela que abre com o nome
+    "(cópia)"); a exclusão navega de volta para o acervo, onde a ficha some.
+
+    O roteador é o mesmo de `nova.tsx`, pelo mesmo motivo: só navegando o
+    acervo é reconstruído a partir do store.
+  */
+  const router = useRouter();
+  const [excluindo, setExcluindo] = useState(false);
+
+  /*
+    O RECADO DA AÇÃO — o mesmo componente que a Central de Planilhas usa.
+
+    Duplicar e excluir provam-se na navegação; atualizar custos não. Ele muda
+    números nesta tela, e sem um recado o clique ficaria indistinguível de um
+    clique que não fez nada — o custo guardado pode subir 40 centavos e a
+    pessoa não ter como saber que o botão funcionou.
+  */
+  const { aviso, anunciar, dispensar: dispensarAviso } = useAvisoDeAcao();
+
+  /*
     A PONTE PARA A GAVETA COMERCIAL.
 
     A gaveta mora no cabeçalho, junto das outras ações; a seção que FALA sobre
@@ -210,7 +244,24 @@ export function DetalheDaFicha({
     A ordem é: primeiro a ficha criada nesta sessão, depois o cenário. Uma
     ficha criada agora não existe no repositório, e mandá-la para "não
     encontrada" seria matar o trabalho no instante seguinte a ele existir.
+
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ A EXCLUÍDA VEM ANTES DE TUDO — E ISSO NÃO É DETALHE               │
+    │                                                                  │
+    │ Sem esta linha, a ficha apagada continuaria abrindo pelo         │
+    │ endereço: o `doCenario.ficha` é servido pelo servidor e não sabe  │
+    │ de exclusão nenhuma, então a tela mostraria a ficha inteira,      │
+    │ viva, como se nada tivesse acontecido. Pior: ela aceitaria        │
+    │ edição, e o trabalho iria para uma ficha que a lista já não       │
+    │ mostra.                                                          │
+    │                                                                  │
+    │ É a mesma proteção que o detalhe do insumo faz com               │
+    │ `insumoFoiExcluido` — e é a razão de o teste vir antes da         │
+    │ escolha da base, e não depois.                                   │
+    └──────────────────────────────────────────────────────────────────┘
   */
+  if (fichaFoiExcluida(id)) return <NaoEncontrada excluida />;
+
   const criadaAgora = fichasDaSessao().find((f) => f.id === id) ?? null;
   const base = criadaAgora ?? doCenario.ficha;
 
@@ -287,6 +338,20 @@ export function DetalheDaFicha({
   const unidadeDoPeso = peso.unidade ?? ficha.itens[0]?.unidade ?? null;
 
   /*
+    ── O PREÇO MUDOU DESDE QUE ESTA FICHA FOI ESCRITA? ─────────────────────
+
+    Esta é a leitura que sustenta a regra de histórico do §21: o custo da ficha
+    é o do dia em que ela foi montada, e NÃO se mexe quando a batata sobe. O
+    que a ficha deve — e agora faz — é DIZER que o preço de hoje é outro, e
+    deixar a troca para uma ação explícita.
+
+    `compararCustos` não recalcula a ficha inteira: ela soma só as linhas que
+    mudaram, nos dois lados. Quem não mudou não entra na conta e não aparece
+    no recado.
+  */
+  const comparacao = compararCustos(resolvidos);
+
+  /*
     ── A SITUAÇÃO DO CÁLCULO, DERIVADA ─────────────────────────────────────
 
     O campo guardado no cenário diz "aguardando metodologia" — e isso deixou
@@ -351,6 +416,79 @@ export function DetalheDaFicha({
   function gravarItens(itens: ItemFicha[], oQue: string) {
     salvarItensDaFicha(ficha.id, itens);
     registrar(oQue);
+  }
+
+  /**
+   * ATUALIZAR CUSTOS — a única porta pela qual o preço de hoje entra na ficha.
+   *
+   * ┌────────────────────────────────────────────────────────────────────┐
+   * │ POR QUE ISTO É UM BOTÃO, E NÃO ALGO QUE ACONTECE SOZINHO            │
+   * │                                                                    │
+   * │ O custo de uma ficha é um retrato do dia em que ela foi montada.    │
+   * │ Deixá-lo seguir o preço de hoje automaticamente apagaria o retrato   │
+   * │ — uma ficha de março passaria a afirmar que sempre custou o preço    │
+   * │ de setembro, e ninguém saberia que houve uma alta no meio.          │
+   * │                                                                    │
+   * │ Mas o retrato também não pode ser uma prisão: a consultora precisa  │
+   * │ poder trazer a ficha para os preços de hoje quando isso fizer        │
+   * │ sentido. A regra que resolve os dois lados é a do §21 — a troca      │
+   * │ existe, e é CONSCIENTE E VISÍVEL. Consciente porque só acontece      │
+   * │ atrás de um clique; visível porque o botão diz quanto vai mudar      │
+   * │ ANTES de ser apertado, e porque a alteração entra no histórico.      │
+   * │                                                                    │
+   * │ O que o clique grava é o preço de HOJE como preço GUARDADO da linha. │
+   * │ A partir daí, o que a ficha guarda é o preço deste dia — e um novo   │
+   * │ aumento voltará a aparecer como diferença, porque é o que ele é.     │
+   * └────────────────────────────────────────────────────────────────────┘
+   */
+  function aoAtualizarCustos() {
+    const atualizados = itensComPrecoDeHoje(resolvidos, ficha.itens);
+    const quantas = atualizados.filter(
+      (item, indice) => item.precoReferencia !== ficha.itens[indice]?.precoReferencia
+    ).length;
+
+    gravarItens(
+      atualizados,
+      quantas === 1
+        ? "Custo atualizado para o preço de hoje em 1 ingrediente."
+        : `Custo atualizado para o preço de hoje em ${quantas} ingredientes.`
+    );
+
+    anunciar(
+      quantas === 1
+        ? "Custo atualizado: 1 ingrediente passou a valer o preço de hoje."
+        : `Custo atualizado: ${quantas} ingredientes passaram a valer o preço de hoje.`,
+      "ok"
+    );
+  }
+
+  /**
+   * DUPLICA ESTA FICHA E ABRE A CÓPIA.
+   *
+   * O que acontece, em uma frase: o store guarda a cópia, e a tela navega
+   * para ela. Sem a navegação, o trabalho seria invisível — a cópia existiria
+   * na lista, e nada aqui diria que ela foi criada.
+   *
+   * A cópia leva as EDIÇÕES da sessão, e não a versão do cenário. Duplicar
+   * "o prato como ele está agora" e receber o prato como ele estava antes de
+   * ela mexer seria perder o trabalho na cópia, que é justamente onde ele
+   * deveria continuar vivo.
+   */
+  function aoDuplicar() {
+    const copia = duplicarFicha(ficha, idDaSessao("fi", `${ficha.nome} copia`));
+    router.push(`/fichas/${copia.id}`);
+  }
+
+  /**
+   * EXCLUI ESTA FICHA E VOLTA PARA O ACERVO.
+   *
+   * A ordem importa: o store anota a exclusão primeiro, e só então a tela
+   * navega. Ao chegar na lista, ela já filtra a ficha excluída — e não há um
+   * instante em que a ficha apareça lá depois de excluída.
+   */
+  function aoExcluir() {
+    excluirFicha(ficha.id);
+    router.push("/fichas");
   }
 
   function adicionarItem(entrada: {
@@ -505,6 +643,16 @@ export function DetalheDaFicha({
         <span aria-hidden>←</span> Voltar para as fichas
       </Link>
 
+      {/*
+        A FAIXA DO RECADO FICA AQUI, E NÃO COLADA NO BOTÃO.
+
+        Ela é o que sobra depois de uma ação — e "Atualizar custos" muda o
+        número que está logo abaixo, então a confirmação precisa estar no
+        caminho de quem vai ler esse número. Colada no botão, dentro do bloco
+        de aviso, ela empurraria a composição para baixo a cada clique.
+      */}
+      <FaixaDeAcao aviso={aviso} aoFechar={dispensarAviso} />
+
       {/* ═══ CABEÇALHO ═════════════════════════════════════════════════════ */}
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
@@ -557,6 +705,59 @@ export function DetalheDaFicha({
             custoMedido={resumo.completo ? resumo.custoTotal : null}
             aoSalvar={salvarComercial}
           />
+          {/*
+            DUPLICAR FICA NO CABEÇALHO; EXCLUIR, NÃO. A REGRA É A MESMA DO
+            INSUMO, E A ASSIMETRIA É DELIBERADA.
+
+            Duplicar é a ação mais segura que existe nesta tela — ela só
+            acrescenta, e o pior caso é uma ficha a mais na lista. Por isso
+            cabe ao lado das outras, ao alcance de um clique.
+
+            Excluir fica lá embaixo, num bloco separado, pelo motivo já
+            escrito em `identidade-do-insumo.tsx`: no cabeçalho ele seria um
+            alvo permanente a um clique de distância dos botões de edição.
+
+            E há uma razão própria desta tela para a separação: as ações do
+            cabeçalho mexem NESTA ficha; excluir mexe NO ACERVO. Elas não são
+            a mesma classe de coisa, e não devem parecer.
+          */}
+          {/*
+            ── ABRIR NA CENTRAL DE PLANILHAS ──────────────────────────────
+
+            É uma LIGAÇÃO, e não um download. O briefing desta rodada é
+            explícito: a ficha alimenta a planilha, e "gerar planilha" é
+            abrir a grade na Central — o arquivo .xlsx é o passo seguinte, o
+            de exportar, e ele não acontece sozinho.
+
+            ┌────────────────────────────────────────────────────────────┐
+            │ POR QUE O BOTÃO NÃO APARECE SEM CLIENTE                     │
+            │                                                            │
+            │ O modelo "Ficha técnica" recorta por cliente: ele monta a   │
+            │ planilha DE UM cliente. Uma ficha sem cliente não tem como   │
+            │ entrar em nenhuma delas, e um botão que levasse a uma tela   │
+            │ vazia prometeria algo que o sistema não faz.                │
+            │                                                            │
+            │ É a mesma regra do "Ver cliente" ao lado, e a mesma razão    │
+            │ para ele também ser condicional.                            │
+            └────────────────────────────────────────────────────────────┘
+
+            `?modelo=ficha-tecnica` e não o modelo padrão: quem clica
+            "abrir na planilha" a partir de uma ficha quer a planilha que
+            TEM fichas dentro. Cair na planilha em branco seria entregar uma
+            grade vazia a quem acabou de pedir o prato dela.
+          */}
+          {cliente ? (
+            <BotaoLink
+              href={`/planilhas?cliente=${cliente.id}&modelo=ficha-tecnica`}
+              variante="secundario"
+              tamanho="sm"
+            >
+              Abrir na Central de Planilhas
+            </BotaoLink>
+          ) : null}
+          <Botao variante="secundario" tamanho="sm" onClick={aoDuplicar}>
+            Duplicar
+          </Botao>
           {cliente ? (
             <BotaoLink href={`/clientes/${cliente.id}`} variante="secundario" tamanho="sm">
               Ver cliente
@@ -682,6 +883,75 @@ export function DetalheDaFicha({
           unidadeDoPeso={unidadeDoPeso}
           porcoes={ficha.rendimentoPorcoes}
         />
+
+        {/*
+          ── O PREÇO MUDOU DESDE QUE ESTA FICHA FOI ESCRITA ────────────────
+
+          Este bloco é a REGRA DE HISTÓRICO do §21 tornada visível. O custo
+          acima não se move quando a batata sobe — e isso é o certo. O que
+          faltava era a ficha DIZER que o preço de hoje é outro, em vez de
+          deixar a consultora descobrir sozinha comparando com a biblioteca.
+
+          Ele fica FORA do painel de custo de propósito. O painel de cima é
+          medição do dia em que a ficha foi escrita; este aqui é uma informação
+          sobre HOJE. Misturar os dois faria o número de hoje parecer o custo
+          do prato — que é exatamente o que a regra proíbe.
+        */}
+        {comparacao.haMudanca ? (
+          <Aviso
+            tom="atencao"
+            titulo={
+              comparacao.linhasMudadas === 1
+                ? "O preço de 1 ingrediente mudou desde que esta ficha foi montada"
+                : `O preço de ${comparacao.linhasMudadas} ingredientes mudou desde que esta ficha foi montada`
+            }
+            className="mt-4"
+          >
+            <p>
+              O custo acima continua sendo o do dia em que a ficha foi escrita
+              {comparacao.comparacaoCompleta ? (
+                <>
+                  {" "}
+                  — e é por isso que ele não mudou. Com os preços de hoje, estas{" "}
+                  {comparacao.linhasComparadas === 1 ? "linha custaria" : "linhas custariam"}{" "}
+                  <strong className="font-semibold text-tinta">
+                    {valorEmReais(comparacao.custoDeHoje)}
+                  </strong>{" "}
+                  em vez de{" "}
+                  <strong className="font-semibold text-tinta">
+                    {valorEmReais(comparacao.custoGuardado)}
+                  </strong>
+                  {comparacao.variacaoPct !== null ? (
+                    <>
+                      {" "}
+                      ({comparacao.diferenca > 0 ? "+" : "−"}
+                      {numeroFixo(Math.abs(comparacao.variacaoPct) * 100, 1)}%)
+                    </>
+                  ) : null}
+                  .
+                </>
+              ) : (
+                <>
+                  . {comparacao.linhasComparadas} dessas linhas puderam ser
+                  comparadas; as outras{" "}
+                  {comparacao.linhasMudadas - comparacao.linhasComparadas} continuam fora da
+                  soma, e o efeito total é maior do que o número abaixo.
+                </>
+              )}
+            </p>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Botao variante="secundario" tamanho="sm" onClick={aoAtualizarCustos}>
+                Atualizar custos desta ficha
+              </Botao>
+              <span className="text-[0.8125rem] leading-snug text-[var(--tinta-fraca)]">
+                Substitui o preço guardado de cada linha pelo de hoje. A ficha passa a valer
+                o preço deste dia, e a alteração entra no histórico.
+              </span>
+            </div>
+          </Aviso>
+        ) : null}
+
         <LegendaDeCusto className="mt-4" />
 
         {/*
@@ -899,6 +1169,43 @@ export function DetalheDaFicha({
           registros de histórico acima deixam claro, porque eles também somem.
         </p>
       </Aviso>
+
+      {/* ═══ EXCLUIR A FICHA ═══════════════════════════════════════════════ */}
+      <Secao
+        rotulo="Excluir"
+        titulo="Tirar esta ficha do acervo"
+        descricao="A ficha sai da lista de fichas e da ficha do cliente. O trabalho feito na composição não é reaproveitado por nenhuma outra ficha — cada uma tem a sua."
+      >
+        {!excluindo ? (
+          <Botao
+            variante="linha"
+            tamanho="sm"
+            className="text-[#8a2b20] hover:bg-[rgba(138,43,32,0.07)]"
+            onClick={() => setExcluindo(true)}
+          >
+            Excluir ficha
+          </Botao>
+        ) : (
+          <AoExcluir
+            nome={ficha.nome}
+            aoConfirmar={aoExcluir}
+            consequencia={
+              <>
+                Ela sai do acervo, da lista de fichas e da ficha deste cliente.{" "}
+                {/*
+                  A DISTINÇÃO QUE MAIS IMPORTA AQUI, E QUE O TEXTO NÃO PODE
+                  DEIXAR IMPLÍCITA: o cadastro dos insumos NÃO vai junto.
+                  A ficha é uma composição; os insumos são o cadastro dela, e
+                  continuam valendo para todos os outros pratos.
+                */}
+                Os ingredientes desta composição <strong className="font-semibold">não</strong>{" "}
+                são apagados: eles continuam na biblioteca, com o preço e o
+                rendimento de sempre, e seguem nas outras fichas que os usam.
+              </>
+            }
+          />
+        )}
+      </Secao>
 
       {/* ═══ GAVETA: ADICIONAR INGREDIENTE ═════════════════════════════════ */}
       <AdicionarIngrediente
@@ -1244,18 +1551,20 @@ function NomeDoInsumo({ resolvido: r }: { resolvido: ItemResolvido }) {
  * consultora supor que ele é o que ela pensou, e a suposição errada aqui
  * muda o custo do prato inteiro.
  *
- * Quando o preço guardado na ficha difere do que está sendo usado, a
- * divergência aparece. O sistema não escolhe por conta própria qual dos dois
- * vale — essa é a decisão "de onde vem o preço", ainda aberta.
+ * ── O QUE MUDOU NESTA RODADA ───────────────────────────────────────────────
+ *
+ * O aviso daqui dizia "a ficha guardou R$ X", para o caso de o número usado
+ * ter vindo de outro lugar que não a ficha. Ele existia porque a precedência
+ * estava invertida: o preço de hoje sobrescrevia o guardado, e a linha
+ * denunciava a troca. Agora que o guardado GANHA, esse aviso nunca apareceria
+ * — e um ramo que nunca roda é pior do que ramo nenhum, porque promete uma
+ * checagem que não existe.
+ *
+ * O recado mudou de lado: em vez de dizer o que a ficha guardou, ele diz o
+ * que o preço está HOJE. É a mesma informação que interessa, do lado certo da
+ * pergunta — e é ela que explica por que aquele custo não se move.
  */
 function PrecoDeReferencia({ resolvido: r }: { resolvido: ItemResolvido }) {
-  const guardado = r.item.precoReferencia;
-  const divergem =
-    guardado !== null &&
-    r.precoEfetivo !== null &&
-    r.origemDoPreco !== "FICHA" &&
-    Math.abs(guardado - r.precoEfetivo) > 0.005;
-
   return (
     <>
       {r.precoEfetivo === null ? (
@@ -1269,9 +1578,10 @@ function PrecoDeReferencia({ resolvido: r }: { resolvido: ItemResolvido }) {
           </span>
         </span>
       )}
-      {divergem ? (
+      {r.precoMudou && r.precoAtual !== null ? (
         <span className="mt-1 block text-[0.75rem] leading-snug text-[#8a6d1f]">
-          a ficha guardou {dinheiro(guardado)}
+          {r.precoAtual > (r.precoEfetivo ?? 0) ? "subiu" : "caiu"} para{" "}
+          {dinheiro(r.precoAtual)}
         </span>
       ) : null}
     </>
@@ -2404,16 +2714,37 @@ function Passos({ passos }: { passos: readonly string[] }) {
  * Acontece com endereço antigo ou digitado à mão. Não é `notFound()` porque
  * este componente é de cliente — o cliente enxerga o cenário E a sessão, então
  * é ele que sabe dizer se a ficha existe.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ DUAS AUSÊNCIAS, E UMA FRASE PARA CADA                               │
+ * │                                                                      │
+ * │ "Não está no acervo" e "você acabou de excluí-la" são coisas          │
+ * │ diferentes para quem lê. A primeira manda procurar o endereço; a      │
+ * │ segunda confirma que o botão funcionou — e sem essa confirmação a     │
+ * │ exclusão fica com cara de erro, porque a tela muda de página sem      │
+ * │ dizer que a mudança foi pedida.                                      │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
-function NaoEncontrada() {
+function NaoEncontrada({ excluida = false }: { excluida?: boolean }) {
   return (
     <div className="rounded-[var(--raio)] border border-dashed border-[var(--linha-forte)] bg-[rgba(242,236,226,0.45)] px-6 py-10">
       <p className="text-[0.6875rem] font-semibold tracking-[0.16em] text-[var(--tinta-fraca)] uppercase">
-        Ficha não encontrada
+        {excluida ? "Ficha excluída" : "Ficha não encontrada"}
       </p>
       <p className="mt-2 max-w-[60ch] text-[0.9375rem] leading-relaxed text-[var(--tinta-suave)]">
-        Esta ficha não está no acervo. Ela pode ter sido removida, ou o endereço
-        pode estar incompleto.
+        {excluida ? (
+          <>
+            Esta ficha saiu do acervo nesta sessão. O cadastro dos ingredientes
+            dela não foi tocado — eles continuam na biblioteca, com o preço de
+            sempre. Recarregar a página devolve a ficha ao estado inicial, como
+            tudo o que muda sem banco.
+          </>
+        ) : (
+          <>
+            Esta ficha não está no acervo. Ela pode ter sido removida, ou o
+            endereço pode estar incompleto.
+          </>
+        )}
       </p>
       <div className="mt-4 flex flex-wrap gap-3">
         <BotaoLink href="/fichas" variante="secundario" tamanho="sm">

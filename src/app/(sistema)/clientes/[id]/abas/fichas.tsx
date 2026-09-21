@@ -24,10 +24,9 @@ import type {
   IngredienteDoCliente,
 } from "@/lib/dados";
 import {
+  acervoDeFichas,
   estadoDePrecoDaBiblioteca,
-  fichaDaSessao,
   fichaDaSessaoNova,
-  fichasDaSessao,
   ingredientesDaSessao,
   precosDeClienteDaSessao,
 } from "@/lib/dados/demonstracao";
@@ -128,21 +127,20 @@ export function AbaFichas({
     return mapa;
   }, [precosDoCliente, cliente.id, insumos]);
 
-  /* O acervo deste cliente: as fichas do cenário com as alterações da sessão
-     aplicadas, mais as criadas agora — que já nascem com o `clienteId` dele,
-     então entram naturalmente na mesma lista. */
-  const doCliente = useMemo(() => {
-    const novas = fichasDaSessao().filter((f) => f.clienteId === cliente.id);
-    const idsNovas = new Set(novas.map((f) => f.id));
+  /*
+    O acervo deste cliente: as fichas do cenário com as alterações da sessão
+    aplicadas, mais as criadas agora — que já nascem com o `clienteId` dele,
+    então entram naturalmente na mesma lista.
 
-    const doCenarioAjustado = fichas
-      .filter((f) => !idsNovas.has(f.id))
-      .map((f) => fichaDaSessao(f));
-
-    return [...novas, ...doCenarioAjustado].sort(
-      (a, b) => b.atualizadaEm.getTime() - a.atualizadaEm.getTime()
-    );
-  }, [fichas, cliente.id]);
+    `fichasVisiveis` tira as excluídas. Sem ele, uma ficha apagada na tela
+    dela continuaria aqui: esta aba remonta a lista do cenário, e o cenário
+    não sabe do que foi apagado. É o mesmo defeito que a lista de fichas
+    tinha — e é por isso que os dois passam pela mesma função.
+  */
+  const doCliente = useMemo(
+    () => acervoDeFichas(fichas, cliente.id),
+    [fichas, cliente.id]
+  );
 
   const contagem = useMemo(() => contarFichas(doCliente), [doCliente]);
 

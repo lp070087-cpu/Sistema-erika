@@ -28,6 +28,10 @@ import type {
 } from "@/lib/dados";
 import {
   estadoDePrecoDaBiblioteca,
+  fichaDaSessao,
+  fichaFoiExcluida,
+  fichasDaSessao,
+  ingredienteArquivado,
   ingredienteDaSessao,
   ingredientesDaSessao,
   insumoFoiExcluido,
@@ -169,6 +173,56 @@ export type PrecoDeCliente = {
   };
 };
 
+/**
+ * O CLIENTE DE UMA FICHA QUE NÃO TEM CLIENTE.
+ *
+ * O `Ficha.clienteId` admite `""` — é assim que este domínio declara "sem
+ * cliente vinculado", e a ficha técnica importada de um PDF solto nasce
+ * assim. O `FichaDoIngrediente` pede um `Cliente` inteiro, e uma ficha sem
+ * cliente não tem um.
+ *
+ * O `id` VAZIO é a parte que importa: a lista de dependências liga o nome do
+ * cliente à tela dele, e um id inventado mandaria a Érika para uma página de
+ * cliente que não existe — pior do que não ter ligação nenhuma. Com `id: ""`
+ * o código da lista sabe que não há para onde ir e escreve o texto puro.
+ *
+ * ── OS DEMAIS CAMPOS SÃO PREENCHIDOS, E NENHUM DELES É UM PALPITE ─────────
+ *
+ * `ClienteOperacao` é o cliente OPERACIONAL: ele carrega porte, cidade,
+ * situação, origem do lead. De uma ficha sem cliente, nada disso se sabe — e
+ * é justamente por isso que os valores abaixo são os VAZIOS de cada tipo, e
+ * não uma escolha plausível. O que a tela mostra deste objeto é só o
+ * `nomeFantasia`; tudo o mais existe para satisfazer o tipo, e nenhum leitor
+ * desta tela o consulta.
+ *
+ * Os dois campos de data recebem a ÉPOCA, e não `new Date()`: `agora`
+ * afirmaria que este cliente "iniciou hoje" e "teve atividade hoje". A época
+ * é a declaração de que a data não existe — e é o mesmo valor neutro que o
+ * resto do domínio usa quando não há o que dizer.
+ *
+ * Escolher "ATIVO"/"PEQUENO"/"BUFFET" aqui seria inventar um cliente que não
+ * existe. Se algum dia a tela precisar de um destes campos, o certo é a ficha
+ * exigir um cliente de verdade — e não este objeto responder por ela.
+ */
+const SEM_CLIENTE: Cliente = {
+  id: "",
+  nomeFantasia: "sem cliente vinculado",
+  nomeContato: "",
+  email: "",
+  whatsapp: "",
+  tipoNegocio: "OUTRO",
+  porte: "PEQUENO",
+  cidade: "",
+  situacao: "EM_IMPLANTACAO",
+  modalidade: "PRESENCIAL",
+  iniciadoEm: new Date(0),
+  ultimaAtividadeEm: new Date(0),
+  funcionariosDeclarados: "",
+  leadOrigemId: null,
+  origem: "MANUAL",
+  problemaDeclarado: "",
+};
+
 export function DetalheDoIngrediente({
   id,
   doCenario,
@@ -233,7 +287,77 @@ export function DetalheDoIngrediente({
           historico: estado.historico,
         };
 
-  const usos = doCenario?.usos ?? [];
+  /*
+    ── OS USOS QUE EXISTEM AGORA ───────────────────────────────────────────
+
+    `usos` vem do cenário que o servidor leu — e o cenário não sabe nem que
+    uma ficha foi apagada, nem que uma ficha foi CRIADA nesta sessão. Três
+    correções acontecem aqui:
+
+    1. Ficha apagada sai da lista. Sem isso, excluir uma ficha e depois abrir o
+       insumo mostraria "em uso em 1 ficha" apontando para uma ficha que não
+       abre mais — um bloqueio causado por algo que já não existe.
+
+    2. A ficha entra como `fichaDaSessao`, com o nome que ela tem hoje. Se a
+       Érika renomeou a ficha, a lista de dependências precisa dizer o nome
+       novo; o antigo mandaria procurar por um nome que não está em lugar
+       nenhum.
+
+    3. ── AS FICHAS CRIADAS AGORA ENTRAM ────────────────────────────────────
+       Esta é a correção que faltava, e ela fecha um furo grave, e do tipo
+       errado: o que o briefing proíbe com todas as letras.
+
+       O `usos` do servidor é a resposta de ONTEM. Se a Érika cria uma ficha
+       usando este insumo e depois abre o insumo, a tela diria "nenhuma ficha
+       usa este insumo ainda" e o botão de excluir continuaria habilitado.
+       Excluir apagaria o insumo — e a ficha que ela acabou de montar ficaria
+       sem custo, EM SILÊNCIO. Abriria normalmente, com a linha do insumo
+       zerada, e nada na tela diria por quê.
+
+       É o caso exato de "não deixar ficha silenciosamente sem custo": a
+       contagem de dependências é o que IMPEDE a exclusão, e uma contagem que
+       ignora a sessão não impede nada do que foi criado nela.
+
+       O `cliente` sai do cenário quando ele é conhecido, porque o `Ficha` só
+       guarda o `clienteId`. O que não for encontrado — uma ficha sem cliente,
+       ou de um cliente que o cenário não tem — cai no rótulo neutro, que é a
+       verdade e não um palpite.
+  */
+  const usosDoCenario = (doCenario?.usos ?? []).filter((u) => !fichaFoiExcluida(u.ficha.id));
+  const idsJaContados = new Set(usosDoCenario.map((u) => u.ficha.id));
+
+  const clientesConhecidos = new Map<string, Cliente>();
+  for (const u of usosDoCenario) clientesConhecidos.set(u.cliente.id, u.cliente);
+  for (const u of doCenario?.precosDeClientes ?? []) clientesConhecidos.set(u.cliente.id, u.cliente);
+
+  const usosDaSessao: UsoDoIngrediente[] = fichasDaSessao()
+    .filter((f) => !idsJaContados.has(f.id))
+    .flatMap((f) =>
+      f.itens
+        .filter((item) => item.ingredienteId === id)
+        .map((item) => ({
+          ficha: f,
+          cliente: clientesConhecidos.get(f.clienteId) ?? SEM_CLIENTE,
+          item,
+        }))
+    );
+
+  const usos = [...usosDoCenario, ...usosDaSessao];
+
+  /*
+    ESTA LINHA INTEIRA É O QUE IMPEDE A EXCLUSÃO DE UM INSUMO EM USO.
+
+    A contagem de fichas seria uma mentira de uma casa decimal: uma ficha pode
+    usar o mesmo insumo em duas linhas — a batata do recheio e a do
+    acompanhamento. Contar `usos` mostraria "2", e o aviso falaria em duas
+    fichas; a lista mostraria as duas linhas da MESMA ficha. O número tem de
+    ser de fichas DISTINTAS, porque é isso que a frase promete.
+
+    O conjunto é das chaves, então a primeira aparição de cada ficha decide a
+    ordem — que continua sendo a do servidor.
+  */
+  const usosDaTela = usos.map((u) => ({ ...u, ficha: fichaDaSessao(u.ficha) }));
+  const fichasEnvolvidas = [...new Set(usosDaTela.map((u) => u.ficha.id))].length;
   const precosDeClientes = doCenario?.precosDeClientes ?? [];
 
   /*
@@ -340,6 +464,15 @@ export function DetalheDoIngrediente({
             {daSessao !== null ? (
               <Etiqueta tom="dourado">cadastrado nesta sessão</Etiqueta>
             ) : null}
+            {/*
+              O ESTADO ARQUIVADO PRECISA SER VISÍVEL NO CABEÇALHO, e não só
+              dentro da gaveta de edição. Quem abre este insumo pela ficha que
+              o usa precisa entender, sem abrir nada, por que ele não aparece
+              na biblioteca. A resposta tem de estar na primeira dobra.
+            */}
+            {ingredienteArquivado(id) ? (
+              <Etiqueta tom="neutro">arquivado</Etiqueta>
+            ) : null}
           </h1>
           <p className="mt-2 max-w-[70ch] text-[0.9375rem] leading-relaxed text-[var(--tinta-suave)]">
             {ingrediente.precoAtual === null
@@ -360,7 +493,11 @@ export function DetalheDoIngrediente({
             muda o insumo, a segunda muda o que ele custa a partir de hoje.
             Empilhá-las na mesma linha faria parecer que são a mesma coisa.
           */}
-          <IdentidadeDoInsumo ingrediente={ingredienteComPesagens} />
+          <IdentidadeDoInsumo
+            ingrediente={ingredienteComPesagens}
+            emUso={usosDaTela}
+            arquivado={ingredienteArquivado(id)}
+          />
           <EditorDePreco
             ingrediente={ingrediente}
             precoVigente={ingrediente.precoAtual}
@@ -590,11 +727,11 @@ export function DetalheDoIngrediente({
 
       {/* ═══ 3. ONDE ESTE INSUMO ENTRA ═════════════════════════════════════ */}
       <Secao
-        rotulo={`${usos.length} ${usos.length === 1 ? "ficha" : "fichas"}`}
+        rotulo={`${fichasEnvolvidas} ${fichasEnvolvidas === 1 ? "ficha" : "fichas"}`}
         titulo="Onde este insumo entra"
         descricao="Cada ficha guarda o preço de referência do dia em que foi escrita, além da quantidade e da etapa em que ela foi pesada."
       >
-        {usos.length === 0 ? (
+        {usosDaTela.length === 0 ? (
           <p className="text-[0.875rem] leading-relaxed text-[var(--tinta-suave)]">
             {daSessao !== null
               ? "Nenhuma ficha usa este insumo ainda — ele acabou de ser cadastrado. Ao escolhê-lo numa ficha, ele aparece aqui."
@@ -602,8 +739,8 @@ export function DetalheDoIngrediente({
           </p>
         ) : (
           <ul className="divide-y divide-[var(--linha)]">
-            {usos.map(({ ficha, cliente, item }) => (
-              <li key={ficha.id} className="py-3.5 first:pt-0 last:pb-0">
+            {usosDaTela.map(({ ficha, cliente, item }, indice) => (
+              <li key={`${ficha.id}-${indice}`} className="py-3.5 first:pt-0 last:pb-0">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5">
                   <div className="min-w-0">
                     <Link
@@ -613,9 +750,13 @@ export function DetalheDoIngrediente({
                       {ficha.nome}
                     </Link>
                     <span className="mt-0.5 block text-[0.8125rem] text-[var(--tinta-fraca)]">
-                      <Link href={`/clientes/${cliente.id}`} className="hover:text-tinta">
-                        {cliente.nomeFantasia}
-                      </Link>{" "}
+                      {cliente.id === "" ? (
+                        cliente.nomeFantasia
+                      ) : (
+                        <Link href={`/clientes/${cliente.id}`} className="hover:text-tinta">
+                          {cliente.nomeFantasia}
+                        </Link>
+                      )}{" "}
                       ·{" "}
                       <span className="tabular">
                         {item.quantidade} {item.unidade}

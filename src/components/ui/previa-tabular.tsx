@@ -1156,17 +1156,74 @@ function Celula({
   const campo = useRef<HTMLInputElement>(null);
 
   /*
-    O FOCO É DADO QUANDO A CÉLULA ABRE, e por efeito — não por `autoFocus`.
+    COMO A EDIÇÃO FOI ABERTA — e isto decide o que acontece com o texto que já
+    estava na célula.
 
-    `autoFocus` dispara na MONTAGEM do elemento, e o elemento já existe desde
-    sempre: o que muda é ele passar a ser um input. Sem este efeito, a célula
-    abriria para digitação e o teclado continuaria no corpo da página.
+    Duas portas levam à mesma edição, e no Excel elas fazem coisas diferentes:
+    o clique SUBSTITUI (quer digitar por cima) e o F2/Enter EDITA NO LUGAR (quer
+    corrigir uma letra). Tratar as duas igual faria a segunda apagar o valor que
+    ela abriu justamente para corrigir.
+  */
+  const [substituir, definirSubstituir] = useState(true);
+
+  const editando = digitando !== null;
+
+  /*
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │ A DEPENDÊNCIA DESTE EFEITO ERA `digitando` — E ISSO QUEBRAVA A        │
+    │ DIGITAÇÃO INTEIRA.                                                    │
+    │                                                                      │
+    │ `digitando` é o TEXTO da célula. Ele muda a cada tecla: "" → "B" →    │
+    │ "BA" → "BAT". Com ele na lista de dependências, o efeito rodava a     │
+    │ cada caractere — e o efeito faz `focus()` e `select()`.               │
+    │                                                                      │
+    │ O resultado era o defeito relatado, e ele é exatamente este:          │
+    │                                                                      │
+    │   digita "B"  → o valor vira "B", o efeito roda, `.select()` marca    │
+    │                 todo o "B"                                            │
+    │   digita "A"  → o navegador SUBSTITUI a seleção: o valor vira "A", e   │
+    │                 o "B" some                                            │
+    │   digita "T"  → idem. O valor vira "T".                               │
+    │                                                                      │
+    │ Ou seja: nunca dava para escrever BATATA — só se escrevia UMA letra,   │
+    │ sempre a última. Foi provado por execução: com a dependência antiga,   │
+    │ escrever B-A-T-A-T-A produz o texto "A".                              │
+    │                                                                      │
+    │ Não era lentidão, não era o `onChange`, não era o pai re-renderizando  │
+    │ nem a chave do React: era este efeito, que existe para ABRIR a edição, │
+    │ reabrindo-a a cada tecla.                                            │
+    │                                                                      │
+    │ A dependência certa é a PERGUNTA "está editando?", e não o conteúdo.  │
+    │ Ela só muda duas vezes por sessão de edição — ao abrir e ao fechar.    │
+    │                                                                      │
+    │ ┌──────────────────────────────────────────────────────────────────┐ │
+    │ │ E O `.select()` NÃO SAIU: ELE VIROU CONDICIONAL.                 │ │
+    │ │                                                                  │ │
+    │ │ Tirá-lo faria o clique deixar de substituir, e quem clica numa     │ │
+    │ │ célula com "BATATA" e digita "CEBOLA" passaria a escrever          │ │
+    │ │ "BATATACEBOLA". O gesto de substituir é de planilha, e é o certo    │ │
+    │ │ para quem clicou.                                                 │ │
+    │ │                                                                  │ │
+    │ │ Quem quer CORRIGIR usa F2 ou Enter: aí o cursor vai para o fim do  │ │
+    │ │ texto, sem selecionar nada, e dá para acrescentar uma letra.       │ │
+    │ │ É a mesma divisão do Excel, e é o que o briefing pede quando diz   │ │
+    │ │ "NÃO selecionar todo o texto novamente".                          │ │
+    │ └──────────────────────────────────────────────────────────────────┘ │
+    └──────────────────────────────────────────────────────────────────────┘
   */
   useEffect(() => {
-    if (digitando === null) return;
-    campo.current?.focus();
-    campo.current?.select();
-  }, [digitando]);
+    if (!editando) return;
+    const campoAtual = campo.current;
+    if (!campoAtual) return;
+
+    campoAtual.focus();
+    if (substituir) {
+      campoAtual.select();
+    } else {
+      const fim = campoAtual.value.length;
+      campoAtual.setSelectionRange(fim, fim);
+    }
+  }, [editando, substituir]);
 
   const exibicao = textoDaCelula(ausente(celula), coluna.formato);
 
@@ -1179,6 +1236,12 @@ function Celula({
         : String(celula);
 
   /** O que se digitou vira número quando a coluna é numérica e o texto é número. */
+  /** Abre a edição. `porCima` é o clique (substitui); `noLugar` é F2/Enter. */
+  function abrirEdicao(porCima: boolean) {
+    definirSubstituir(porCima);
+    definirDigitando(valorCru);
+  }
+
   function interpretar(texto: string): CelulaGrade {
     const limpo = texto.trim();
     if (limpo === "") return null;
@@ -1275,6 +1338,20 @@ function Celula({
           value={digitando}
           onChange={(e) => definirDigitando(e.target.value)}
           /*
+            ESTE ATRIBUTO É O QUE DIZ AO AMBIENTE QUE UMA CÉLULA ESTÁ ABERTA.
+
+            Enquanto ela digita, o Ctrl+Z é do NAVEGADOR — desfaz o texto que
+            está no campo, que é o que se espera de um campo de texto. O
+            desfazer da PLANILHA só faz sentido depois que a edição foi
+            confirmada, porque é aí que a operação entra no histórico.
+
+            O ambiente lê este atributo no ouvinte de teclado (ver `ambiente.tsx`)
+            em vez de manter um estado paralelo de "tem alguém digitando": quem
+            sabe a verdade é o DOM, e perguntar a ele é uma resposta só, sempre
+            atual.
+          */
+          data-celula-aberta
+          /*
             A NAVEGAÇÃO É A DO EXCEL, e é a razão de isto ser um input e não
             um campo de formulário: `Enter` desce, `Tab` anda para o lado,
             `Escape` desfaz. Quem usa planilha há vinte anos tem esses três
@@ -1329,12 +1406,12 @@ function Celula({
       title={tituloDaCelula(false)}
       onClick={() => {
         onSelecionar();
-        definirDigitando(valorCru);
+        abrirEdicao(true);
       }}
       onKeyDown={(e) => {
         if (e.key !== "Enter" && e.key !== "F2") return;
         e.preventDefault();
-        definirDigitando(valorCru);
+        abrirEdicao(false);
       }}
     >
       {exibicao === "—" ? <span className="text-[var(--tinta-fraca)]">—</span> : exibicao}

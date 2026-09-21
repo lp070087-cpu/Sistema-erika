@@ -48,11 +48,30 @@
 
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/*
+  ── O COMPILADOR É CHAMADO PELO NODE, E NUNCA PELO `.cmd` ────────────────────
+
+  `require.resolve` acha o pacote pelo `package.json`, de dentro para fora:
+  subindo de `scripts/` até a pasta que tem `node_modules`. Nenhum caminho
+  escrito à mão, e um workspace continua funcionando.
+
+  O comando é `process.execPath node_modules/typescript/bin/tsc -p <projeto>`:
+  caminhos de arquivo reais, o mesmo no Windows e no Linux — sem ramo por
+  plataforma para divergir depois. O `bin/tsc` não tem extensão nem shebang
+  (começa com `require`), e é por isso que o Node o executa diretamente.
+*/
+const TSC = join(
+  dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
+  "bin",
+  "tsc"
+);
 const manter = process.argv.includes("--manter");
 const pasta = join(tmpdir(), `erika-rendimento-${process.pid}`);
 
@@ -106,22 +125,26 @@ function compilar() {
   );
 
   /*
-    `tsc` é o compilador que já está em `node_modules`. `execFileSync` com o
-    caminho absoluto do binário evita depender de PATH, e o `.cmd` é o que o
-    Windows usa — por isso o `shell: true` fica desligado e o binário escolhido
-    por plataforma.
-  */
-  const tsc = join(
-    raiz,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? "tsc.cmd" : "tsc"
-  );
+    ── O COMPILADOR É CHAMADO PELO NODE, E NUNCA PELO `.cmd` ────────────────
 
-  execFileSync(tsc, ["-p", "tsconfig.json"], {
+    Aqui havia `node_modules/.bin/tsc.cmd` com `shell: true` no Windows — e o
+    comentário antigo dizia que o shell ficava DESLIGADO, o que não era
+    verdade: ele estava ligado justamente ali.
+
+    O `shell: true` funcionava, mas pelo motivo errado. Ele entrega a linha ao
+    `cmd.exe`, que reinterpreta os argumentos uma segunda vez; o `.bin/tsc` do
+    Windows ainda monta o comando por conta própria, lendo `%*`. São duas
+    camadas de citação sobre um caminho que tem espaço ("Desktop\Economia" não
+    tem, mas `C:\Users\…` e qualquer pasta com acento têm). Passava por sorte
+    de que este caminho não tem esses caracteres — não por construção.
+
+    A chamada direta do arquivo JS não tem camada nenhuma: os três argumentos
+    são caminhos de arquivo reais, e o `EINVAL` que o `spawnSync` dava com o
+    `.cmd` não acontece. É o mesmo caminho no Windows e no Linux.
+  */
+  execFileSync(process.execPath, [TSC, "-p", "tsconfig.json"], {
     cwd: pasta,
     stdio: ["ignore", "pipe", "pipe"],
-    shell: process.platform === "win32",
   });
 }
 

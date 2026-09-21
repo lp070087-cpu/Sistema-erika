@@ -12,9 +12,13 @@ import { dataCurta, desdeQuando, valorEmReais } from "@/lib/dados";
 import type { Ingrediente, PrecoIngrediente } from "@/lib/dados";
 import {
   estadoDePrecoDaBiblioteca,
+  ingredienteArquivado,
   ingredientesDaSessao,
+  semArquivados,
+  semExcluidos,
 } from "@/lib/dados/demonstracao";
 import { NovoIngrediente } from "./novo";
+import { ComandoDeImportacao } from "../planilhas/importar-comando";
 
 /**
  * A BIBLIOTECA DE INGREDIENTES — a lista que responde ao que foi digitado.
@@ -130,10 +134,55 @@ export function ListaDeIngredientes({
         };
       });
 
-    return [...ingredientesDaSessao(), ...doCenarioAjustado].sort(
-      (a, b) => b.atualizadoEm.getTime() - a.atualizadoEm.getTime()
+    /*
+      ── DUAS LISTAS, DOIS ESTADOS, OS DOIS FILTROS ────────────────────────
+
+      Os dois `Set` do store são coisas diferentes, e cada um responde a uma
+      pergunta:
+
+        `semExcluidos` — o insumo apagado nesta sessão não pode reaparecer. O
+          cenário vem do servidor e continuaria trazendo a linha dele; sem
+          este filtro, a biblioteca mostraria um insumo que a seção de
+          exclusão acabou de dizer que não existe.
+
+        `semArquivados` — o arquivado SAI das listas, e é isso que arquivar
+          promete. Ele continua existindo e continua sendo lido pela ficha que
+          o usa; o que ele perde é o lugar na biblioteca, que é a lista do que
+          está à mão agora.
+
+      A ordenação vem ANTES dos filtros porque os dois devolvem lista nova e
+      somente leitura. Filtrar não reordena — então ordenar primeiro dá
+      exatamente a mesma sequência, e evita copiar o array só para poder
+      chamar `.sort()`.
+    */
+    return semArquivados(
+      semExcluidos(
+        [...ingredientesDaSessao(), ...doCenarioAjustado].sort(
+          (a, b) => b.atualizadoEm.getTime() - a.atualizadoEm.getTime()
+        )
+      )
     );
   }, [doCenario]);
+
+  /*
+    ── QUANTOS SAÍRAM DE CIRCULAÇÃO ────────────────────────────────────────
+
+    O arquivado não aparece na lista — é o que arquivar significa. Só que uma
+    lista que simplesmente não o mostra é indistinguível de uma lista que o
+    perdeu: quem arquivou ontem e voltou hoje não tem como saber se ele está
+    guardado ou se foi apagado por engano.
+
+    A contagem sobre as DUAS fontes (sessão e cenário, sem os excluídos) é a
+    resposta. Não há tela de arquivados nesta rodada — mas há o número, que é
+    o suficiente para diferenciar "guardado" de "sumido".
+  */
+  const quantosArquivados = useMemo(
+    () =>
+      [...ingredientesDaSessao(), ...doCenario].filter((i) =>
+        ingredienteArquivado(i.id)
+      ).length,
+    [doCenario]
+  );
 
   const categorias = useMemo(
     () =>
@@ -252,7 +301,29 @@ export function ListaDeIngredientes({
       rotulo={`${filtrados.length} de ${visiveis.length}`}
       titulo="Insumos"
       descricao="Ordenados pelo mais recentemente atualizado. A biblioteca é compartilhada entre clientes: o mesmo insumo tem um preço de referência, com a data em que passou a valer — e cada cliente pode ter um preço próprio, que fica na ficha dele."
-      acoes={<NovoIngrediente categorias={categorias} />}
+      acoes={
+        <>
+          {/*
+            IMPORTAR INGREDIENTES — a mesma esteira da Central, com o contexto
+            dito na URL.
+
+            Não é um sistema de importação novo: é o mesmo botão, o mesmo menu
+            de quatro portas e a mesma conferência. O que muda é `destino`, que
+            chega já com "Adicionar a ingredientes" escolhido — e o briefing
+            pede exatamente isso: contexto pré-seleciona, conferência continua.
+
+            `clienteId` sai vazio porque esta tela não tem cliente: a
+            biblioteca de insumos é compartilhada. Insumo importado por aqui
+            não vira preço de cliente nenhum.
+          */}
+          <ComandoDeImportacao
+            clienteId=""
+            destino="ingredientes"
+            rotulo="Importar ingredientes"
+          />
+          <NovoIngrediente categorias={categorias} />
+        </>
+      }
     >
       <BarraFiltros
         base="/ingredientes"
@@ -291,6 +362,13 @@ export function ListaDeIngredientes({
         ele é o que faz o filtro sobreviver a um recarregamento.
       */}
       <div className="mt-5">
+        {quantosArquivados > 0 ? (
+          <p className="mb-4 text-[0.8125rem] leading-relaxed text-[var(--tinta-fraca)]">
+            {quantosArquivados === 1
+              ? "1 insumo está arquivado e por isso não aparece aqui. As fichas que já o usam continuam abrindo normalmente."
+              : `${quantosArquivados} insumos estão arquivados e por isso não aparecem aqui. As fichas que já os usam continuam abrindo normalmente.`}
+          </p>
+        ) : null}
         <ListaResponsiva
           itens={filtrados}
           colunas={colunas}

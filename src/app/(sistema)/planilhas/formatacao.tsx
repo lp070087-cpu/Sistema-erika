@@ -34,17 +34,27 @@ import type { AlinhamentoGrade, EstiloGrade, FormatoGrade } from "@/lib/planilha
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │ O QUE NÃO TEM AQUI, E POR QUE                                        │
  * │                                                                      │
- * │ Não há "desfazer". A marcação é um mapa em memória, e desfazer exigiria │
- * │ uma pilha de estados — uma peça que não cabe nesta rodada e que, feita  │
- * │ pela metade, seria pior que a ausência. O que existe é o caminho de     │
- * │ volta: pintar de novo, ou "limpar" a seleção, que devolve a célula ao   │
- * │ estilo do modelo.                                                      │
- * │                                                                      │
  * │ Não há "aplicar a um intervalo" — o briefing o lista como futuro, e     │
  * │ implementá-lo agora exigiria seleção por arrasto, que é um gesto        │
  * │ inteiro por si só. Hoje a seleção é uma célula ou uma linha, e as duas  │
  * │ cobrem os gestos que o briefing descreve: "marcar uma linha de          │
  * │ amarelo" e "destacar subtotal".                                        │
+ * │                                                                      │
+ * │ ┌──────────────────────────────────────────────────────────────────┐ │
+ * │ │ O DESFAZER EXISTE, E NÃO É AQUI.                                  │ │
+ * │ │                                                                  │ │
+ * │ │ Este parágrafo dizia que não havia desfazer, "porque a marcação   │ │
+ * │ │ é um mapa em memória e desfazer exigiria uma pilha de estados".    │ │
+ * │ │ A primeira metade continua verdadeira e a conclusão ficou velha:   │ │
+ * │ │ a pilha foi construída, e ela está em `historico-edicao.ts`.       │ │
+ * │ │                                                                  │ │
+ * │ │ O que isso muda AQUI é que pintar e limpar já não são operações    │ │
+ * │ │ soltas — elas passam pelo mesmo `operar()` que a edição de célula, │ │
+ * │ │ e por isso o Ctrl+Z desfaz uma marcação exatamente como desfaz um   │ │
+ * │ │ número digitado. A nota estava mentindo por omissão desde a rodada │ │
+ * │ │ anterior, e comentário errado é pior que comentário nenhum: quem    │ │
+ * │ │ ler este arquivo concluiria que precisa inventar a pilha.          │ │
+ * │ └──────────────────────────────────────────────────────────────────┘ │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 

@@ -26,14 +26,14 @@ import type {
   SituacaoFicha,
 } from "@/lib/dados";
 import {
+  acervoDeFichas,
   estadoDePrecoDaBiblioteca,
-  fichaDaSessao,
   fichaDaSessaoNova,
-  fichasDaSessao,
   ingredientesDaSessao,
   precosDeClienteDaSessao,
 } from "@/lib/dados/demonstracao";
 import { NovaFicha } from "./nova";
+import { ComandoDeImportacao } from "../planilhas/importar-comando";
 
 /**
  * O ACERVO DE FICHAS — a lista que responde ao que foi criado e editado.
@@ -165,19 +165,25 @@ export function AcervoDeFichas({
     As fichas criadas nesta sessão entram no topo; as alteradas substituem a
     versão do cenário. `fichaDaSessao` aplica a mesma regra de mesclagem que
     a tela da ficha usa — itens substituem, cabeçalho mescla.
+
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ POR QUE `fichasVisiveis`, E NÃO UM FILTRO ESCRITO AQUI           │
+    │                                                                  │
+    │ Sem ele, EXCLUIR NÃO FAZIA NADA VISÍVEL. O store anotava a       │
+    │ exclusão, a tela navegava para cá — e a ficha reaparecia na      │
+    │ lista, porque este `useMemo` remontava o acervo do cenário sem    │
+    │ consultar quem tinha sido apagado. A consultora excluía, via a    │
+    │ ficha de volta, e concluía que o botão não funcionava.           │
+    │                                                                  │
+    │ A função já existia no store e não tinha nenhum chamador. Uma     │
+    │ segunda cópia da regra aqui — uma a mais para manter em sincronia │
+    │ com a ficha do cliente — seria o próximo lugar a divergir.        │
+    └──────────────────────────────────────────────────────────────────┘
   */
-  const acervo = useMemo(() => {
-    const novas = fichasDaSessao();
-    const idsNovas = new Set(novas.map((f) => f.id));
-
-    const doCenarioAjustado = doCenario.fichas
-      .filter((f) => !idsNovas.has(f.id))
-      .map((f) => fichaDaSessao(f));
-
-    return [...novas, ...doCenarioAjustado].sort(
-      (a, b) => b.atualizadaEm.getTime() - a.atualizadaEm.getTime()
-    );
-  }, [doCenario.fichas]);
+  const acervo = useMemo(
+    () => acervoDeFichas(doCenario.fichas),
+    [doCenario.fichas]
+  );
 
   const clientePorId = useMemo(
     () => new Map(doCenario.clientes.map((c) => [c.id, c])),
@@ -384,7 +390,21 @@ export function AcervoDeFichas({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {/*
+          IMPORTAR FICHA — a mesma esteira, com "Criar ficha técnica" já
+          escolhido no destino.
+
+          O briefing pede a pré-seleção por contexto, e aqui isso quer dizer
+          que quem chega pelo acervo provavelmente quer uma FICHA — não uma
+          planilha nem uma lista de insumos. Mas a conferência continua sendo
+          a mesma tela, com as três opções visíveis: se o documento for, na
+          verdade, uma lista de compras, ela troca o destino ali mesmo.
+
+          `clienteId` sai vazio porque o acervo é de todos os clientes: quem
+          importa escolhe o cliente na conferência, quando houver um.
+        */}
+        <ComandoDeImportacao clienteId="" destino="ficha" rotulo="Importar ficha" />
         <NovaFicha
           clientes={doCenario.clientes.map((c) => ({ id: c.id, nome: c.nomeFantasia }))}
           ingredientes={[...insumos.values()]}

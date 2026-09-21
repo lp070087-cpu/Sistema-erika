@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { agruparResultados, buscar, ROTULO_TIPO_BUSCA } from "@/lib/dados/busca";
 import type { ItemBusca, ResultadoBusca } from "@/lib/dados/busca";
+import { insumoForaDaBiblioteca } from "@/lib/dados/demonstracao";
+import { useDemonstracao } from "@/components/ui/use-demonstracao";
 
 /**
  * BUSCA GLOBAL.
@@ -30,6 +32,16 @@ import type { ItemBusca, ResultadoBusca } from "@/lib/dados/busca";
  */
 
 export function BuscaGlobal({ itens }: { itens: readonly ItemBusca[] }) {
+  /*
+    ── A BUSCA TAMBÉM ASSINA O STORE ──────────────────────────────────────
+
+    Sem esta linha, arquivar um insumo nesta sessão não mudaria nada aqui: o
+    `useMemo` continuaria com a lista de antes, e o Ctrl+K seguiria achando o
+    insumo que acabou de sair de circulação. O gancho devolve só um número —
+    a versão —, e é isso que faz o `disponiveis` abaixo recalcular.
+  */
+  useDemonstracao();
+
   const [aberta, setAberta] = useState(false);
   const [termo, setTermo] = useState("");
   const [ativo, setAtivo] = useState(0);
@@ -39,7 +51,29 @@ export function BuscaGlobal({ itens }: { itens: readonly ItemBusca[] }) {
   const campo = useRef<HTMLInputElement>(null);
   const caixa = useRef<HTMLDivElement>(null);
 
-  const resultados = useMemo(() => buscar(itens, termo, 12), [itens, termo]);
+  /*
+    ── A BUSCA NÃO DEVE ENCONTRAR O QUE SAIU DA BIBLIOTECA ─────────────────
+
+    O texto do bloco de arquivamento promete que o insumo arquivado "sai das
+    listas e das buscas". Sem este filtro a promessa seria falsa: o índice
+    chega pronto do servidor, que não sabe o que foi arquivado nesta sessão,
+    e o Ctrl+K continuaria achando o insumo pelo nome — entregando um caminho
+    para uma tela que a lista já não oferece.
+
+    O id do índice é PREFIXADO (`ingrediente:in_7`), então o prefixo é
+    separado antes de perguntar. Quem responde é `insumoForaDaBiblioteca`, e
+    não uma segunda regra escrita aqui: a decisão de negócio é uma só.
+  */
+  const disponiveis = useMemo(
+    () =>
+      itens.filter((i) => {
+        if (!i.id.startsWith("ingrediente:")) return true;
+        return !insumoForaDaBiblioteca(i.id.slice("ingrediente:".length));
+      }),
+    [itens]
+  );
+
+  const resultados = useMemo(() => buscar(disponiveis, termo, 12), [disponiveis, termo]);
   const grupos = useMemo(() => agruparResultados(resultados), [resultados]);
 
   // Lista achatada na MESMA ordem dos grupos — é ela que as setas percorrem.
