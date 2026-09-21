@@ -3,7 +3,7 @@ import { Etiqueta } from "@/components/ui/indicador";
 import { Aviso, Secao } from "@/components/ui/superficie";
 import { ROTULO_ESTADO_MODELO, TOM_ESTADO_MODELO } from "@/lib/planilhas/estado";
 import { MODELOS } from "@/lib/planilhas/modelos";
-import { BotaoGerarPlanilha } from "./gerar";
+import { BotaoExportarXlsx } from "./gerar";
 
 /**
  * "DOCUMENTOS E PLANILHAS" — a seção que aparece na ficha do cliente.
@@ -25,7 +25,7 @@ import { BotaoGerarPlanilha } from "./gerar";
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │ ESTA SEÇÃO NÃO TEM GERADOR PRÓPRIO                                   │
  * │                                                                      │
- * │ Ela reaproveita `BotaoGerarPlanilha`, que é o mesmo componente da     │
+ * │ Ela reaproveita `BotaoExportarXlsx`, que é o mesmo componente da      │
  * │ Central de Planilhas, apontando para a mesma rota. Zero lógica        │
  * │ duplicada: se a geração mudar de biblioteca, muda num arquivo só, e   │
  * │ esta seção passa a se comportar diferente sem ninguém tocar nela.     │
@@ -51,7 +51,7 @@ export function CartaoPlanilhasDoCliente({
   return (
     <Secao
       rotulo="Documentos e planilhas"
-      titulo="Gerar uma planilha deste cliente"
+      titulo="Exportar a planilha deste cliente"
       descricao="O arquivo sai com os dados deste cadastro, as tarefas em aberto e o histórico dos encontros. É um .xlsx de verdade, que abre no Excel."
       acoes={
         <Link
@@ -83,7 +83,7 @@ export function CartaoPlanilhasDoCliente({
               ) : null}
             </div>
 
-            <BotaoGerarPlanilha
+            <BotaoExportarXlsx
               modeloId={disponivel.id}
               clienteId={clienteId}
               consultoriaId={consultoriaId}

@@ -5,24 +5,42 @@ import { Botao } from "@/components/ui/botao";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * O BOTÃO QUE BAIXA O ARQUIVO DE VERDADE.
+ * O BOTÃO QUE BAIXA O ARQUIVO DE VERDADE — e ele é o SEGUNDO passo, não o
+ * primeiro.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ GERAR E EXPORTAR SÃO DUAS AÇÕES, E CONFUNDI-LAS CUSTAVA CARO          │
+ * │                                                                      │
+ * │ "Gerar planilha" baixava o .xlsx. O nome promete uma coisa e o botão  │
+ * │ entregava outra: quem clicasse esperando VER a planilha recebia um    │
+ * │ arquivo na pasta de downloads e nada na tela. E, com o nome "gerar",  │
+ * │ o download parecia o passo natural seguinte — quando ele é o ÚLTIMO.  │
+ * │                                                                      │
+ * │ O fluxo certo é o da planilha de sempre:                              │
+ * │                                                                      │
+ * │   dados confirmados → GERAR PLANILHA → ela aparece no editor →        │
+ * │   ela revisa e edita → salva → e SÓ QUANDO QUISER, EXPORTAR .xlsx     │
+ * │                                                                      │
+ * │ "Gerar" é montar a planilha DENTRO do sistema. "Exportar" é tirá-la   │
+ * │ daqui num arquivo. São verbos diferentes porque são momentos          │
+ * │ diferentes do trabalho, e quem decide o segundo momento é ela.        │
+ * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │ POR QUE ISTO É UM CLIENT COMPONENT, E O QUE ELE FAZ DE DIFERENTE      │
  * │                                                                      │
  * │ A rota `/api/planilhas/[modelo]` responde com os BYTES do .xlsx e os  │
- * │ cabeçalhos de download. Um `<a href>` comum já bastaria para baixar — │
- * │ e é o que a primeira versão fazia.                             │
+ * │ cabeçalhos de download. Um `<a href>` comum já bastaria para baixar.  │
  * │                                                                      │
- * │ O que o link não faz é CONTAR O QUE ESTÁ ACONTECENDO. Gerar uma       │
+ * │ O que o link não faz é CONTAR O QUE ESTÁ ACONTECENDO. Montar uma      │
  * │ planilha leva alguns segundos: o servidor lê os dados, monta o        │
- * │ arquivo e comprime. Num link comum, esse tempo é uma página parada   │
+ * │ arquivo e comprime. Num link comum, esse tempo é uma página parada    │
  * │ sem nenhum sinal — e a reação natural é clicar de novo, e de novo,    │
- * │ disparando três gerações e três downloads.                            │
+ * │ disparando três escritas.                                             │
  * │                                                                      │
  * │ Aqui o clique vira um `fetch`, o botão entra em estado de carregando  │
  * │ e desabilita, e a falha vira MENSAGEM em vez de uma aba em branco.    │
- * │ É a diferença entre "parece que travou" e "está gerando".             │
+ * │ É a diferença entre "parece que travou" e "está montando".            │
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
@@ -35,7 +53,7 @@ import { cn } from "@/lib/utils/cn";
  * │                                                                      │
  * │ O `URL.revokeObjectURL` no fim é OBRIGATÓRIO e é o passo que todo     │
  * │ mundo esquece: sem ele, o Blob fica na memória do navegador até a     │
- * │ aba fechar. Numa tela onde se geram planilhas repetidamente, isso     │
+ * │ aba fechar. Numa tela onde se exportam planilhas repetidamente, isso  │
  * │ vira vazamento — pequeno por arquivo, e acumulado ao longo do dia.    │
  * └──────────────────────────────────────────────────────────────────────┘
  */
@@ -101,7 +119,7 @@ async function leituraDoErro(resposta: Response): Promise<string> {
   }
 }
 
-export function BotaoGerarPlanilha({
+export function BotaoExportarXlsx({
   modeloId,
   clienteId,
   consultoriaId,
@@ -128,7 +146,7 @@ export function BotaoGerarPlanilha({
   */
   const gerando = useRef(false);
 
-  async function gerar() {
+  async function exportar() {
     if (gerando.current) return;
     gerando.current = true;
     definirEstado("gerando");
@@ -226,16 +244,24 @@ export function BotaoGerarPlanilha({
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <Botao
-        variante="primario"
+        variante="secundario"
         tamanho="sm"
-        onClick={gerar}
+        onClick={exportar}
         disabled={carregando}
         // `aria-busy` avisa o leitor de tela que a ação está em curso: sem
         // ele, quem não vê o botão mudar de cor não tem como saber que algo
         // está acontecendo.
         aria-busy={carregando}
+        /*
+          O RÓTULO DIZ O DESTINO, E NÃO SÓ A AÇÃO.
+
+          "Exportar" sozinho é ambíguo numa tela que também exporta PDF um dia
+          — e o briefing pede o formato no rótulo, porque o formato é a
+          decisão. "Excel (.xlsx)" é o que ela vai reconhecer no arquivo depois.
+        */
+        title="Baixar um arquivo .xlsx com esta planilha"
       >
-        {carregando ? "Gerando…" : "Gerar planilha"}
+        {carregando ? "Exportando…" : "Exportar · Excel (.xlsx)"}
       </Botao>
 
       {/*
@@ -248,7 +274,7 @@ export function BotaoGerarPlanilha({
       */}
       {estado === "ok" && mensagem ? (
         <p role="status" className="text-[0.75rem] leading-snug text-medio">
-          Arquivo salvo: <span className="font-medium">{mensagem}</span>
+          Arquivo baixado: <span className="font-medium">{mensagem}</span>
         </p>
       ) : null}
 

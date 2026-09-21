@@ -102,8 +102,24 @@ const COLUNAS_LIVRES: readonly ColunaGrade[] = Array.from(
 /**
  * A grade completa.
  *
- * Uma folha só, chamada "Planilha". Não há abas a inventar: abas são uma
+ * Uma folha só, chamada "Planilha 1". Não há abas a inventar: abas são uma
  * decisão de organização, e organização é dela.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE "PLANILHA 1", COM O NÚMERO                                  │
+ * │                                                                      │
+ * │ O número não é enfeite e não é numeração de página: é o que faz este  │
+ * │ nome e o nome que o `[+]` da faixa cria pertencerem à MESMA FAMÍLIA.  │
+ * │                                                                      │
+ * │ Com a primeira chamada "Planilha" e a segunda "Planilha 2", a         │
+ * │ sequência fica com um buraco que ninguém explica. E o nome daqui é    │
+ * │ também o nome da ABA REAL do .xlsx — se a Central prometesse          │
+ * │ "Planilha" e o arquivo trouxesse "Planilha 1", a divergência só        │
+ * │ apareceria quando alguém abrisse o arquivo procurando a aba.          │
+ * │                                                                      │
+ * │ O mesmo valor está em `ABAS_LIVRE`, em `../modelos.ts`, e é de lá     │
+ * │ que a Central lê. Este arquivo precisa concordar com ele.             │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 export function montarGradeEmBranco(ctx?: ContextoPlanilha | null): GradeDaPlanilha {
   const cliente = ctx?.cliente ?? null;
@@ -125,7 +141,7 @@ export function montarGradeEmBranco(ctx?: ContextoPlanilha | null): GradeDaPlani
   ];
 
   return {
-    titulo: "PLANILHA",
+    titulo: "PLANILHA 1",
     subtitulo: cliente
       ? `${cliente.nomeFantasia} · planilha livre`
       : "Planilha livre · sem cliente vinculado",
@@ -135,8 +151,8 @@ export function montarGradeEmBranco(ctx?: ContextoPlanilha | null): GradeDaPlani
 
 function folhaLivre(linhas: readonly LinhaGrade[]): FolhaGrade {
   return {
-    nome: "Planilha",
-    titulo: "PLANILHA",
+    nome: "Planilha 1",
+    titulo: "PLANILHA 1",
     colunas: COLUNAS_LIVRES,
     linhas,
     /*

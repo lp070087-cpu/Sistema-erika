@@ -101,6 +101,37 @@ export const ESTILO_CABECALHO: Partial<Style> = {
   },
 };
 
+/**
+ * A FAIXA DE NOMES DO TOPO DE UMA FICHA — um nome por coluna.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELA NÃO USA O MESMO VERDE DO CABEÇALHO DA TABELA             │
+ * │                                                                      │
+ * │ Logo abaixo desta faixa vem o cabeçalho da grade de ingredientes —     │
+ * │ "INGREDIENTE / PESO LÍQ / PREÇO KG / …". Se os dois tivessem o mesmo    │
+ * │ fundo, as duas barras se leriam como uma só, e os nomes de cima         │
+ * │ pareceriam pertencer à tabela de baixo.                                │
+ * │                                                                      │
+ * │ Elas não pertencem: a de cima nomeia o RESUMO da ficha — rendimento,    │
+ * │ custo total, custo por porção — e a de baixo nomeia as COLUNAS dos      │
+ * │ insumos. É a diferença entre o que a receita é e o que cada linha da    │
+ * │ receita é. Duas barras, dois assuntos.                                 │
+ * │                                                                      │
+ * │ O verde mais escuro da paleta resolve isso sem precisar de borda nem   │
+ * │ de espaço em branco: a faixa de cima pesa mais, e por isso se lê        │
+ * │ primeiro — que é a ordem em que se lê uma ficha técnica.               │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export const ESTILO_FAIXA_NOMES: Partial<Style> = {
+  font: { name: "Calibri", size: 8, bold: true, color: { argb: COR.branco } },
+  fill: { type: "pattern", pattern: "solid", fgColor: { argb: COR.profundo } },
+  alignment: { vertical: "middle", horizontal: "center", wrapText: true },
+  border: {
+    right: { style: "hair", color: { argb: COR.medio } },
+    bottom: { style: "thin", color: { argb: COR.medio } },
+  },
+};
+
 /** Rótulo de bloco — "RESUMO", "TAREFAS". Caixa alta sobre faixa clara. */
 export const ESTILO_ROTULO_BLOCO: Partial<Style> = {
   font: { name: "Calibri", size: 10, bold: true, color: { argb: COR.profundo } },

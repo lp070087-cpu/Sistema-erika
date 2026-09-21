@@ -33,7 +33,7 @@ import { TelaDeConferencia } from "./conferencia";
  * │ │ ETAPA 4  CONFERÊNCIA    ela olha, corrige e confirma               │ │
  * │ │          CÁLCULOS       o motor de sempre, e nada mais             │ │
  * │ │          PRÉVIA         a mesma grade que vai para o Excel         │ │
- * │ │          GERAR          baixa o arquivo                            │ │
+ * │ │          EXPORTAR       baixa o .xlsx — e só quando ela manda      │ │
  * │ └──────────────────────────────────────────────────────────────────┘ │
  * │                                                                    │
  * │ A janela é dona de três coisas, e só delas: as linhas lidas, as     │
@@ -447,7 +447,8 @@ export function JanelaDaImportacao({ nomeCliente }: { nomeCliente?: string | nul
               Gerar planilha
             </Botao>
             <p className="text-[0.8125rem] text-[var(--tinta-suave)]">
-              Você vai ver o arquivo antes de baixar.
+              A planilha é montada aqui dentro. Nada é baixado agora — o arquivo sai na próxima
+              etapa, quando você mandar.
             </p>
           </div>
         </SecaoDaEtapa>
@@ -942,7 +943,7 @@ function BaixarPlanilha({ grade, nome }: { grade: GradeDaPlanilha; nome: string 
         onClick={() => void baixar()}
         disabled={estado === "gerando"}
       >
-        {estado === "gerando" ? "Gerando…" : "Baixar XLSX"}
+        {estado === "gerando" ? "Exportando…" : "Exportar · Excel (.xlsx)"}
       </Botao>
 
       <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-[var(--tinta-suave)]">

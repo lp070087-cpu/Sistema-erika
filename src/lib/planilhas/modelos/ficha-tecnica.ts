@@ -69,8 +69,15 @@ import { ABAS_FICHA } from "../modelos";
 import { recorteDoCliente } from "../relatorio";
 import { indexarInsumos } from "../insumos";
 import type { IndiceDeInsumos } from "../insumos";
-import type { ColunaGrade, FolhaGrade, GradeDaPlanilha, LinhaGrade } from "../grade";
-import { campo, dados, nota, pendencia, pixels, secao } from "../grade";
+import type {
+  CelulaGrade,
+  ColunaGrade,
+  FolhaGrade,
+  FormatoGrade,
+  GradeDaPlanilha,
+  LinhaGrade,
+} from "../grade";
+import { campo, dados, nota, pendencia, pixels, rotulos, secao } from "../grade";
 import { LARGURA } from "../estilos";
 
 /**
@@ -93,6 +100,46 @@ export const COLUNAS_ITENS: readonly ColunaGrade[] = [
   { chave: "etapa", titulo: "Etapa", formato: "texto", largura: LARGURA.media, larguraMinima: 120 },
   { chave: "situacao", titulo: "Situação", formato: "texto", largura: LARGURA.media, larguraMinima: 130 },
 ];
+
+/**
+ * O RESUMO — QUAIS COLUNAS ELE USA, EM QUE ORDEM E COM QUE FORMATO.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELE USA AS MESMAS COLUNAS DA TABELA DE INGREDIENTES          │
+ * │                                                                      │
+ * │ A faixa de nomes do topo atravessa a grade, uma célula por coluna: o   │
+ * │ primeiro nome cai na coluna A, o segundo na B, e assim por diante. É    │
+ * │ isso que faz os nomes caírem exatamente sobre os números que eles      │
+ * │ nomeiam.                                                              │
+ * │                                                                      │
+ * │ A consequência é que o resumo NÃO tem colunas próprias: ele usa as      │
+ * │ primeiras sete da grade de ingredientes, e as duas últimas — as que     │
+ * │ sobram — ficam com o fundo escuro da faixa e sem texto.               │
+ * │                                                                      │
+ * │ O QUE MUDA É SÓ O FORMATO. Embaixo de "KG PORÇÃO" o número tem de       │
+ * │ sair como quilo, e embaixo de "MARG. SEG %" como percentual — mas a     │
+ * │ coluna A é, na tabela de baixo, uma coluna de TEXTO. O formato vai      │
+ * │ então na marcação da célula, que vence o formato da coluna nas duas     │
+ * │ pontas: na tela e no arquivo. É o mesmo caminho que a barra de          │
+ * │ formatação usa quando a Érika troca uma célula para "R$".             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * A ORDEM é a da planilha de trabalho da Érika, e a das colunas da grade. As
+ * duas listas são casadas por posição: quem acrescentar um nome sem acrescentar
+ * a coluna desalinha a linha inteira, e o defeito aparece na hora.
+ */
+const RESUMO: readonly { nome: string; chave: string; formato: FormatoGrade }[] = [
+  { nome: "RENDIMENTO", chave: "ingrediente", formato: "numero" },
+  { nome: "CUSTO TOTAL", chave: "pesoLiq", formato: "moeda" },
+  { nome: "KG PORÇÃO", chave: "unidade", formato: "peso" },
+  { nome: "CUSTO PORÇÃO", chave: "precoKg", formato: "moeda" },
+  { nome: "UNI PORÇÃO", chave: "correcao", formato: "numero" },
+  { nome: "MARG. SEG %", chave: "pesoBruto", formato: "percentual" },
+  { nome: "TOTAL", chave: "custo", formato: "moeda" },
+];
+
+/** Os nomes da faixa, na ordem — o que o topo da ficha desenha. */
+const NOMES_DO_RESUMO: readonly string[] = RESUMO.map((c) => c.nome);
 
 /** As colunas das abas de texto (INFORMAÇÕES, base). */
 const COLUNAS_TEXTO: readonly ColunaGrade[] = [
@@ -228,53 +275,71 @@ function escreverBlocoDaFicha(
   const peso = pesarFicha(resolvidos);
 
   // ── A faixa que identifica o prato ────────────────────────────────────
-  linhas.push(secao(`▸ ${ficha.nome}`));
+  linhas.push(secao(`FICHA TÉCNICA — ${ficha.nome}`));
 
-  // ── O cabeçalho da ficha: prato, cliente, rendimento, custo ───────────
-  linhas.push(campo("PRATO", ficha.nome));
+  /*
+    ── O RESUMO DA FICHA, EM DUAS LINHAS DE PLANILHA ───────────────────────
+
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ POR QUE ELE DEIXOU DE SER UMA PILHA DE PARES RÓTULO/VALOR          │
+    │                                                                    │
+    │ Antes, cada número do resumo ocupava a sua própria linha — sete     │
+    │ linhas de rótulo à esquerda e valor na coluna B. Funciona, e lê     │
+    │ mal: o olho percorre os sete um de cada vez, e comparar "custo      │
+    │ total" com "custo por porção" — que é a comparação que interessa —  │
+    │ exige subir e descer a vista.                                      │
+    │                                                                    │
+    │ Aqui eles ficam LADO A LADO, em duas linhas: a de cima com os       │
+    │ NOMES, a de baixo com os NÚMEROS. É o topo da planilha de trabalho  │
+    │ da Érika, e a razão de ele funcionar não é estética: número de      │
+    │ mesma natureza na mesma altura se lê de uma vez.                    │
+    │                                                                    │
+    │ E SÃO DUAS LINHAS DE VERDADE, cada uma com o seu endereço. Elas     │
+    │ não podem virar uma só no arquivo, porque o número que a tela       │
+    │ mostra à esquerda é a linha do Excel: se a faixa comesse um         │
+    │ endereço só, a marcação que a Érika faz na tela cairia na linha     │
+    │ errada do arquivo.                                                  │
+    └────────────────────────────────────────────────────────────────────┘
+  */
+  linhas.push(rotulos(NOMES_DO_RESUMO));
+  linhas.push({
+    tipo: "dados",
+    celulas: celulasDoResumo(ficha, resumo),
+    /*
+      O FORMATO DE CADA CÉLULA DO RESUMO.
+
+      A coluna A é de TEXTO na tabela de ingredientes, e a célula embaixo de
+      "RENDIMENTO" tem de sair como número. A marcação da célula vence o
+      formato da coluna nas duas pontas — tela e arquivo —, e é o mesmo
+      caminho que a barra de formatação usa.
+    */
+    estilosCelulas: Object.fromEntries(
+      RESUMO.map((c) => [c.chave, { formato: c.formato }])
+    ),
+  });
+
+  /*
+    ── OS DADOS DO PRATO ───────────────────────────────────────────────────
+
+    Categoria, situação e data de atualização continuam em pares
+    rótulo/valor, e isso é deliberado: eles NÃO são números de comparação.
+    Quem lê a planilha não compara "a categoria do prato" com "a data de
+    atualização" — ele confere cada um por si. Números lado a lado se
+    comparam; fatos, não.
+  */
   linhas.push(campo("CATEGORIA", ficha.categoria));
   linhas.push(campo("SITUAÇÃO", ROTULO_SITUACAO_FICHA[ficha.situacao]));
   linhas.push(campo("ATUALIZADA EM", ficha.atualizadaEm, "data"));
-
-  linhas.push(campo("RENDIMENTO (PORÇÕES)", ficha.rendimentoPorcoes, "numero"));
-  linhas.push(
-    campo(
-      "KG POR PORÇÃO",
-      ficha.porcaoGramas !== null ? ficha.porcaoGramas / 1000 : null,
-      "peso"
-    )
-  );
-
-  /*
-    O CUSTO TOTAL.
-
-    `completo` é falso quando alguma linha ficou fora da soma. Nesse caso o
-    número NÃO é o custo da receita — é um piso — e escrevê-lo como custo total
-    seria o erro mais caro que esta planilha pode cometer. Por isso o valor só
-    entra quando a soma está fechada; senão a célula fica vazia e a linha de
-    observação ao lado diz o que falta.
-  */
-  linhas.push(campo("CUSTO TOTAL", resumo.completo ? resumo.custoTotal : null, "moeda"));
-  linhas.push(campo("CUSTO POR PORÇÃO", resumo.custoPorPorcao, "moeda"));
-  linhas.push(campo("UNI POR PORÇÃO", ficha.porcaoGramas, "numero"));
-
-  /*
-    A MARGEM DE SEGURANÇA — sem número, porque o número é dela.
-
-    `margemSegurancaPct` existe no cadastro e está vazio por padrão. O sistema
-    tem o campo e não tem o valor; é literalmente o que a aba INFORMAÇÕES lista
-    como pendência. Preencher com 5% seria inventar metodologia.
-  */
-  linhas.push(
-    campo(
-      "MARG. SEG %",
-      ficha.parametros?.margemSegurancaPct ?? null,
-      "percentual"
-    )
-  );
   linhas.push(campo("PREÇO DE VENDA", ficha.precoVenda ?? null, "moeda"));
 
-  // ── A grade de ingredientes ───────────────────────────────────────────
+  /*
+    ── A grade de ingredientes ─────────────────────────────────────────────
+
+    O cabeçalho da tabela continua sendo o da FOLHA — "INGREDIENTE / PESO
+    LÍQ / PREÇO KG / CORREÇÃO / PESO BRUTO / CUSTO / …". Ele é a linha de
+    nomes das COLUNAS, e é a única do bloco: o resumo lá em cima tem a sua
+    própria faixa de nomes, em outra linha e com outro significado.
+  */
   linhas.push(secao("INGREDIENTES"));
   linhas.push({ tipo: "cabecalho" });
 
@@ -404,6 +469,63 @@ function escreverBlocoDaFicha(
     linhas.push(secao("OBSERVAÇÕES"));
     linhas.push(nota(ficha.observacoes));
   }
+}
+
+/**
+ * OS SETE NÚMEROS DO TOPO DA FICHA, na ordem dos nomes.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE CADA UM É, E O QUE NENHUM DELES INVENTA                        │
+ * │                                                                      │
+ * │ RENDIMENTO    as porções que a receita informa. Vem do cadastro — não  │
+ * │               é contado nem estimado.                                 │
+ * │                                                                      │
+ * │ CUSTO TOTAL   só existe quando a soma FECHOU. Quando alguma linha      │
+ * │               ficou de fora por falta de preço ou pesagem, o número    │
+ * │               que a soma alcançou é um PISO — e escrevê-lo como custo  │
+ * │               total seria a mentira mais cara desta planilha. Fica "—",│
+ * │               e a pendência embaixo diz o que falta.                   │
+ * │                                                                      │
+ * │ KG PORÇÃO     `porcaoGramas` convertido para quilo. É a MESMA divisão  │
+ * │               por mil que a planilha de trabalho faz na coluna.        │
+ * │                                                                      │
+ * │ CUSTO PORÇÃO  custo total dividido pelas porções — e por isso some     │
+ * │               junto com ele: `resumoDaFicha` já devolve `null` quando  │
+ * │               não há porções ou quando a soma não fechou.              │
+ * │                                                                      │
+ * │ UNI PORÇÃO    o peso da porção em gramas, que é a unidade em que ela   │
+ * │               pesa. Ao lado de "KG PORÇÃO" não é redundância: um é o   │
+ * │               número que ela digita na balança, o outro é o que entra  │
+ * │               na conta de custo.                                       │
+ * │                                                                      │
+ * │ MARG. SEG %   o percentual de segurança que ELA informou. Vazio        │
+ * │               enquanto ela não informar — o sistema tem o campo e não  │
+ * │               tem o número. Assumir 5% seria inventar metodologia.     │
+ * │                                                                      │
+ * │ TOTAL         uma VAGA. Não há fórmula confirmada na metodologia dela  │
+ * │               para este campo, e um total inventado seria lido como    │
+ * │               cálculo. Fica "—" e é editável na planilha importada.    │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function celulasDoResumo(
+  ficha: Ficha,
+  resumo: ReturnType<typeof resumoDaFicha>
+): Readonly<Record<string, CelulaGrade>> {
+  const valores: readonly CelulaGrade[] = [
+    ficha.rendimentoPorcoes,
+    resumo.completo ? resumo.custoTotal : null,
+    ficha.porcaoGramas !== null ? ficha.porcaoGramas / 1000 : null,
+    resumo.custoPorPorcao,
+    ficha.porcaoGramas,
+    ficha.parametros?.margemSegurancaPct ?? null,
+    null,
+  ];
+
+  const celulas: Record<string, CelulaGrade> = {};
+  RESUMO.forEach((col, i) => {
+    celulas[col.chave] = valores[i] ?? null;
+  });
+  return celulas;
 }
 
 // ---------------------------------------------------------------------------

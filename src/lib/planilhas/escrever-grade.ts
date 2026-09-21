@@ -31,13 +31,14 @@
 
 import "server-only";
 import type { Style, Workbook, Worksheet } from "exceljs";
-import type { CelulaGrade, FolhaGrade, GradeDaPlanilha, LinhaGrade } from "./grade";
-import { ALINHAMENTO_DO_FORMATO, FORMATO_EXCEL } from "./grade";
+import type { CelulaGrade, EstiloGrade, FolhaGrade, GradeDaPlanilha, LinhaGrade } from "./grade";
+import { ALINHAMENTO_DO_FORMATO, FORMATO_EXCEL, estiloDaCelula, estiloDeLinha } from "./grade";
 import {
   COR,
   ESTILO_CABECALHO,
   ESTILO_CELULA,
   ESTILO_CELULA_FAIXA,
+  ESTILO_FAIXA_NOMES,
   ESTILO_NOTA,
   ESTILO_PENDENCIA,
   ESTILO_ROTULO_BLOCO,
@@ -100,22 +101,75 @@ function escreverFolha(aba: Worksheet, grade: GradeDaPlanilha, folha: FolhaGrade
   let primeiraLinhaDeDados = 0;
   let ultimaLinhaDeDados = 0;
 
+  /*
+    A LINHA DE VALORES QUE VEM LOGO ABAIXO DE UMA FAIXA DE NOMES.
+
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │ POR QUE ELA NÃO CONTA COMO LINHA DE DADO                             │
+    │                                                                      │
+    │ O filtro do Excel nasce do primeiro `cabecalho` e vai até a última    │
+    │ linha de dado. Ele é a lista que se ordena e se filtra — e o resumo   │
+    │ da ficha, aquele par "nomes em cima / números embaixo", NÃO é uma      │
+    │ lista: é um painel de sete números que existe uma vez por ficha.       │
+    │                                                                      │
+    │ Se ele contasse como dado, o filtro começaria na faixa de nomes e os   │
+    │ rótulos "RENDIMENTO", "CUSTO TOTAL" apareceriam na lista suspensa     │
+    │ como se fossem valores de coluna — e filtrar por custo ofereceria      │
+    │ "CUSTO TOTAL" como opção. São dois registros de natureza diferente     │
+    │ na mesma coluna, e o filtro não sabe disso.                           │
+    │                                                                      │
+    │ A adjacência é o critério porque é o que a estrutura diz: valor logo   │
+    │ abaixo de faixa de nomes é o corpo daquela faixa, e não uma linha      │
+    │ solta da tabela.                                                      │
+    └──────────────────────────────────────────────────────────────────────┘
+  */
+  let ultimaLinhaDeRotulos = 0;
+
   for (const item of folha.linhas) {
     switch (item.tipo) {
       case "secao": {
-        linha = escreverRotulo(aba, linha, item.texto, totalColunas);
+        linha = escreverRotulo(aba, linha, item.texto, totalColunas, estiloDeLinha(item));
         break;
       }
 
       case "campo": {
-        escreverCampo(aba, linha, item.rotulo, item.valor, item.formato);
+        escreverCampo(aba, linha, item.rotulo, item.valor, item.formato, estiloDeLinha(item));
         linha += 1;
         break;
       }
 
       case "cabecalho": {
-        escreverCabecalhoDeTabela(aba, linha, folha);
-        if (primeiraLinhaDeDados === 0) primeiraLinhaDeDados = linha;
+        escreverCabecalhoDeTabela(aba, linha, folha, item);
+
+        /*
+          ┌────────────────────────────────────────────────────────────────────┐
+          │ O CABEÇALHO OCUPA ESTA LINHA — O DADO COMEÇA NA SEGUINTE            │
+          │                                                                    │
+          │ Aqui estava `= linha`, e o `- 1` do autoFilter transformava isso em  │
+          │ "o filtro começa uma linha ACIMA do cabeçalho". Conferido por        │
+          │ execução: uma folha com o cabeçalho na linha 3 saía com o filtro     │
+          │ em A2:C5, e o Excel põe as setas de filtro na PRIMEIRA linha do      │
+          │ intervalo — ou seja, os botões nasciam na faixa de subtítulo e a     │
+          │ linha de títulos de coluna virava a primeira linha filtrável.        │
+          │                                                                    │
+          │ O defeito era invisível para quem só lesse o código, porque o `- 1`  │
+          │ do fim parece uma compensação e é uma segunda compensação: a linha   │
+          │ já estava sendo contada uma vez a mais aqui.                        │
+          │                                                                    │
+          │ Consertado no nome, e não na conta: `primeiraLinhaDeDados` passa a   │
+          │ significar a primeira linha de DADO nas duas origens — aqui e no    │
+          │ `dados` mais abaixo — e o `- 1` do filtro volta a ser o que diz ser: │
+          │ a linha do cabeçalho.                                              │
+          └────────────────────────────────────────────────────────────────────┘
+        */
+        if (primeiraLinhaDeDados === 0) primeiraLinhaDeDados = linha + 1;
+        linha += 1;
+        break;
+      }
+
+      case "rotulos": {
+        escreverRotulosDeLinha(aba, linha, folha, item, totalColunas);
+        ultimaLinhaDeRotulos = linha;
         linha += 1;
         break;
       }
@@ -124,15 +178,25 @@ function escreverFolha(aba: Worksheet, grade: GradeDaPlanilha, folha: FolhaGrade
       case "subtotal":
       case "total": {
         escreverLinhaDeDados(aba, linha, folha, item);
-        if (primeiraLinhaDeDados === 0) primeiraLinhaDeDados = linha;
-        ultimaLinhaDeDados = linha;
-        dadosEscritos += 1;
+
+        /*
+          O CORPO DA FAIXA DE NOMES não entra no filtro — ver o comentário de
+          `ultimaLinhaDeRotulos`. A linha é escrita igual; o que muda é ela
+          não contar como registro filtrável.
+        */
+        const corpoDeRotulos = ultimaLinhaDeRotulos === linha - 1;
+        if (!corpoDeRotulos) {
+          if (primeiraLinhaDeDados === 0) primeiraLinhaDeDados = linha;
+          ultimaLinhaDeDados = linha;
+          dadosEscritos += 1;
+        }
+
         linha += 1;
         break;
       }
 
       case "texto": {
-        linha = escreverTexto(aba, linha, item.texto, totalColunas, item.tom);
+        linha = escreverTexto(aba, linha, item.texto, totalColunas, item.tom, estiloDeLinha(item));
         break;
       }
 
@@ -150,7 +214,7 @@ function escreverFolha(aba: Worksheet, grade: GradeDaPlanilha, folha: FolhaGrade
           estilizada. Escrever o estilo em cada coluna é o que faz a grade
           chegar ao Excel com a mesma cara de grade.
         */
-        escreverLinhaVazia(aba, linha, folha, item.celulas);
+        escreverLinhaVazia(aba, linha, folha, item);
         linha += 1;
         break;
       }
@@ -184,11 +248,17 @@ function escreverFolha(aba: Worksheet, grade: GradeDaPlanilha, folha: FolhaGrade
 // ---------------------------------------------------------------------------
 
 /** A faixa de bloco — "O CLIENTE", "INGREDIENTES". */
-function escreverRotulo(aba: Worksheet, linha: number, texto: string, total: number): number {
+function escreverRotulo(
+  aba: Worksheet,
+  linha: number,
+  texto: string,
+  total: number,
+  estilo?: EstiloGrade
+): number {
   aba.mergeCells(linha, 1, linha, total);
   const cell = aba.getCell(linha, 1);
   cell.value = texto;
-  cell.style = ESTILO_ROTULO_BLOCO;
+  cell.style = comMarcacao(ESTILO_ROTULO_BLOCO, estilo);
   aba.getRow(linha).height = 20;
   return linha + 1;
 }
@@ -199,11 +269,12 @@ function escreverCampo(
   linha: number,
   rotulo: string,
   valor: CelulaGrade,
-  formato: keyof typeof FORMATO_EXCEL | undefined
+  formato: keyof typeof FORMATO_EXCEL | undefined,
+  estilo?: EstiloGrade
 ): void {
   const rotuloCell = aba.getCell(linha, 1);
   rotuloCell.value = rotulo;
-  rotuloCell.style = ESTILO_CAMPO_ROTULO;
+  rotuloCell.style = comMarcacao(ESTILO_CAMPO_ROTULO, estilo);
 
   const valorCell = aba.getCell(linha, 2);
   /*
@@ -213,10 +284,13 @@ function escreverCampo(
     um preço errado.
   */
   valorCell.value = valor ?? "—";
-  valorCell.style = {
-    ...ESTILO_CAMPO_VALOR,
-    numFmt: valor !== null && formato ? FORMATO_EXCEL[formato] : undefined,
-  };
+  valorCell.style = comMarcacao(
+    {
+      ...ESTILO_CAMPO_VALOR,
+      numFmt: valor !== null && formato ? FORMATO_EXCEL[formato] : undefined,
+    },
+    estilo
+  );
   aba.getRow(linha).height = 18;
 }
 
@@ -252,19 +326,161 @@ const ALINHAMENTO_EXCEL: Record<(typeof ALINHAMENTO_DO_FORMATO)[keyof typeof ALI
   centro: "center",
 };
 
+// ---------------------------------------------------------------------------
+// A MARCAÇÃO QUE A ÉRIKA FEZ
+// ---------------------------------------------------------------------------
+
+/**
+ * A COR NO FORMATO QUE O EXCEL ENTENDE.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE `FF` NA FRENTE                                             │
+ * │                                                                   │
+ * │ O ExcelJS não usa `#rrggbb`: ele usa ARGB — oito dígitos, dos quais │
+ * │ os dois primeiros são o ALFA. `"FF"` é opaco.                      │
+ * │                                                                   │
+ * │ Passar `"#fdf0b2"` direto não dá erro de tipo e não pinta nada: o   │
+ * │ exceljs grava a string como está, e o Excel encontra uma cor que    │
+ * │ ele não sabe ler. O resultado é uma planilha marcada na tela e      │
+ * │ branca no arquivo — o defeito silencioso clássico desta camada.      │
+ * │                                                                   │
+ * │ A entrada já foi validada em `corValida`, então aqui ela é sempre   │
+ * │ `#rrggbb` — o `slice(1)` é seguro por construção.                   │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function argb(hex: string): string {
+  return `FF${hex.slice(1).toUpperCase()}`;
+}
+
+/**
+ * O ESTILO DO MODELO, COM A MARCAÇÃO POR CIMA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE A ÉRIKA MANDA, E O QUE ELA NÃO MANDA                          │
+ * │                                                                      │
+ * │ Ela escolhe fundo, cor do texto, negrito e alinhamento. Ela NÃO        │
+ * │ escolhe borda, formato de número nem altura de linha.                 │
+ * │                                                                      │
+ * │ A consequência é que a marcação precisa ser APLICADA SOBRE o estilo   │
+ * │ do modelo, e não substituí-lo. Se ela substituísse, marcar de         │
+ * │ amarelo a linha de um total apagaria a borda dupla que separa o        │
+ * │ total do corpo — a hierarquia da planilha se perderia no gesto de      │
+ * │ destacar uma linha, que é o oposto do que o gesto quer.                │
+ * │                                                                      │
+ * │ `font` e `alignment` são clonados com espalhamento porque o ExcelJS   │
+ * │ usa o MESMO objeto de estilo em todas as células que o recebem:       │
+ * │ alterar `base.font` no lugar mudaria todas as linhas da folha.         │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function comMarcacao(base: Partial<Style>, estilo: EstiloGrade | undefined): Partial<Style> {
+  if (estilo === undefined) return base;
+
+  const saida: Partial<Style> = { ...base };
+
+  if (estilo.fundo !== undefined) {
+    saida.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb(estilo.fundo) } };
+  }
+
+  if (estilo.texto !== undefined || estilo.negrito !== undefined) {
+    saida.font = {
+      ...base.font,
+      ...(estilo.texto !== undefined ? { color: { argb: argb(estilo.texto) } } : {}),
+      ...(estilo.negrito !== undefined ? { bold: estilo.negrito } : {}),
+    };
+  }
+
+  if (estilo.alinhamento !== undefined) {
+    saida.alignment = {
+      ...base.alignment,
+      horizontal: ALINHAMENTO_EXCEL[estilo.alinhamento],
+    };
+  }
+
+  /*
+    O FORMATO SÓ ENTRA QUANDO ELE EXISTE.
+
+    Ele não é cor: é `[R$]` ou `[%]`, e vem da barra de formatação. Quando ele
+    não veio, o `numFmt` que a coluna já montou fica como está — sobrescrevê-lo
+    com `undefined` apagaria o formato da coluna inteira, e uma coluna de
+    dinheiro passaria a mostrar "12.5".
+  */
+  if (estilo.formato !== undefined) {
+    saida.numFmt = FORMATO_EXCEL[estilo.formato];
+  }
+
+  return saida;
+}
+
+/**
+ * A FAIXA DE NOMES DO TOPO DA FICHA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE A SOBRA DA FAIXA É PINTADA, E NÃO IGNORADA                   │
+ * │                                                                      │
+ * │ Sete nomes não preenchem as nove colunas da grade de ingredientes. Se  │
+ * │ a faixa terminasse no sétimo, a oitava e a nona ficariam brancas       │
+ * │ entre a barra escura e a tabela — e a faixa pareceria um remendo em    │
+ * │ vez de um cabeçalho, com um degrau no meio da largura da folha.        │
+ * │                                                                      │
+ * │ A sobra recebe o MESMO fundo e nenhum texto: a barra fecha na largura  │
+ * │ da tabela, que é o que faz as duas se lerem como um bloco só.          │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function escreverRotulosDeLinha(
+  aba: Worksheet,
+  linha: number,
+  folha: FolhaGrade,
+  item: Extract<LinhaGrade, { tipo: "rotulos" }>,
+  totalColunas: number
+): void {
+  const usados = Math.min(item.rotulos.length, totalColunas);
+
+  item.rotulos.slice(0, usados).forEach((texto, i) => {
+    /*
+      A CHAVE É A DA COLUNA, e não o texto.
+
+      A marcação que a Érika faz chega indexada pela chave da coluna — é o que
+      o `aplicarPincelNaFolha` grava e o que a tela consulta. Usar o texto
+      funcionaria num lado e não no outro, e o defeito apareceria como uma
+      célula pintada na tela e branca no arquivo.
+    */
+    const chave = folha.colunas[i]?.chave;
+    const cell = aba.getCell(linha, i + 1);
+    cell.value = texto;
+    cell.style = comMarcacao(
+      ESTILO_FAIXA_NOMES,
+      chave === undefined ? undefined : estiloDaCelula(item, chave)
+    );
+  });
+
+  for (let coluna = usados + 1; coluna <= totalColunas; coluna += 1) {
+    aba.getCell(linha, coluna).style = ESTILO_FAIXA_NOMES;
+  }
+
+  aba.getRow(linha).height = 16;
+}
+
 /** A linha de títulos de coluna. */
-function escreverCabecalhoDeTabela(aba: Worksheet, linha: number, folha: FolhaGrade): void {
+function escreverCabecalhoDeTabela(
+  aba: Worksheet,
+  linha: number,
+  folha: FolhaGrade,
+  item: Extract<LinhaGrade, { tipo: "cabecalho" }>
+): void {
   folha.colunas.forEach((col, i) => {
     const cell = aba.getCell(linha, i + 1);
     cell.value = col.titulo;
-    cell.style = {
-      ...ESTILO_CABECALHO,
-      alignment: {
-        vertical: "middle",
-        horizontal: ALINHAMENTO_EXCEL[ALINHAMENTO_DO_FORMATO[col.formato]],
-        wrapText: false,
+    cell.style = comMarcacao(
+      {
+        ...ESTILO_CABECALHO,
+        alignment: {
+          vertical: "middle",
+          horizontal: ALINHAMENTO_EXCEL[ALINHAMENTO_DO_FORMATO[col.formato]],
+          wrapText: false,
+        },
       },
-    };
+      estiloDaCelula(item, col.chave)
+    );
   });
   aba.getRow(linha).height = 20;
 }
@@ -294,6 +510,7 @@ function escreverLinhaDeDados(
   folha.colunas.forEach((col, i) => {
     const cell = aba.getCell(linha, i + 1);
     const bruto = item.celulas[col.chave];
+    const marcacao = estiloDaCelula(item, col.chave);
 
     /*
       A primeira célula de um subtotal ou de um total carrega o rótulo quando
@@ -303,25 +520,28 @@ function escreverLinhaDeDados(
     if (i === 0 && (item.tipo === "subtotal" || item.tipo === "total")) {
       const rotulo = "rotulo" in item ? item.rotulo : undefined;
       cell.value = rotulo ?? bruto ?? "";
-      cell.style = base;
+      cell.style = comMarcacao(base, marcacao);
       return;
     }
 
     // Número que não existe fica em branco, e não com traço: numa coluna de
     // dinheiro somada pelo Excel, "—" é texto e quebra a soma da coluna.
     cell.value = bruto ?? null;
-    cell.style = {
-      ...base,
-      alignment: {
-        vertical: "middle",
-        horizontal: ALINHAMENTO_EXCEL[ALINHAMENTO_DO_FORMATO[col.formato]],
-        wrapText: false,
+    cell.style = comMarcacao(
+      {
+        ...base,
+        alignment: {
+          vertical: "middle",
+          horizontal: ALINHAMENTO_EXCEL[ALINHAMENTO_DO_FORMATO[col.formato]],
+          wrapText: false,
+        },
+        numFmt:
+          bruto !== undefined && bruto !== null && FORMATO_EXCEL[col.formato]
+            ? FORMATO_EXCEL[col.formato]
+            : undefined,
       },
-      numFmt:
-        bruto !== undefined && bruto !== null && FORMATO_EXCEL[col.formato]
-          ? FORMATO_EXCEL[col.formato]
-          : undefined,
-    };
+      marcacao
+    );
   });
   aba.getRow(linha).height = 17;
 }
@@ -338,22 +558,25 @@ function escreverLinhaVazia(
   aba: Worksheet,
   linha: number,
   folha: FolhaGrade,
-  celulas: Readonly<Record<string, CelulaGrade>> | undefined
+  item: Extract<LinhaGrade, { tipo: "vazia" }>
 ): void {
   folha.colunas.forEach((col, i) => {
     const cell = aba.getCell(linha, i + 1);
-    const bruto = celulas?.[col.chave] ?? null;
+    const bruto = item.celulas?.[col.chave] ?? null;
     cell.value = bruto;
-    cell.style = {
-      ...ESTILO_CELULA,
-      alignment: {
-        vertical: "middle",
-        horizontal: ALINHAMENTO_EXCEL[ALINHAMENTO_DO_FORMATO[col.formato]],
-        wrapText: false,
+    cell.style = comMarcacao(
+      {
+        ...ESTILO_CELULA,
+        alignment: {
+          vertical: "middle",
+          horizontal: ALINHAMENTO_EXCEL[ALINHAMENTO_DO_FORMATO[col.formato]],
+          wrapText: false,
+        },
+        numFmt:
+          bruto !== null && FORMATO_EXCEL[col.formato] ? FORMATO_EXCEL[col.formato] : undefined,
       },
-      numFmt:
-        bruto !== null && FORMATO_EXCEL[col.formato] ? FORMATO_EXCEL[col.formato] : undefined,
-    };
+      estiloDaCelula(item, col.chave)
+    );
   });
   aba.getRow(linha).height = 17;
 }
@@ -364,12 +587,16 @@ function escreverTexto(
   linha: number,
   texto: string,
   total: number,
-  tom: "nota" | "pendencia" | undefined
+  tom: "nota" | "pendencia" | undefined,
+  estilo?: EstiloGrade
 ): number {
   aba.mergeCells(linha, 1, linha, total);
   const cell = aba.getCell(linha, 1);
   cell.value = texto;
-  cell.style = tom === "pendencia" ? ESTILO_PENDENCIA : tom === "nota" ? ESTILO_NOTA : ESTILO_TEXTO;
+  cell.style = comMarcacao(
+    tom === "pendencia" ? ESTILO_PENDENCIA : tom === "nota" ? ESTILO_NOTA : ESTILO_TEXTO,
+    estilo
+  );
 
   /*
     Célula mesclada NÃO auto-ajusta altura no Excel, e o exceljs não expõe

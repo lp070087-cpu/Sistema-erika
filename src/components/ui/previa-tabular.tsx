@@ -2,10 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
-import { endereco, letraDaColuna, textoDaCelula } from "@/lib/planilhas/grade";
+import { endereco, letraDaColuna, medidaDigitada, textoDaCelula } from "@/lib/planilhas/grade";
+import {
+  aplicarPincelNaFolha,
+  estiloDaCelula,
+  estiloDeLinha,
+} from "@/lib/planilhas/grade";
 import type {
   CelulaGrade,
+  EstiloGrade,
   FolhaGrade,
+  FormatoGrade,
   GradeDaPlanilha,
   LinhaGrade,
 } from "@/lib/planilhas/grade";
@@ -95,8 +102,24 @@ const ALTURA_LETRAS = 19;
 /** A largura da coluna de números de linha, em pixels. */
 const LARGURA_GUTTER = 46;
 
-/** Quantas linhas a seta move a seleção, e onde ela para. */
-type Posicao = { linha: number; coluna: number };
+/**
+ * O QUE ESTÁ SELECIONADO — uma célula, ou uma linha inteira.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE "LINHA" NÃO É "CÉLULA COM A COLUNA A"                        │
+ * │                                                                      │
+ * │ A tentação era representar a linha escolhida como a célula do          │
+ * │ endereço A — o mesmo truque que a marcação de linha usa. Ele            │
+ * │ funcionaria para pintar e falharia na TELA: a barra diz "linha 12" e o  │
+ * │ quadrado de seleção apareceria só na coluna A, que é exatamente o       │
+ * │ contrário do que ela acabou de escolher.                               │
+ * │                                                                      │
+ * │ São dois gestos diferentes, e por isso dois casos declarados.           │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export type SelecaoDaGrade =
+  | { tipo: "celula"; linha: number; coluna: number }
+  | { tipo: "linha"; linha: number };
 
 export function PreviaDaPlanilha({
   grade,
@@ -108,6 +131,11 @@ export function PreviaDaPlanilha({
   aoEditar,
   folhasExtras,
   aoCriarFolha,
+  selecao,
+  aoSelecionar,
+  pincel,
+  aba,
+  aoAbrirAba,
 }: {
   grade: GradeDaPlanilha;
   /**
@@ -121,7 +149,7 @@ export function PreviaDaPlanilha({
   nomeCliente: string;
   /** Altura da área da grade, em pixels. */
   altura?: number;
-  /** Botões extras na barra de ações — "Baixar XLSX", "Editar ficha". */
+  /** Botões extras na barra de ações — "Exportar", "Editar ficha". */
   acoes?: React.ReactNode;
   className?: string;
   /**
@@ -142,8 +170,66 @@ export function PreviaDaPlanilha({
   folhasExtras?: readonly FolhaGrade[];
   /** Habilita o `[+]` ao lado da última aba. Sem ele, o botão não aparece. */
   aoCriarFolha?: () => void;
+  /**
+   * A SELEÇÃO ATUAL, QUANDO QUEM MANDA É A TELA.
+   *
+   * Sem estas duas props a seleção é interna, como sempre foi — e é o que o
+   * resto do sistema usa. A Central passa as duas porque a barra de formatação
+   * vive FORA da grade: para ela pintar a célula escolhida, ela precisa saber
+   * qual é, e "quem sabe o que está selecionado" tem de ser um só.
+   */
+  selecao?: SelecaoDaGrade | null;
+  aoSelecionar?: (posicao: SelecaoDaGrade | null) => void;
+  /**
+   * A MARCAÇÃO POR CHAVE — `"Ficha::G4"`.
+   *
+   * A grade que vem pronta já a traz aplicada. O mapa ainda é preciso aqui por
+   * UM caso: a aba criada nesta sessão pelo `[+]`, que nasceu depois de o pai
+   * montar a grade e por isso nunca passou por `aplicarPincelNaFolha`.
+   *
+   * Ele é opcional porque a maior parte das telas que usam esta peça não tem
+   * barra de formatação nenhuma — nelas não há marcação para aplicar.
+   */
+  pincel?: Readonly<Record<string, EstiloGrade>>;
+  /**
+   * A FOLHA ABERTA, QUANDO QUEM MANDA É A TELA.
+   *
+   * A barra de formatação vive fora da grade e escreve no mapa `pincel` por
+   * `"<aba>::<endereço>"` — ou seja, ela precisa saber QUAL folha está aberta
+   * para montar a chave. Como a faixa de abas é desenhada aqui dentro, esse
+   * conhecimento só existe aqui.
+   *
+   * Poderiam existir dois estados: um na tela, para a barra, e um interno,
+   * para as abas. Seriam duas respostas para a mesma pergunta, e o dia em que
+   * discordassem a barra pintaria uma folha e o olho veria outra — a versão
+   * silenciosa de errar a célula. Um estado só, e é este par que o torna
+   * controlável.
+   *
+   * Sem estas props a folha aberta é interna, como sempre foi.
+   */
+  aba?: number;
+  aoAbrirAba?: (indice: number) => void;
 }) {
-  const [aberta, definirAberta] = useState(ABA_PADRAO);
+  const [abertaLocal, definirAbertaLocal] = useState(ABA_PADRAO);
+  const [selecaoLocal, definirSelecaoLocal] = useState<SelecaoDaGrade | null>(null);
+
+  /*
+    A SELEÇÃO CONTROLADA É OPCIONAL, e o teste é a prop existir — não o valor
+    dela. `selecao ?? selecaoLocal` pareceria equivalente e não é: uma seleção
+    controlada em `null` (nada escolhido) cairia para a local e a tela mostraria
+    a célula de uma seleção que o pai acabou de limpar.
+  */
+  const controlada = aoSelecionar !== undefined;
+  const selecaoAtual = controlada ? (selecao ?? null) : selecaoLocal;
+  const definirSelecao = controlada ? aoSelecionar : definirSelecaoLocal;
+
+  /*
+    O MESMO TESTE PARA AS ABAS, e pelo mesmo motivo: `aba ?? abertaLocal`
+    trataria a folha 0 como "não informada" e a tela ficaria presa na
+    primeira aba. O teste é a prop existir.
+  */
+  const abaControlada = aoAbrirAba !== undefined;
+  const definirAberta = abaControlada ? aoAbrirAba : definirAbertaLocal;
 
   /*
     O ÍNDICE É PRESO À FAIXA VÁLIDA.
@@ -154,10 +240,71 @@ export function PreviaDaPlanilha({
     chato possível, porque só apareceria ao trocar de um modelo de 4 abas
     para um de 3.
   */
-  const folhas = [...grade.folhas, ...(folhasExtras ?? [])];
-  const indice = aberta < folhas.length ? aberta : ABA_PADRAO;
+  /*
+    A MARCAÇÃO VIROU LINHA AQUI, UMA VEZ.
+
+    `grade` já chega com o pincel aplicado (ver `aplicarPincelNaFolha`), então
+    o que a grade desenha é literalmente a mesma estrutura que o arquivo
+    recebe. O que falta é a FOLHA NOVA — a aba criada nesta sessão pelo `[+]`,
+    que nunca passou pelo `aplicarPincelNaFolha` do pai porque ela nasceu
+    depois dele.
+  */
+  const folhas = [
+    ...grade.folhas,
+    ...(folhasExtras ?? []).map((f) => aplicarPincelNaFolha(f, pincel)),
+  ];
+  const pedida = abaControlada ? (aba ?? ABA_PADRAO) : abertaLocal;
+  const indice = pedida < folhas.length ? pedida : ABA_PADRAO;
   const folha = folhas[indice] ?? folhas[0];
   if (!folha) return null;
+
+  /*
+    A SELEÇÃO É ZERADA QUANDO A ABA MUDA.
+
+    Sem isto, o endereço `Ficha::G4` continuaria escolhido ao abrir "Base": a
+    barra de formatação pintaria a G4 da outra folha, sem que nada na tela
+    indicasse isso. Marcar a célula errada é a versão silenciosa de perder
+    trabalho.
+  */
+  function abrirAba(alvo: number) {
+    definirAberta(alvo);
+    if (controlada) aoSelecionar?.(null);
+    else definirSelecaoLocal(null);
+  }
+
+  /*
+    A SELEÇÃO CRUZA A FRONTEIRA EM NÚMERO DE LINHA, E NÃO EM ÍNDICE.
+
+    ┌────────────────────────────────────────────────────────────────────┐
+    │ POR QUE A TRADUÇÃO ACONTECE AQUI, E NÃO EM QUEM CHAMA              │
+    │                                                                    │
+    │ Dentro da grade a linha é um ÍNDICE — a primeira linha é a 0. Fora    │
+    │ dela, a linha é o NÚMERO que aparece na coluna da esquerda: a mesma   │
+    │ que a Érika diz em voz alta e que a chave da marcação usa.             │
+    │                                                                    │
+    │ Quem olha a grade de fora não sabe onde o conteúdo começa: o         │
+    │ `linhaInicial` da folha é uma propriedade DELA, e uma folha de ficha  │
+    │ pode começar na linha 3 enquanto uma grade livre começa na 1. Se o    │
+    │ pai fizesse a conta, precisaria do mesmo número — e teria de          │
+    │ adivinhá-lo, ou repetir uma constante que mora aqui.                 │
+    │                                                                    │
+    │ Traduzindo aqui, o que sai desta peça é sempre endereço de planilha:  │
+    │ "linha 12" quer dizer a linha 12. É a mesma fronteira que a chave da  │
+    │ marcação já respeita.                                              │
+    └────────────────────────────────────────────────────────────────────┘
+  */
+  const linhaInicialDaFolha = folha.linhaInicial ?? 3;
+
+  const selecaoParaGrade: SelecaoDaGrade | null =
+    selecaoAtual === null ? null : { ...selecaoAtual, linha: selecaoAtual.linha - linhaInicialDaFolha };
+
+  const selecionarDaGrade = (posicao: SelecaoDaGrade | null) => {
+    if (posicao === null) {
+      definirSelecao(null);
+      return;
+    }
+    definirSelecao({ ...posicao, linha: posicao.linha + linhaInicialDaFolha });
+  };
 
   return (
     <div
@@ -180,6 +327,8 @@ export function PreviaDaPlanilha({
         altura={altura}
         edicoes={edicoes}
         aoEditar={aoEditar}
+        selecao={selecaoParaGrade}
+        definirSelecao={selecionarDaGrade}
       />
 
       {/*
@@ -198,7 +347,7 @@ export function PreviaDaPlanilha({
       <FaixaDeAbas
         folhas={folhas}
         aberta={indice}
-        aoAbrir={definirAberta}
+        aoAbrir={abrirAba}
         aoCriar={aoCriarFolha}
       />
     </div>
@@ -405,18 +554,20 @@ function Grade({
   altura,
   edicoes,
   aoEditar,
+  selecao,
+  definirSelecao,
 }: {
   folha: FolhaGrade;
   indice: number;
   altura?: number;
   edicoes?: Readonly<Record<string, CelulaGrade>>;
   aoEditar?: (chave: string, valor: CelulaGrade) => void;
+  selecao: SelecaoDaGrade | null;
+  definirSelecao: ((posicao: SelecaoDaGrade | null) => void) | undefined;
 }) {
   const totalColunas = Math.max(1, folha.colunas.length);
   const primeiraColunaFixa = totalColunas > 3;
   const linhaInicial = folha.linhaInicial ?? 3;
-
-  const [selecao, definirSelecao] = useState<Posicao | null>(null);
 
   /*
     A CHAVE DA EDIÇÃO, montada num lugar só.
@@ -600,8 +751,8 @@ function Linha({
   numero: number;
   primeiraColunaFixa: boolean;
   editavel: boolean;
-  selecao: Posicao | null;
-  definirSelecao: (p: Posicao | null) => void;
+  selecao: SelecaoDaGrade | null;
+  definirSelecao: ((p: SelecaoDaGrade | null) => void) | undefined;
   chaveDe: (end: string) => string;
   edicoes?: Readonly<Record<string, CelulaGrade>>;
   ehCalculada: (indice: number, coluna: number) => boolean;
@@ -609,21 +760,46 @@ function Linha({
 }) {
   const colunas = folha.colunas;
 
+  /*
+    A MARCAÇÃO JÁ ESTÁ NA LINHA.
+
+    Ela não é consultada num mapa paralelo: `estiloDeLinha` e `estiloDaCelula`
+    leem o `estilo` e os `estilosCelulas` que o `aplicarPincelNaFolha` gravou na
+    própria linha. É o que faz a tela desenhar exatamente a estrutura que o
+    arquivo vai receber — um mapa consultado aqui por conta própria poderia
+    divergir da grade, e a divergência seria a planilha amarela na tela e
+    branca no Excel.
+  */
+  const daLinha = estiloDeLinha(item);
+
+  /** A marcação de uma célula pelo NÚMERO da coluna — 1 é a coluna A. */
+  const marcacaoDaColuna = (numeroDaColuna: number) =>
+    estiloDaCelula(item, colunas[numeroDaColuna - 1]?.chave ?? "");
+
   /**
    * O NÚMERO DA LINHA, preso à esquerda.
    *
    * Ele é o outro endereço da célula — sem ele não se diz "a linha 12 está
    * errada". Fica `sticky left-0` para não se perder na rolagem lateral, que
    * é o gesto constante numa grade de doze colunas.
+   *
+   * E ELE É O BOTÃO DE MARCAR A LINHA INTEIRA: é onde a mão vai para escolher
+   * a linha, e é o único ponto da grade que pertence à linha sem pertencer a
+   * coluna nenhuma.
    */
+  const linhaEscolhida = selecao?.tipo === "linha" && selecao.linha === indice;
+
   const gutter = (extra?: string) => (
     <th
       scope="row"
       style={{ width: `${LARGURA_GUTTER}px` }}
+      onClick={() => definirSelecao?.({ tipo: "linha", linha: indice })}
+      title={`Selecionar a linha ${numero}`}
       className={cn(
-        "sticky left-0 z-10 border-r border-b border-[var(--linha-forte)]",
+        "sticky left-0 z-10 cursor-pointer border-r border-b border-[var(--linha-forte)]",
         "bg-[var(--superficie-areia)] px-1 text-center",
         "tabular text-[0.625rem] font-medium text-[var(--tinta-fraca)]",
+        linhaEscolhida && "outline outline-2 -outline-offset-1 outline-[var(--color-oliva)]",
         extra
       )}
     >
@@ -644,6 +820,7 @@ function Linha({
             "text-[0.6875rem] font-semibold tracking-[0.08em] uppercase text-[var(--tinta)]",
             sozinha && "bg-[var(--superficie-areia)] px-3 pt-3 pb-1"
           )}
+          style={estiloEmCss(daLinha)}
         >
           {item.texto}
         </th>
@@ -664,6 +841,7 @@ function Linha({
               ? "bg-[rgba(201,165,78,0.08)] font-medium text-[#6d5a1e]"
               : "text-[var(--tinta-suave)]"
           )}
+          style={estiloEmCss(daLinha)}
         >
           {item.texto}
         </td>
@@ -678,6 +856,7 @@ function Linha({
       cabeçalho: rótulo na coluna A, valor na B, e o resto da linha em branco
       — não centralizado, não mesclado.
     */
+    const formatoDoCampo = marcacaoDaColuna(1)?.formato ?? item.formato ?? "texto";
     return (
       <tr>
         {gutter()}
@@ -687,21 +866,24 @@ function Linha({
             "border-r border-b border-[var(--linha)] px-2 py-[3px] text-left",
             "text-[0.75rem] font-medium whitespace-nowrap text-[var(--tinta-suave)]"
           )}
+          style={estiloEmCss(daLinha)}
         >
           {item.rotulo}
         </th>
         <td
           className={cn(
             "border-r border-b border-[var(--linha)] px-2 py-[3px] text-[0.75rem] whitespace-nowrap text-tinta",
-            ehNumerico(item.formato) && "tabular text-right"
+            ehNumerico(formatoDoCampo) && "tabular text-right"
           )}
+          style={estiloEmCss(marcacaoDaColuna(1))}
         >
-          {textoDaCelula(item.valor, item.formato ?? "texto")}
+          {textoDaCelula(item.valor, formatoDoCampo)}
         </td>
         {Array.from({ length: Math.max(0, colunas.length - 2) }, (_, k) => (
           <td
             key={k}
             style={{
+              ...estiloEmCss(marcacaoDaColuna(k + 3)),
               minWidth: `${larguraDaColuna(colunas[k + 2] ?? colunas[colunas.length - 1]!)}px`,
             }}
             className="border-r border-b border-[var(--linha)]"
@@ -719,7 +901,7 @@ function Linha({
           <th
             key={c.chave}
             scope="col"
-            style={{ minWidth: `${larguraDaColuna(c)}px` }}
+            style={{ ...estiloEmCss(estiloDaCelula(item, c.chave)), minWidth: `${larguraDaColuna(c)}px` }}
             className={cn(
               "border-r border-b border-[var(--linha-forte)] bg-[var(--superficie-areia)] px-2 py-[3px]",
               "text-[0.625rem] font-semibold tracking-[0.1em] whitespace-nowrap uppercase",
@@ -732,6 +914,73 @@ function Linha({
             {c.titulo}
           </th>
         ))}
+      </tr>
+    );
+  }
+
+  /*
+    A FAIXA DE NOMES DO TOPO DE UMA FICHA — uma linha só, um nome por coluna.
+
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │ POR QUE ISTO É UMA LINHA, E NÃO UM BLOCO DE CAMPOS                   │
+    │                                                                      │
+    │ A ficha começa com o que se quer ver de relance: rendimento, custo     │
+    │ total, quilo por porção, custo por porção, unidade por porção, margem  │
+    │ de segurança. Empilhados como pares rótulo/valor eles ocupam doze      │
+    │ linhas e o olho percorre um de cada vez. Lado a lado, cabem numa       │
+    │ faixa e o painel se lê de uma só vez — que é o leiaute da planilha de  │
+    │ trabalho da Érika.                                                    │
+    │                                                                      │
+    │ E É UMA LINHA DE VERDADE, com endereço próprio. Ela não pode virar     │
+    │ duas linhas físicas no arquivo, porque o número que a tela mostra à    │
+    │ esquerda é o número da linha do Excel: se a faixa comesse dois         │
+    │ endereços, tudo abaixo dela apareceria com um número a menos do que    │
+    │ é — e a marcação que a Érika faz na tela cairia na linha errada do     │
+    │ arquivo.                                                              │
+    │                                                                      │
+    │ A SOBRA É PINTADA, e não ignorada: a barra escura fecha na largura da  │
+    │ tabela. Terminando antes, ela pareceria um remendo com um degrau no    │
+    │ meio da folha.                                                        │
+    └──────────────────────────────────────────────────────────────────────┘
+  */
+  if (item.tipo === "rotulos") {
+    const usados = Math.min(item.rotulos.length, colunas.length);
+
+    return (
+      <tr style={estiloEmCss(daLinha)}>
+        {gutter()}
+        {item.rotulos.slice(0, usados).map((texto, i) => {
+          const c = colunas[i];
+          if (c === undefined) return null;
+          const largura = larguraDaColuna(c);
+          return (
+            <th
+              key={c.chave}
+              scope="col"
+              style={{ ...estiloEmCss(estiloDaCelula(item, c.chave)), minWidth: `${largura}px` }}
+              className={cn(
+                "border-r border-b border-[rgba(255,255,255,0.16)] bg-[var(--color-profundo)] px-1.5 py-[3px]",
+                "text-center align-middle text-[0.5625rem] font-semibold tracking-[0.08em] whitespace-normal uppercase",
+                "text-[rgba(250,247,241,0.86)]"
+              )}
+            >
+              {texto}
+            </th>
+          );
+        })}
+        {Array.from({ length: Math.max(0, colunas.length - usados) }, (_, k) => {
+          const idx = usados + k;
+          return (
+            <th
+              key={`sobra-${k}`}
+              aria-hidden="true"
+              style={{
+                minWidth: `${larguraDaColuna(colunas[idx] ?? colunas[colunas.length - 1]!)}px`,
+              }}
+              className="border-r border-b border-[rgba(255,255,255,0.16)] bg-[var(--color-profundo)]"
+            />
+          );
+        })}
       </tr>
     );
   }
@@ -765,6 +1014,7 @@ function Linha({
         subtotal && "border-t border-t-[var(--linha-forte)]",
         total && "border-t-2 border-t-[var(--linha-forte)] text-tinta"
       )}
+      style={estiloEmCss(daLinha)}
     >
       {gutter()}
       {colunas.map((c, j) => {
@@ -783,6 +1033,18 @@ function Linha({
         const celula = digitado !== undefined ? digitado : (doModelo ?? null);
 
         const calculada = ehCalculada(indice, coluna);
+
+        /*
+          O FORMATO DA CÉLULA, quando a barra trocou moeda ou porcentagem.
+
+          Ele vence o formato da coluna, e é o mesmo caminho que o arquivo
+          percorre: `escrever-grade` lê `estilo.formato` da MESMA marcação. Sem
+          isto, "R$" pintado na tela sairia como número cru no Excel, e as duas
+          pontas do mesmo dado discordariam.
+        */
+        const marcacao = marcacaoDaColuna(coluna);
+        const formatoDaCelula: FormatoGrade = marcacao?.formato ?? c.formato;
+
         /*
           A ÚLTIMA CÉLULA DE UM FECHAMENTO NÃO SE DIGITA.
 
@@ -792,12 +1054,15 @@ function Linha({
         */
         const ehEditavel = editavel && !calculada && !total && !subtotal;
         const selecionada =
-          selecao !== null && selecao.linha === indice && selecao.coluna === j;
+          selecao?.tipo === "celula" &&
+          selecao.linha === indice &&
+          selecao.coluna === j;
+        const naLinhaEscolhida = selecao?.tipo === "linha" && selecao.linha === indice;
 
         return (
           <Celula
             key={c.chave}
-            coluna={c}
+            coluna={{ ...c, formato: formatoDaCelula }}
             colunaNumero={coluna}
             largura={larguraDaColuna(c)}
             fundo={fundo}
@@ -807,9 +1072,13 @@ function Linha({
             calculada={calculada}
             editavel={ehEditavel}
             selecionada={selecionada}
-            onSelecionar={() => definirSelecao({ linha: indice, coluna: j })}
+            naLinhaEscolhida={naLinhaEscolhida}
+            marcacao={estiloEmCss(marcacao)}
+            onSelecionar={() => definirSelecao?.({ tipo: "celula", linha: indice, coluna: j })}
             onConfirmar={(valor) => aoEditar?.(chaveDe(endereco(numero, coluna)), valor)}
-            onMover={(passo) => definirSelecao({ linha: Math.max(0, indice + passo), coluna: j })}
+            onMover={(passo) =>
+              definirSelecao?.({ tipo: "celula", linha: Math.max(0, indice + passo), coluna: j })
+            }
           />
         );
       })}
@@ -858,6 +1127,8 @@ function Celula({
   calculada,
   editavel,
   selecionada,
+  naLinhaEscolhida,
+  marcacao,
   onSelecionar,
   onConfirmar,
   onMover,
@@ -873,6 +1144,10 @@ function Celula({
   calculada: boolean;
   editavel: boolean;
   selecionada: boolean;
+  /** A linha inteira está escolhida — o realce é mais discreto que o da célula. */
+  naLinhaEscolhida: boolean;
+  /** O que a Érika pintou nesta célula, já em CSS. `undefined` é "não mexe". */
+  marcacao: React.CSSProperties | undefined;
   onSelecionar: () => void;
   onConfirmar: (valor: CelulaGrade) => void;
   onMover: (passo: number) => void;
@@ -910,6 +1185,33 @@ function Celula({
     if (!ehNumerico(coluna.formato)) return limpo;
 
     /*
+      ┌────────────────────────────────────────────────────────────────────┐
+      │ A COLUNA DE PESO ACEITA A UNIDADE ESCRITA                          │
+      │                                                                    │
+      │ Ela digita "100 g" tanto quanto digita "0,100" — as duas querem    │
+      │ dizer a mesma coisa, e a coluna é em QUILOS. Sem esta linha, "100 g"│
+      │ seria recusado e o texto ficaria na célula como está: uma célula    │
+      │ de peso com texto dentro, que não soma e não formata.              │
+      │                                                                    │
+      │ `medidaDigitada` devolve três respostas, e as três têm destinos    │
+      │ diferentes:                                                        │
+      │                                                                    │
+      │   número     — "100 g" vira 0,1; "1,5 kg" vira 1,5                 │
+      │   null       — vazio, ou seja, a célula fica vazia                 │
+      │   undefined  — "não sei o que é isto". O TEXTO ORIGINAL fica na     │
+      │                célula, para ela ver o que digitou e corrigir.       │
+      │                                                                    │
+      │ É por isso que o `undefined` não vira `null`: apagar o que ela      │
+      │ digitou sem entender seria a pior das três respostas.              │
+      └────────────────────────────────────────────────────────────────────┘
+    */
+    if (coluna.formato === "peso") {
+      const medida = medidaDigitada(limpo);
+      if (medida !== undefined) return medida;
+      return limpo;
+    }
+
+    /*
       A VÍRGULA É O DECIMAL — E O PONTO NÃO.
 
       Este é o sistema inteiro em português, e no teclado numérico brasileiro
@@ -934,6 +1236,19 @@ function Celula({
     definirDigitando(null);
   }
 
+  /*
+    A MARCAÇÃO VENCE O FUNDO DO MODELO, E VENCE POR ESTILO INLINE.
+
+    O fundo de uma linha vem de classe Tailwind (a faixa alternada, o verde do
+    total), e classe não se sobrepõe a `style`. Como a cor escolhida pela Érika
+    precisa vencer — senão pintar uma linha alternada não mudaria nada, e o
+    gesto pareceria quebrado —, a marcação entra inline.
+
+    A EXCEÇÃO É O REALCE DE SELEÇÃO, que fica FORA da marcação: ele é cromo da
+    tela, não conteúdo, e não deve viajar para o arquivo. Por isso ele é
+    `outline` e não `background`: os dois convivem, e uma célula amarela
+    selecionada continua amarela com o contorno por cima.
+  */
   const classes = cn(
     "relative border-r border-b border-[var(--linha)] px-2 py-[3px] align-middle whitespace-nowrap",
     fundo,
@@ -944,6 +1259,7 @@ function Celula({
     alinhamento(coluna.formato) === "esq" && !primeira && "text-[var(--tinta-suave)]",
     calculada && "bg-[rgba(107,122,70,0.05)] text-[var(--tinta-suave)]",
     selecionada && "outline outline-2 -outline-offset-1 outline-[var(--color-oliva)]",
+    naLinhaEscolhida && !selecionada && "outline outline-1 -outline-offset-1 outline-[rgba(107,122,70,0.5)]",
     primeiraColunaFixa && primeira && cn("sticky left-0 z-[1]", fundo)
   );
 
@@ -951,7 +1267,7 @@ function Celula({
   if (digitando !== null) {
     return (
       <td
-        style={{ minWidth: `${largura}px`, width: `${largura}px` }}
+        style={{ ...marcacao, minWidth: `${largura}px`, width: `${largura}px` }}
         className={cn(classes, "p-0")}
       >
         <input
@@ -994,7 +1310,11 @@ function Celula({
   // ── A célula de leitura ───────────────────────────────────────────────
   if (!editavel) {
     return (
-      <td style={{ minWidth: `${largura}px` }} className={classes} title={tituloDaCelula(calculada)}>
+      <td
+        style={{ ...marcacao, minWidth: `${largura}px` }}
+        className={classes}
+        title={tituloDaCelula(calculada)}
+      >
         {exibicao}
       </td>
     );
@@ -1003,7 +1323,7 @@ function Celula({
   // ── A célula de entrada ───────────────────────────────────────────────
   return (
     <td
-      style={{ minWidth: `${largura}px` }}
+      style={{ ...marcacao, minWidth: `${largura}px` }}
       className={cn(classes, "cursor-cell")}
       tabIndex={-1}
       title={tituloDaCelula(false)}
@@ -1025,6 +1345,35 @@ function Celula({
 // ---------------------------------------------------------------------------
 // Auxiliares
 // ---------------------------------------------------------------------------
+
+/**
+ * A MARCAÇÃO, TRADUZIDA PARA CSS.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE O NOME DA PROPRIEDADE É ESCRITO À MÃO, E POR QUE ISSO É BOM   │
+ * │                                                                      │
+ * │ `background` e `color` não viram composição dinâmica de classe do     │
+ * │ Tailwind — o compilador não enxerga um valor que só existe em tempo   │
+ * │ de execução. A alternativa seria `style` inline, e é ele mesmo que    │
+ * │ resolve: a cor escolhida pela Érika é um dado, e dado que vira estilo  │
+ * │ inline é o caso em que o inline é a ferramenta certa.                  │
+ * │                                                                      │
+ * │ O ALINHAMENTO AQUI É `vertical-align`, e não `text-align`: o           │
+ * │ `text-align` já vem das classes, que o derivam do FORMATO da célula.   │
+ * │ Escrever `text-align` aqui apagaria aquele — e uma coluna de dinheiro  │
+ * │ marcada de amarelo passaria a alinhar à esquerda, que é um defeito     │
+ * │ visível e inexplicável para quem só queria pintar a célula.            │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function estiloEmCss(estilo: EstiloGrade | undefined): React.CSSProperties | undefined {
+  if (estilo === undefined) return undefined;
+  const css: React.CSSProperties = {};
+  if (estilo.fundo !== undefined) css.background = estilo.fundo;
+  if (estilo.texto !== undefined) css.color = estilo.texto;
+  if (estilo.negrito === true) css.fontWeight = 700;
+  if (estilo.alinhamento !== undefined) css.textAlign = estilo.alinhamento === "esq" ? "left" : estilo.alinhamento === "dir" ? "right" : "center";
+  return css;
+}
 
 /**
  * A LARGURA DE UMA COLUNA NA TELA.

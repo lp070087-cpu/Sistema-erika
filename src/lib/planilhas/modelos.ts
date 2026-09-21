@@ -43,15 +43,49 @@ import type { ModeloPlanilha } from "./tipos";
  *
  * EXPORTADOS porque cada gerador usa a própria lista como nome de aba de
  * verdade — e não uma cópia dela. Se os nomes divergissem, o card da Central
- * prometeria "Acompanhamentos" e o arquivo traria "Histórico": ninguém
- * notaria até um cliente reclamar que a aba não existe.
+ * prometeria uma aba e o arquivo traria outra: ninguém notaria até um cliente
+ * reclamar que a aba não existe.
  *
  * `as const` para o índice devolver o literal, e não `string | undefined`.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ELAS SÃO CAIXA ALTA                                          │
+ * │                                                                      │
+ * │ É a caixa das abas da planilha de referência da Érika, e a etiqueta da │
+ * │ aba é a única parte da grade que ela lê ANTES de ler a grade. Uma      │
+ * │ etiqueta em caixa baixa ao lado de blocos de título em caixa alta      │
+ * │ desapareceria — e a aba é navegação, não legenda.                      │
+ * │                                                                      │
+ * │ Como estas constantes são também os NOMES REAIS das folhas do .xlsx,  │
+ * │ a caixa vale nos dois lugares, e continua valendo um só cadastro: o    │
+ * │ que a Central promete é exatamente o que o arquivo traz.               │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
-export const ABAS_RELATORIO = ["Resumo", "Tarefas", "Acompanhamentos", "Informações"] as const;
-export const ABAS_FICHA = ["Fichas", "Base", "Informações"] as const;
-export const ABAS_CUSTOS = ["Custos", "Composição", "Informações"] as const;
-export const ABAS_LIVRE = ["Planilha"] as const;
+export const ABAS_RELATORIO = [
+  "RESUMO",
+  "TAREFAS",
+  "ACOMPANHAMENTOS",
+  "INFORMAÇÕES",
+] as const;
+export const ABAS_FICHA = ["FICHA", "BASE", "INFORMAÇÕES"] as const;
+export const ABAS_CUSTOS = ["CUSTOS", "COMPOSIÇÃO", "INFORMAÇÕES"] as const;
+
+/**
+ * A ABA DA PLANILHA EM BRANCO — e o número nela não é enfeite.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE "PLANILHA 1" E NÃO "PLANILHA"                                │
+ * │                                                                      │
+ * │ Porque o `[+]` da faixa cria "Planilha 2", "Planilha 3" — e o Excel    │
+ * │ RECUSA dois nomes de aba iguais. Com a primeira chamada "Planilha" e   │
+ * │ a segunda "Planilha 2", a sequência fica com um buraco inexplicável;   │
+ * │ e se as duas virassem "Planilha", o arquivo exportado sairia com uma   │
+ * │ delas renomeada pelo Excel, sem aviso nenhum.                          │
+ * │                                                                      │
+ * │ Numerada, a família é uma só: "Planilha 1", "Planilha 2", "Planilha 3".│
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export const ABAS_LIVRE = ["Planilha 1"] as const;
 
 /**
  * O MODELO COM QUE A CENTRAL ABRE QUANDO NADA FOI ESCOLHIDO.

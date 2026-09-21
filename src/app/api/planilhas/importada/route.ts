@@ -56,13 +56,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { arquivoDaGrade, respostaDeDownload } from "@/lib/planilhas/gerador";
 import type {
+  AlinhamentoGrade,
   CelulaGrade,
   ColunaGrade,
+  EstiloGrade,
   FolhaGrade,
   FormatoGrade,
   GradeDaPlanilha,
   LinhaGrade,
 } from "@/lib/planilhas/grade";
+import { corValida, formatoValido } from "@/lib/planilhas/grade";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,12 +83,14 @@ const LIMITE_DO_CORPO = 2 * 1024 * 1024;
 /** O teto de uma célula de texto. O Excel corta em 32.767; aqui muito antes. */
 const LIMITE_DA_CELULA = 500;
 
-const FORMATOS = new Set<FormatoGrade>(["texto", "numero", "moeda", "peso", "percentual", "data"]);
+/*
+  O `formatoValido` DA CAMADA PURA, e não uma segunda lista aqui.
 
-/** Aceita o formato só se ele for um dos que a grade conhece. */
-function formatoValido(v: unknown): FormatoGrade | null {
-  return FORMATOS.has(v as FormatoGrade) ? (v as FormatoGrade) : null;
-}
+  Ele vinha de um `new Set([...])` local, que repetia exatamente os seis
+  formatos já declarados em `grade.ts`. Duas listas da mesma verdade divergem
+  — e a divergência apareceria como um formato aceito na tela e recusado no
+  download, que é o tipo de "às vezes não funciona" que ninguém reproduz.
+*/
 
 /** Um texto seguro: sempre string, sempre dentro do teto. */
 function textoCurto(v: unknown): string {
@@ -168,13 +173,110 @@ function celulasSeguras(
 }
 
 /**
+ * A MARCAÇÃO QUE A ÉRIKA FEZ, VALIDADA CAMPO A CAMPO.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO EXISTE, SE O ESCRITOR JÁ VALIDA                         │
+ * │                                                                      │
+ * │ O `escrever-grade` chama `corValida` antes de pintar — mas ele confia │
+ * │ na grade que recebeu, e esta rota NÃO pode confiar no corpo que       │
+ * │ chegou pela rede. Se `linhaSegura` não conhecesse `estilo`, o campo   │
+ * │ seria descartado em silêncio (a planilha chegaria marcada na tela e   │
+ * │ branca no arquivo); se o repassasse cru, uma string arbitrária iria   │
+ * │ para dentro de um `fgColor` do ExcelJS.                               │
+ * │                                                                      │
+ * │ Passar cru seria o pior dos dois: o ExcelJS grava o que recebe sem    │
+ * │ reclamar, e o resultado é um arquivo que abre mas não pinta nada.      │
+ * │                                                                      │
+ * │ Aqui a única porta de entrada é `corValida` — hex de seis dígitos,     │
+ * │ nada mais. E o resultado volta a ser passado por ela na saída, para    │
+ * │ que objeto vazio vire `undefined` em vez de `{}`: um `estilo: {}`      │
+ * │ escrita em toda linha faria o ExcelJS alocar um estilo por célula sem  │
+ * │ necessidade.                                                          │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+function alinhamentoValido(v: unknown): AlinhamentoGrade | undefined {
+  return v === "esq" || v === "dir" || v === "centro" ? v : undefined;
+}
+
+function estiloSeguro(v: unknown): EstiloGrade | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const e = v as Record<string, unknown>;
+
+  const fundo = corValida(e.fundo);
+  const texto = corValida(e.texto);
+  const negrito = e.negrito === true ? true : undefined;
+  const alinhamento = alinhamentoValido(e.alinhamento);
+  const formato = formatoValido(e.formato);
+
+  if (
+    fundo === undefined &&
+    texto === undefined &&
+    negrito === undefined &&
+    alinhamento === undefined &&
+    formato === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(fundo !== undefined ? { fundo } : {}),
+    ...(texto !== undefined ? { texto } : {}),
+    ...(negrito !== undefined ? { negrito } : {}),
+    ...(alinhamento !== undefined ? { alinhamento } : {}),
+    ...(formato !== undefined ? { formato } : {}),
+  };
+}
+
+/** O mapa chave→estilo de uma linha, com as chaves de coluna respeitadas. */
+function estilosSeguros(
+  v: unknown,
+  formatoDaColuna: Readonly<Record<string, FormatoGrade>>
+): Readonly<Record<string, EstiloGrade>> | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const saida: Record<string, EstiloGrade> = {};
+  for (const [chave, valor] of Object.entries(v as Record<string, unknown>)) {
+    /*
+      SÓ CHAVE DE COLUNA CONHECIDA ENTRA.
+
+      Uma marcação em `"xyz"` não tem onde aparecer: nenhuma coluna tem essa
+      chave, então o estilo seria carregado de linha em linha sem nunca pintar
+      nada. Descartá-la mantém o mapa do tamanho da tabela.
+    */
+    if (formatoDaColuna[chave] === undefined) continue;
+    const estilo = estiloSeguro(valor);
+    if (estilo !== undefined) saida[chave] = estilo;
+  }
+  return Object.keys(saida).length > 0 ? saida : undefined;
+}
+
+/**
+ * A MARCAÇÃO DA LINHA — o `estilo` e o `estilosCelulas` que toda variante aceita.
+ *
+ * Devolve um objeto para ser espalhado na linha montada. Vazio quando não há
+ * marcação nenhuma, para que a linha saia idêntica à que o modelo gerou.
+ */
+function marcacaoDaLinha(
+  l: Record<string, unknown>,
+  formatoDaColuna: Readonly<Record<string, FormatoGrade>>
+): { estilo?: EstiloGrade; estilosCelulas?: Readonly<Record<string, EstiloGrade>> } {
+  const estilo = estiloSeguro(l.estilo);
+  const estilosCelulas = estilosSeguros(l.estilosCelulas, formatoDaColuna);
+  return {
+    ...(estilo !== undefined ? { estilo } : {}),
+    ...(estilosCelulas !== undefined ? { estilosCelulas } : {}),
+  };
+}
+
+/**
  * UMA LINHA, CONSTRUÍDA A PARTIR DO QUE "TIPO" DIZ QUE ELA É.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │ POR QUE A LINHA NÃO É UM SACO DE CÉLULAS                             │
  * │                                                                      │
- * │ São oito variantes, e cada uma carrega campos diferentes: `secao` tem   │
- * │ `texto`, `campo` tem `rotulo`/`valor`/`formato`, `dados` tem `celulas`. │
+ * │ São nove variantes, e cada uma carrega campos diferentes: `secao` tem   │
+ * │ `texto`, `campo` tem `rotulo`/`valor`/`formato`, `dados` tem `celulas`,  │
+ * │ `rotulos` tem a lista de nomes de coluna.                               │
  * │ Aceitar um objeto genérico e deixar o escritor descobrir o que fazer    │
  * │ produziria uma linha que "quase" funciona — e o defeito apareceria como │
  * │ uma célula faltando no meio do arquivo.                                │
@@ -190,35 +292,64 @@ function linhaSegura(
 ): LinhaGrade {
   if (typeof linha !== "object" || linha === null) return { tipo: "vazia" };
   const l = linha as Record<string, unknown>;
+  const marcacao = marcacaoDaLinha(l, formatoDaColuna);
 
   switch (l.tipo) {
     case "secao":
-      return { tipo: "secao", texto: textoCurto(l.texto) };
+      return { tipo: "secao", texto: textoCurto(l.texto), ...marcacao };
 
     case "campo": {
-      const formato = formatoValido(l.formato);
+      const formato = formatoValido(l.formato) ?? null;
       return {
         tipo: "campo",
         rotulo: textoCurto(l.rotulo),
         valor: celulaSegura(l.valor, formato ?? undefined),
         ...(formato ? { formato } : {}),
+        ...marcacao,
       };
     }
 
     case "cabecalho":
-      return { tipo: "cabecalho" };
+      return { tipo: "cabecalho", ...marcacao };
+
+    /*
+      A FAIXA DE NOMES DO TOPO DA FICHA.
+
+      Cada entrada é um NOME de coluna, na ordem das colunas. Não há valor
+      aqui: o valor vem na linha `dados` seguinte, e é lá que ele recebe o
+      formato. Um nome que não seja texto vira string vazia em vez de
+      derrubar a linha — a coluna sai sem título, e o número que estiver
+      embaixo dela continua no lugar certo.
+
+      O teto é o mesmo da célula: uma faixa de nomes não é lugar de texto
+      longo, e um valor maior que isso já não seria um nome.
+    */
+    case "rotulos": {
+      const bruto = Array.isArray(l.rotulos) ? l.rotulos : [];
+      return { tipo: "rotulos", rotulos: bruto.map((r) => textoCurto(r)), ...marcacao };
+    }
 
     case "dados":
-      return { tipo: "dados", celulas: celulasSeguras(l.celulas, formatoDaColuna) };
+      return { tipo: "dados", celulas: celulasSeguras(l.celulas, formatoDaColuna), ...marcacao };
 
     case "subtotal": {
       const rotulo = typeof l.rotulo === "string" ? l.rotulo.slice(0, LIMITE_DA_CELULA) : "";
-      return { tipo: "subtotal", celulas: celulasSeguras(l.celulas, formatoDaColuna), rotulo };
+      return {
+        tipo: "subtotal",
+        celulas: celulasSeguras(l.celulas, formatoDaColuna),
+        rotulo,
+        ...marcacao,
+      };
     }
 
     case "total": {
       const rotulo = typeof l.rotulo === "string" ? l.rotulo.slice(0, LIMITE_DA_CELULA) : "";
-      return { tipo: "total", celulas: celulasSeguras(l.celulas, formatoDaColuna), rotulo };
+      return {
+        tipo: "total",
+        celulas: celulasSeguras(l.celulas, formatoDaColuna),
+        rotulo,
+        ...marcacao,
+      };
     }
 
     case "texto":
@@ -226,12 +357,15 @@ function linhaSegura(
         tipo: "texto",
         texto: textoCurto(l.texto),
         tom: l.tom === "pendencia" ? "pendencia" : "nota",
+        ...marcacao,
       };
 
     case "vazia": {
       const celulas =
         l.celulas === undefined ? undefined : celulasSeguras(l.celulas, formatoDaColuna);
-      return celulas === undefined ? { tipo: "vazia" } : { tipo: "vazia", celulas };
+      return celulas === undefined
+        ? { tipo: "vazia", ...marcacao }
+        : { tipo: "vazia", celulas, ...marcacao };
     }
 
     default:

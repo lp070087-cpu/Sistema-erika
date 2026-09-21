@@ -82,6 +82,22 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
   const clientes = await operacao.listarClientes();
 
   /*
+    AS CONSULTORIAS VÊM DO SERVIDOR, E INTEIRAS.
+
+    Elas são poucas — uma ou duas por cliente —, não mudam enquanto a tela está
+    aberta, e o seletor precisa das do cliente escolhido NO INSTANTE em que ele
+    é escolhido. Buscá-las no cliente a cada troca seria uma ida ao servidor
+    para dado que não muda; buscá-las aqui custa uma leitura só.
+
+    A lista chega COMPLETA e o recorte por cliente é do componente, pela mesma
+    razão que o contexto de planilha chega completo: quem escolhe por cliente é
+    a tela, e a tela é onde a escolha é visível. Uma consultoria de outro
+    cliente no `<select>` seria um vazamento entre clientes — e ele está
+    fechado no filtro de `consultoriasDoCliente`, abaixo.
+  */
+  const consultorias = await operacao.listarConsultorias();
+
+  /*
     O RECORTE DE CLIENTES DO SELETOR.
 
     O cliente vem da URL para o endereço continuar servindo de atalho a partir
@@ -127,6 +143,7 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
       <AmbienteDaPlanilha
         modelos={MODELOS}
         clientes={clientes}
+        consultorias={consultorias}
         /*
           O cliente da URL entra como cliente INICIAL. Isso é diferente de
           abrir a tela com todos os clientes listados e nenhum escolhido:
@@ -164,11 +181,12 @@ export default async function PaginaPlanilhas({ searchParams }: Props) {
         <div>
           <Rotulo claro>Um arquivo de verdade</Rotulo>
           <p className="mt-2 font-display text-[1.25rem] text-off">
-            Você baixa, abre no Excel e usa.
+            Monte aqui, revise aqui, exporte quando quiser.
           </p>
           <p className="mt-1.5 max-w-[62ch] text-[0.875rem] text-creme/65">
-            Com filtro no cabeçalho, painel congelado, datas e valores formatados e uma aba que
-            explica de onde vieram os dados.
+            A planilha abre no editor, não na pasta de downloads. O arquivo para Excel sai só quando
+            você mandar — com filtro no cabeçalho, painel congelado, datas e valores formatados, e
+            uma aba que explica de onde vieram os dados.
           </p>
         </div>
         <span className="assina text-[1.5rem] text-oliva-palha">Da cozinha para a planilha</span>
