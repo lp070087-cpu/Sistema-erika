@@ -117,6 +117,16 @@ const FONTES = [
   "src/lib/dados/repositorio.ts",
   "src/lib/dados/repositorio-operacao.ts",
   "src/lib/dados/demonstracao.ts",
+  // `demonstracao.ts` importa os tipos de cardápio, e `./cardapios` importa
+  // `./precificacao` — a cadeia tem de vir inteira, ou o `tsc` para em
+  // `TS2307` e os erros em cascata escondem a causa.
+  "src/lib/dados/precificacao.ts",
+  "src/lib/dados/cardapios.ts",
+  // E `./equipe`, pela mesma causa: o store importa os tipos de pessoa.
+  "src/lib/dados/equipe.ts",
+  // E `./biblioteca`, pelo mesmo motivo uma quarta vez: o store importa os
+  // tipos de material.
+  "src/lib/dados/biblioteca.ts",
   "src/lib/dados/mock/repositorio-mock.ts",
   "src/lib/dados/mock/repositorio-operacao-mock.ts",
   "src/lib/dados/mock/dados.ts",

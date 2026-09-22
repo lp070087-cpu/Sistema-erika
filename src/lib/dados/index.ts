@@ -281,6 +281,129 @@ export type {
   QuadroComercial,
 } from "./indicadores-comerciais";
 
+// --- A precificação reunida -------------------------------------------------
+//
+// A montagem que uma TELA precisa: uma linha por prato, com o custo da ficha
+// e o quadro comercial juntos, mais o estado de cada ausência.
+//
+// Não há fórmula nova aqui — `estadoComercial` relê a mesma relação que
+// `indicadoresDeVenda` já calcula, e a soma continua vindo de `custos-ficha`.
+// O que existe é a camada que impede a conta de ser reescrita dentro de um
+// componente React, onde não haveria script capaz de conferi-la.
+
+export {
+  ACAO_DA_PENDENCIA,
+  ROTULO_ESTADO_COMERCIAL,
+  TOM_ESTADO_COMERCIAL,
+  estadoComercial,
+  linhaDePrecificacao,
+  resumirPrecificacao,
+  somarCustos,
+  somarPrecos,
+  temPreco,
+} from "./precificacao";
+
+export type {
+  EstadoComercial,
+  LinhaPrecificacao,
+  PendenciaDaLinha,
+  ResumoPrecificacao,
+} from "./precificacao";
+
+// --- O cardápio, montado sobre as fichas ------------------------------------
+//
+// O cardápio acrescenta APRESENTAÇÃO — seção, ordem, nome de anúncio — e não
+// um segundo cadastro do prato: cada item aponta para uma ficha que já existe,
+// e custo, preço e CMV saem do mesmo `linhaDePrecificacao`. O que este módulo
+// traz de próprio é a conferência: item sem ficha, ficha de outro cliente,
+// item numa seção que não existe.
+
+export {
+  ACAO_DA_PENDENCIA_DO_CARDAPIO,
+  ROTULO_SITUACAO_CARDAPIO,
+  cardapiosVisiveis,
+  contarItens,
+  montarLinhasDoCardapio,
+  pratosDistintos,
+  resumirCardapio,
+  somarPrecosDoCardapio,
+} from "./cardapios";
+
+export type {
+  Cardapio,
+  CategoriaDoCardapio,
+  EntradaDoCardapio,
+  ItemDeCardapio,
+  LinhaDoCardapio,
+  OcorrenciaDoCardapio,
+  PendenciaDoCardapio,
+  ResumoDoCardapio,
+  SituacaoCardapio,
+} from "./cardapios";
+
+// --- A equipe que executa na cozinha do cliente -----------------------------
+//
+// Nomes de execução, função, turno e treinamento — e nada de folha, salário,
+// férias, benefício ou ponto. A ausência desses campos é a garantia de que o
+// módulo não vira RH; ela está escrita em `equipe.ts`.
+
+export {
+  ORDEM_FUNCAO,
+  ROTULO_FUNCAO,
+  ROTULO_SITUACAO_PESSOA,
+  ROTULO_TURNO,
+  casarPessoas,
+  coberturaDeTreinamento,
+  nomesRepetidos,
+  nomesSemCadastro,
+  normalizarNome,
+  ordenarEquipe,
+  pessoasAtivas,
+  pessoasDoCliente,
+  responsaveisDoProcesso,
+  responsaveisDosProcessos,
+  resumirEquipe,
+} from "./equipe";
+
+export type {
+  Casamento,
+  CoberturaDeTreinamento,
+  FuncaoNaCozinha,
+  Pessoa,
+  ResumoDaEquipe,
+  ResponsavelLido,
+  SituacaoPessoa,
+  Treinamento,
+  Turno,
+} from "./equipe";
+
+// --- A biblioteca de material de apoio --------------------------------------
+//
+// O REGISTRO de um material que já existe — título, tipo, para que serve,
+// a quem vale e ONDE ele está. Não há campo de arquivo, e a ausência é o
+// ponto: o sistema endereça o material, não o hospeda. Ver `biblioteca.ts`.
+
+export {
+  ORDEM_MATERIAL,
+  ROTA_ORIGEM_DO_MATERIAL,
+  ROTULO_MATERIAL,
+  ROTULO_ORIGEM_DO_MATERIAL,
+  buscarMateriais,
+  materiaisDoCliente,
+  materiaisGerais,
+  ordenarBiblioteca,
+  resumirBiblioteca,
+  serveAoCliente,
+} from "./biblioteca";
+
+export type {
+  Material,
+  OrigemDoMaterial,
+  ResumoDaBiblioteca,
+  TipoDeMaterial,
+  TipoDeOrigem,
+} from "./biblioteca";
+
 // --- A camada de edição da sessão ------------------------------------------
 //
 // Enquanto o banco não está conectado, é aqui que uma alteração sobrevive à
@@ -288,25 +411,64 @@ export type {
 // a edição ser verificável agora e trocável por repositório depois.
 
 export {
+  acervoDaBiblioteca,
+  acervoDaEquipe,
+  acervoDeCardapios,
+  acrescentarSecao,
+  adicionarItem,
+  alterarItemDoCardapio,
+  arquivarCardapio,
   arquivarIngrediente,
+  cardapioArquivado,
+  cardapioDaSessaoNova,
+  cardapioFoiExcluido,
+  criarCardapio,
+  criarMaterial,
+  criarPessoa,
+  definirSituacaoDoCardapio,
+  desarquivarCardapio,
   desarquivarIngrediente,
+  duplicarCardapio,
   ehInsumoDaSessao,
+  excluirCardapio,
   excluirFicha,
   excluirIngrediente,
+  excluirMaterial,
   fichaFoiExcluida,
   fichasVisiveis,
+  idsDeCopia,
   ingredienteArquivado,
   ingredienteDaSessao,
   insumoFoiExcluido,
   insumoForaDaBiblioteca,
   limparDemonstracao,
+  marcarRetornoDaPessoa,
+  marcarSaidaDaPessoa,
+  materialDaSessao,
+  materialFoiExcluido,
+  moverItem,
+  moverSecao,
+  pessoaDaSessao,
+  registrarTreinamento,
+  removerItem,
+  removerSecao,
+  removerTreinamento,
+  renomearSecao,
   salvarCadastroDoIngrediente,
+  salvarCardapio,
+  salvarMaterial,
+  salvarPessoa,
   salvarTransformacao,
+  secoesDoCardapio,
   semArquivados,
   semExcluidos,
   temAlteracoes,
   transformacaoDaSessao,
+  treinamentosDaEquipe,
+  trocarItemDeSecao,
 } from "./demonstracao";
+
+export type { SituacaoEditavel } from "./demonstracao";
 
 export type {
   FichaDoIngrediente,

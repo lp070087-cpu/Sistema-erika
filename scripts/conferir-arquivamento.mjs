@@ -62,7 +62,37 @@ mkdirSync(dados, { recursive: true });
   store passar a depender de algo a mais, esta compilação quebra na hora, que
   é o aviso no momento certo e não três telas depois.
 */
-const FONTES = ["demonstracao.ts", "tipos-operacao.ts", "indicadores-comerciais.ts", "perguntas.ts", "tipos.ts"];
+/*
+  `precificacao.ts` e `cardapios.ts` entram porque `demonstracao.ts` passou a
+  importar os tipos de cardápio, e `./cardapios` importa `./precificacao`.
+
+  Sem eles o `tsc` da bancada falha em `TS2307: Cannot find module
+  './cardapios'` — e o estrago não fica nessa linha: sem os TIPOS, todo
+  `(c, i) =>` que percorre uma lista de cardápio passa a ser `any` implícito, e
+  a saída vira quarenta erros em cascata que apontam para o lugar errado. Foi
+  assim que esta bancada quebrou quando o módulo de cardápios nasceu.
+*/
+const FONTES = [
+  "demonstracao.ts",
+  "tipos-operacao.ts",
+  "indicadores-comerciais.ts",
+  "perguntas.ts",
+  "tipos.ts",
+  "custos.ts",
+  "custos-ficha.ts",
+  "numeros.ts",
+  "precificacao.ts",
+  "cardapios.ts",
+  "equipe.ts",
+  /*
+    `biblioteca.ts` entrou pela mesma causa, e a lição se repetiu uma quarta
+    vez: o store passou a importar os tipos de material. Sem o arquivo aqui, a
+    compilação para em `TS2307` e o estrago não fica nessa linha — sem os
+    tipos, todo `(m) =>` que percorre um material vira `any` implícito, e a
+    saída vira dezenas de erros apontando para o lugar errado.
+  */
+  "biblioteca.ts",
+];
 
 for (const f of FONTES) {
   const origem = join(raiz, "src", "lib", "dados", f);

@@ -69,6 +69,31 @@ import type {
   PrecoIngrediente,
   Transformacao,
 } from "./tipos-operacao";
+import type {
+  Cardapio,
+  CategoriaDoCardapio,
+  ItemDeCardapio,
+  SituacaoCardapio,
+} from "./cardapios";
+/*
+  A equipe entra por TIPO, como o cardápio: o store guarda a forma da pessoa,
+  e quem sabe as regras — casar nome, conferir treinamento, ordenar — é
+  `./equipe`. Assim as duas metades continuam sendo uma só em cada lugar.
+
+  `chaveDoTreinamento` é a exceção, e é de valor de propósito: "este par é o
+  mesmo par?" é uma REGRA, e o store precisava dela para não registrar duas
+  vezes o mesmo treinamento. Ele tinha uma cópia própria da regra, que
+  divergia da usada na conferência — ver o comentário dela em `./equipe`. A
+  cópia importada não é o store sabendo mais: é o store perguntando em vez de
+  responder de memória.
+*/
+import { chaveDoTreinamento, type Pessoa, type Treinamento } from "./equipe";
+/*
+  A biblioteca entra por TIPO, como a equipe e o cardápio. E aqui a forma é o
+  que importa mais do que em qualquer outro módulo: `Material` NÃO TEM campo de
+  arquivo, e é o tipo que garante isso. Ver o cabeçalho de `./biblioteca`.
+*/
+import type { Material } from "./biblioteca";
 import type { ParametrosComerciais } from "./indicadores-comerciais";
 
 // ---------------------------------------------------------------------------
@@ -187,6 +212,32 @@ let identidades = new Map<string, Partial<Ingrediente>>();
 let transformacoes = new Map<string, Transformacao>();
 let insumosExcluidos = new Set<string>();
 let fichasExcluidas = new Set<string>();
+
+/*
+  ── OS CARDÁPIOS DESTA SESSÃO ─────────────────────────────────────────
+
+  Mesma forma do que já existe para ficha e insumo, e pela mesma razão: a
+  lista que a tela exibe vem do repositório (que não enxerga o que foi criado
+  agora), então o store ANOTA o que a sessão mexeu e quem exibe sobrepõe.
+
+  ┌────────────────────────────────────────────────────────────────────┐
+  │ POR QUE O ITEM DE CARDÁPIO NÃO GUARDA CUSTO NEM PREÇO              │
+  │                                                                    │
+  │ Porque os dois já estão na ficha, e a ficha é lida ao vivo. Um item │
+  │ que guardasse `precoVenda` próprio seria uma cópia: mudar o preço na│
+  │ ficha deixaria o cardápio mostrando o antigo, e nada na tela        │
+  │ explicaria a diferença.                                            │
+  │                                                                    │
+  │ É a mesma decisão que a precificação tomou, e vale aqui pelo mesmo  │
+  │ motivo — com um agravante: o cardápio é o que vai para a mesa do    │
+  │ cliente. Um preço desatualizado aqui não é um número errado numa    │
+  │ tela, é um preço errado sendo cobrado.                             │
+  └────────────────────────────────────────────────────────────────────┘
+*/
+let cardapiosNovos: Cardapio[] = [];
+let alteracoesDeCardapio = new Map<string, Partial<Cardapio>>();
+let cardapiosArquivados = new Set<string>();
+let cardapiosExcluidos = new Set<string>();
 
 /*
   ── ARQUIVADOS: QUEM SAI DE CIRCULAÇÃO SEM SAIR DA HISTÓRIA ───────────
@@ -619,6 +670,1042 @@ export function acervoDeFichas(
   ].sort((a, b) => b.atualizadaEm.getTime() - a.atualizadaEm.getTime());
 }
 
+// ---------------------------------------------------------------------------
+// Cardápios
+// ---------------------------------------------------------------------------
+
+/**
+ * O CARDÁPIO DA SESSÃO — o do cenário com o que foi mexido por cima.
+ *
+ * A mesclagem é por campo, e não do objeto inteiro, pelo mesmo motivo que o
+ * cabeçalho da ficha: seções e itens são salvos em ações diferentes — criar
+ * uma seção numa, mover um item noutra. Substituir o cardápio inteiro faria
+ * criar uma seção apagar o item movido cinco minutos antes.
+ *
+ * `categorias` e `itens` são as exceções: quando vêm na alteração, vêm
+ * COMPLETAS, porque são listas ordenadas e uma mesclagem por posição não teria
+ * como saber onde uma seção nova entra.
+ */
+export function cardapioDaSessao(cardapio: Cardapio): Cardapio {
+  const alteracao = alteracoesDeCardapio.get(cardapio.id);
+  const arquivado = cardapiosArquivados.has(cardapio.id);
+
+  if (alteracao === undefined && !arquivado) return cardapio;
+
+  return {
+    ...cardapio,
+    ...(alteracao ?? {}),
+    ...(arquivado ? { situacao: "ARQUIVADO" as const } : {}),
+  };
+}
+
+/** O acervo de cardápios: os do cenário sem os apagados, mais os criados agora. */
+export function acervoDeCardapios(doCenario: readonly Cardapio[]): readonly Cardapio[] {
+  const novos = cardapiosNovos.filter((c) => !cardapiosExcluidos.has(c.id));
+  const idsNovos = new Set(novos.map((c) => c.id));
+
+  return [
+    ...novos,
+    ...doCenario
+      .filter((c) => !cardapiosExcluidos.has(c.id) && !idsNovos.has(c.id))
+      .map(cardapioDaSessao),
+  ].sort((a, b) => b.atualizadoEm.getTime() - a.atualizadoEm.getTime());
+}
+
+export function criarCardapio(cardapio: Cardapio): void {
+  cardapiosNovos = [...cardapiosNovos, cardapio];
+  avisar();
+}
+
+/**
+ * Grava a alteração de um cardápio, MESCLANDO com o que já havia.
+ *
+ * Uma alteração num cardápio CRIADO nesta sessão vai direto no registro, e não
+ * no mapa de sobreposição: o mapa é uma sobreposição sobre algo que existe no
+ * cenário, e sobrepor um objeto que só existe aqui deixaria dois lugares com a
+ * mesma verdade — o que a lista mostra seria o do mapa, e o que a exclusão
+ * procura seria o da lista.
+ */
+export function salvarCardapio(cardapioId: string, alteracao: Partial<Cardapio>): void {
+  const indice = cardapiosNovos.findIndex((c) => c.id === cardapioId);
+  if (indice >= 0) {
+    const atual = cardapiosNovos[indice];
+    if (atual) cardapiosNovos[indice] = { ...atual, ...alteracao };
+  } else {
+    alteracoesDeCardapio.set(cardapioId, {
+      ...(alteracoesDeCardapio.get(cardapioId) ?? {}),
+      ...alteracao,
+    });
+  }
+  avisar();
+}
+
+/**
+ * ARQUIVAR E EXCLUIR SÃO COISAS DIFERENTES — de novo, e aqui importa mais.
+ *
+ * Arquivar tira o cardápio das listas e PRESERVA o registro: ele foi impresso,
+ * foi para a mesa, o cliente pagou por ele. Excluir tira das listas e do
+ * acervo — e o que se perde não volta, porque nesta sessão não há cópia.
+ *
+ * A separação é a mesma que `arquivarIngrediente` documenta. Escrever as duas
+ * operações como uma só seria escolher por ela a que apaga.
+ */
+export function arquivarCardapio(cardapioId: string): void {
+  cardapiosArquivados.add(cardapioId);
+  avisar();
+}
+
+export function desarquivarCardapio(cardapioId: string): void {
+  cardapiosArquivados.delete(cardapioId);
+  /*
+    Desarquivar precisa DESFAZER a sobreposição de situação quando ela veio
+    do arquivamento — mas não quando o cardápio foi arquivado de verdade no
+    cenário. Para os novos da sessão, a alteração gravada é a única verdade;
+    para os do cenário, tirar do Set já basta.
+  */
+  const alteracao = alteracoesDeCardapio.get(cardapioId);
+  if (alteracao?.situacao === "ARQUIVADO") {
+    const { situacao: _descartado, ...resto } = alteracao;
+    alteracoesDeCardapio.set(cardapioId, resto);
+  }
+  avisar();
+}
+
+export function cardapioArquivado(cardapioId: string): boolean {
+  return cardapiosArquivados.has(cardapioId);
+}
+
+export function excluirCardapio(cardapioId: string): void {
+  cardapiosExcluidos.add(cardapioId);
+  cardapiosNovos = cardapiosNovos.filter((c) => c.id !== cardapioId);
+  alteracoesDeCardapio.delete(cardapioId);
+  avisar();
+}
+
+export function cardapioFoiExcluido(cardapioId: string): boolean {
+  return cardapiosExcluidos.has(cardapioId);
+}
+
+export function cardapioDaSessaoNova(cardapioId: string): boolean {
+  return cardapiosNovos.some((c) => c.id === cardapioId);
+}
+
+/**
+ * DUPLICA UM CARDÁPIO — a segunda versão do mesmo menu.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE A CÓPIA RECEBE, E O QUE ELA NÃO RECEBE                          │
+ * │                                                                      │
+ * │ RECEBE: as seções com ids NOVOS e os itens apontando para eles.       │
+ * │                                                                      │
+ * │ NÃO RECEBE: os ids das seções originais. Se a cópia guardasse os       │
+ * │ mesmos `categoriaId`, editar uma seção na cópia mexeria na original —  │
+ * │ e o erro seria silencioso, porque as duas listas continuariam         │
+ * │ parecendo certas.                                                     │
+ * │                                                                      │
+ * │ NÃO RECEBE o histórico. Ele é a ata do que aconteceu com o cardápio    │
+ * │ ORIGINAL; a cópia afirma uma história que ela não viveu. Ela nasce com │
+ * │ uma linha dizendo de onde veio — a única coisa que se sabe sobre ela.  │
+ * │                                                                      │
+ * │ AS FICHAS SÃO AS MESMAS. E aqui está a diferença central em relação a  │
+ * │ duplicar uma FICHA: lá, os itens são copiados um a um, porque a cópia  │
+ * │ vai divergir. Aqui, os itens do cardápio apontam para as MESMAS fichas │
+ * │ — de propósito. O cardápio de verão e o de inverno anunciam o mesmo    │
+ * │ prato, e corrigir o preço dele na ficha corrige os dois.               │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * O `id` novo chega de fora, como em `duplicarFicha`, e pelo mesmo motivo: o
+ * prefixo `ca_demo_` declara "este cardápio não está no banco", e essa é uma
+ * decisão da tela, tomada num só lugar.
+ *
+ * A mesma regra vale para as SEÇÕES e para as LINHAS: um cardápio tem três
+ * espécies de id — o dele, o de cada seção e o de cada item — e as três
+ * precisam ser novas na cópia. Reaproveitar os ids das linhas faria duas telas
+ * usarem a mesma chave para linhas diferentes, e a lista do React passaria a
+ * trocar conteúdo entre elas na reordenação.
+ *
+ * `montarIds` recebe a ESPÉCIE e a QUANTIDADE, e é chamada duas vezes. A
+ * espécie é argumento, e não algo que a função adivinha, porque é ela que
+ * decide o prefixo do id — e um prefixo adivinhado deixaria de distinguir
+ * seção de item para quem lê o id. A assinatura casa com `idsDeCopia`, que é
+ * quem a tela passa; manter as duas iguais é o que permite injetar a função
+ * direto, sem uma lambda de adaptação que alguém escreveria errado.
+ */
+export function duplicarCardapio(
+  origem: Cardapio,
+  idDoNovo: string,
+  montarIds: (especie: "se" | "it", quantidade: number) => readonly string[]
+): Cardapio {
+  const agora = new Date();
+  const idsDeSecao = montarIds("se", origem.categorias.length);
+  const idsDeItem = montarIds("it", origem.itens.length);
+
+  /*
+    O mapa liga a seção antiga à nova. Sem ele, cada item teria de procurar a
+    sua seção por nome — e duas seções com o mesmo nome (o que é permitido)
+    fariam os itens caírem todos na primeira.
+  */
+  const traducao = new Map<string, string>();
+  origem.categorias.forEach((c, i) => {
+    const novo = idsDeSecao[i];
+    if (novo) traducao.set(c.id, novo);
+  });
+
+  const copia: Cardapio = {
+    ...origem,
+    id: idDoNovo,
+    nome: `${origem.nome} (cópia)`,
+    situacao: "RASCUNHO",
+    categorias: origem.categorias.map((c, i) => ({
+      ...c,
+      id: idsDeSecao[i] ?? c.id,
+    })),
+    itens: origem.itens.map((item, i) => {
+      /*
+        O id da LINHA é novo, sempre. O `fichaId` NÃO: ele aponta para a ficha
+        técnica, e a cópia anuncia os mesmos pratos — é o que faz corrigir o
+        preço na ficha corrigir os dois cardápios de uma vez.
+      */
+      const novoId = idsDeItem[i] ?? item.id;
+      const novaSecao = traducao.get(item.categoriaId);
+      /*
+        Um item órfão na origem (apontando para seção que não existe) ficaria
+        órfão na cópia também, e as duas telas mostrariam o mesmo defeito como
+        se fosse intencional. Ele é mantido — esconder seria pior — mas o
+        `categoriaId` fica como está, e a pendência `ITEM_ORFAO` continua
+        aparecendo para quem copiou.
+      */
+      if (novaSecao === undefined) return { ...item, id: novoId };
+      return { ...item, id: novoId, categoriaId: novaSecao };
+    }),
+    criadoEm: agora,
+    atualizadoEm: agora,
+    historico: [
+      {
+        em: agora,
+        oQue: `Criado como cópia de "${origem.nome}".`,
+        quem: ASSINATURA_DA_SESSAO,
+      },
+    ],
+  };
+
+  criarCardapio(copia);
+  return copia;
+}
+
+/**
+ * APAGA uma seção — e decide o que fazer com os itens dela.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE OS ITENS NÃO SOMEM JUNTO                                      │
+ * │                                                                      │
+ * │ Apagar uma seção e os itens dela parece a operação óbvia, e é a que    │
+ * │ destrói trabalho sem avisar: o prato já estava escolhido, com o nome   │
+ * │ de anúncio escrito, e a seção foi reorganizada por causa disso.        │
+ * │                                                                      │
+ * │ Aqui a seção sai e os itens FICAM, órfãos e MARCADOS. A pendência      │
+ * │ `ITEM_ORFAO` aparece na conferência, e a tela oferece a única saída    │
+ * │ honesta: mover para uma seção que existe, ou remover o item.           │
+ * │                                                                      │
+ * │ Um item a mais numa lista de pendências é recuperável em dez segundos. │
+ * │ Um item apagado sem aviso não é recuperável de jeito nenhum.          │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function removerSecao(cardapio: Cardapio, categoriaId: string): Partial<Cardapio> {
+  return {
+    categorias: cardapio.categorias.filter((c) => c.id !== categoriaId),
+    atualizadoEm: new Date(),
+    historico: [
+      ...cardapio.historico,
+      {
+        em: new Date(),
+        oQue: `Seção removida. Os itens dela continuam no cardápio, aguardando uma seção.`,
+        quem: ASSINATURA_DA_SESSAO,
+      },
+    ],
+  };
+}
+
+/**
+ * AS SEÇÕES DE UM CARDÁPIO NOVO.
+ *
+ * Começa vazia de propósito. Uma lista fixa de seções ("Entradas", "Pratos")
+ * seria o sistema escrevendo a taxonomia da casa dela — e a mesma decisão que
+ * a ficha já tomou ao não ter categorias fixas: a taxonomia é do acervo.
+ */
+export function cardapioVazio(argumentos: {
+  id: string;
+  clienteId: string;
+  consultoriaId: string | null;
+  nome: string;
+  descricao: string;
+}): Cardapio {
+  const agora = new Date();
+  return {
+    id: argumentos.id,
+    clienteId: argumentos.clienteId,
+    consultoriaId: argumentos.consultoriaId,
+    nome: argumentos.nome,
+    descricao: argumentos.descricao,
+    situacao: "RASCUNHO",
+    categorias: [],
+    itens: [],
+    criadoEm: agora,
+    atualizadoEm: agora,
+    historico: [
+      {
+        em: agora,
+        oQue: "Cardápio criado.",
+        quem: ASSINATURA_DA_SESSAO,
+      },
+    ],
+  };
+}
+
+/**
+ * MONTA uma seção e um item — sem id inventado no meio da tela.
+ *
+ * As duas funções existem para que a tela nunca escreva um id à mão. Um `id`
+ * montado no componente seria um segundo lugar decidindo como um id de
+ * demonstração se parece, e o prefixo `ca_demo_` deixaria de ser confiável
+ * para distinguir o que está no banco do que só existe aqui.
+ */
+export function novaSecaoDoCardapio(
+  id: string,
+  nome: string,
+  ordem: number | null
+): CategoriaDoCardapio {
+  return { id, nome, ordem, descricao: "" };
+}
+
+export function novoItemDoCardapio(
+  id: string,
+  fichaId: string,
+  categoriaId: string,
+  ordem: number | null
+): ItemDeCardapio {
+  return {
+    id,
+    fichaId,
+    categoriaId,
+    ordem,
+    nomeNoCardapio: null,
+    descricao: "",
+    destaque: "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Editar a montagem do cardápio
+// ---------------------------------------------------------------------------
+
+/**
+ * AS SITUAÇÕES QUE UMA EDIÇÃO PODE ESCREVER.
+ *
+ * `SituacaoCardapio` tem três valores; este tipo tem dois, e a ausência de
+ * `"ARQUIVADO"` é a parte que importa.
+ *
+ * Arquivar passa por `arquivarCardapio`, que anota o id no `Set` consultado
+ * pelo desarquivamento. Se `definirSituacaoDoCardapio` aceitasse `"ARQUIVADO"`,
+ * existiriam dois caminhos para o mesmo estado — e o que não passa pelo `Set`
+ * deixaria o cardápio marcado como arquivado no registro e ausente do `Set`,
+ * de modo que o primeiro "desarquivar" não teria o que desfazer e o cardápio
+ * voltaria sozinho. Dois caminhos para um estado divergem; um só, não.
+ *
+ * Derivado de `SituacaoCardapio` em vez de união escrita à mão: uma quarta
+ * situação no domínio aparece aqui como erro de compilação, e não como um
+ * caso que ninguém tratou.
+ */
+export type SituacaoEditavel = Extract<SituacaoCardapio, "RASCUNHO" | "PUBLICADO">;
+
+/*
+  ┌────────────────────────────────────────────────────────────────────────
+  │ TODA EDIÇÃO PASSA POR AQUI, E NÃO POR UM `Partial` ESCRITO NA TELA
+  │
+  │ Cada operação abaixo devolve um `Partial<Cardapio>` pronto para
+  │ `salvarCardapio`. Três coisas precisam ser verdade em todas elas, e
+  │ escrevê-las em cada tela seria escrevê-las errado em uma:
+  │
+  │   · `atualizadoEm` sobe — é por ele que a lista ordena;
+  │   · `historico` ganha uma linha — é a ata do cardápio;
+  │   · `categorias` e `itens`, quando vêm, vêm COMPLETAS — a mesclagem é
+  │     por campo, e uma lista parcial seria mesclada como se fosse lista
+  │     inteira.
+  │
+  │ É o mesmo motivo pelo qual o motor de custos saiu de dentro da ficha.
+  └────────────────────────────────────────────────────────────────────────
+*/
+
+function mudancaNoCardapio(
+  cardapio: Cardapio,
+  alteracao: Partial<Cardapio>,
+  oQue: string
+): Partial<Cardapio> {
+  const agora = new Date();
+  return {
+    ...alteracao,
+    atualizadoEm: agora,
+    historico: [...cardapio.historico, { em: agora, oQue, quem: ASSINATURA_DA_SESSAO }],
+  };
+}
+
+/**
+ * AS SEÇÕES NA ORDEM EM QUE A PÁGINA AS MOSTRA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE A REGRA DE ORDENAÇÃO ESTÁ ESCRITA DUAS VEZES — E POR QUE NÃO  │
+ * │ ESTÁ DUPLICADA                                                        │
+ * │                                                                      │
+ * │ `montarLinhasDoCardapio` ordena as seções para EXIBIR. Esta função    │
+ * │ ordena para REORDENAR: para dizer qual é a anterior da que está sendo │
+ * │ movida, e para renumerar depois.                                      │
+ * │                                                                      │
+ * │ Uma reordenar por "ordem" e a outra por criação mostraria a lista na  │
+ * │ ordem A e trocaria os itens na ordem B: clicar em "descer" no segundo │
+ * │ item mexeria no terceiro, e nada na tela explicaria por quê. Por isso  │
+ * │ as duas usam a MESMA chave (`null` vira `Infinity`, desempate pela     │
+ * │ criação) — e é isso que as torna duas aplicações de uma regra, e não   │
+ * │ duas regras.                                                          │
+ * │                                                                      │
+ * │ O desempate é pelo índice no array, e não pela data: seções criadas no │
+ * │ mesmo milissegundo têm a mesma data, e o `sort` as devolveria em ordem │
+ * │ arbitrária. É o mesmo defeito que `idDaSessao` já evita com o          │
+ * │ contador.                                                             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function secoesDoCardapio(cardapio: Cardapio): readonly CategoriaDoCardapio[] {
+  return cardapio.categorias
+    .map((c, indice) => ({ c, indice }))
+    .sort((a, b) => {
+      const oa = a.c.ordem ?? Number.POSITIVE_INFINITY;
+      const ob = b.c.ordem ?? Number.POSITIVE_INFINITY;
+      if (oa !== ob) return oa - ob;
+      return a.indice - b.indice;
+    })
+    .map((x) => x.c);
+}
+
+/** Os itens de UMA seção, na ordem em que a página os mostra. */
+function itensDaSecao(cardapio: Cardapio, categoriaId: string): readonly ItemDeCardapio[] {
+  return cardapio.itens
+    .map((item, indice) => ({ item, indice }))
+    .filter((x) => x.item.categoriaId === categoriaId)
+    .sort((a, b) => {
+      const oa = a.item.ordem ?? Number.POSITIVE_INFINITY;
+      const ob = b.item.ordem ?? Number.POSITIVE_INFINITY;
+      if (oa !== ob) return oa - ob;
+      return a.indice - b.indice;
+    })
+    .map((x) => x.item);
+}
+
+/**
+ * A ORDEM QUE PÕE UM ITEM NO FIM DE UMA SEÇÃO — e o defeito que ela evita.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE `itensDaSecao(...).length` NÃO SERVE                          │
+ * │                                                                      │
+ * │ Aqui havia `naSecao.length`, e ele acerta só num caso: quando as       │
+ * │ ordens da seção são exatamente `0..n-1`, sem buraco. Nesse caso o      │
+ * │ próximo número livre É o do fim, e as duas coisas coincidem.           │
+ * │                                                                      │
+ * │ Fora dele, `length` erra — e erra para o LADO OPOSTO do que promete.   │
+ * │ A ordem é lida como `ordem ?? Infinity`, então:                        │
+ * │                                                                      │
+ * │   · Itens todos com `ordem: null` — uma seção que veio do cenário ou   │
+ * │     de uma cópia, onde ninguém posicionou nada. Uma ordem `0` recém-   │
+ * │     escrita NÃO vai para o fim: `0` é menor que `Infinity`, e o item    │
+ * │     pula para a PRIMEIRA posição da seção.                             │
+ * │                                                                      │
+ * │   · Ordens esparsas, tipo 5 e 9 — `length` é 2, e o item entra na      │
+ * │     frente dos dois.                                                   │
+ * │                                                                      │
+ * │ Nos dois casos o resultado é o mesmo: a consultora clica em "acrescentar"│
+ * │ ou em "mover para esta seção", e o prato aparece no topo. Sem erro na   │
+ * │ tela, e a lista do cliente impressa na ordem errada.                    │
+ * │                                                                      │
+ * │ A regra correta, dita uma vez: se sobrou algum item SEM ordem          │
+ * │ decidida, o fim da seção é o grupo dos sem-ordem — e basta devolver    │
+ * │ `null`, porque o item novo é acrescentado ao FIM do array e o          │
+ * │ desempate é pelo índice. Se todos têm ordem decidida, é o maior deles  │
+ * │ mais um. Seção vazia começa em zero.                                   │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * A decisão não é escrita de novo em cada chamador: `adicionarItem` e
+ * `trocarItemDeSecao` são os dois que põem item novo numa seção, e os dois
+ * perguntam aqui. Duas cópias divergiriam no primeiro caso esquecido.
+ */
+function ordemNoFimDaSecao(cardapio: Cardapio, categoriaId: string): number | null {
+  const naSecao = itensDaSecao(cardapio, categoriaId);
+  if (naSecao.length === 0) return 0;
+
+  const decididas = naSecao.map((i) => i.ordem);
+  if (decididas.some((o) => o === null)) return null;
+
+  return Math.max(...(decididas as readonly number[])) + 1;
+}
+
+/**
+ * TROCA UMA SEÇÃO DE LUGAR NA LISTA.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE `null` VIRA DEPOIS DO PRIMEIRO MOVIMENTO                        │
+ * │                                                                      │
+ * │ Uma seção sem `ordem` é uma seção sobre a qual ninguém decidiu nada.   │
+ * │ Assim que alguém arrasta, isso deixa de ser verdade: passa a existir   │
+ * │ uma ordem pretendida. Por isso a renumeração escreve `0..n-1` em       │
+ * │ TODAS as seções da lista, e não só nas duas trocadas.                  │
+ * │                                                                      │
+ * │ Sem a renumeração, mover uma seção com `ordem: null` para cima não    │
+ * │ faria nada visível: ela continuaria empatada com as outras em          │
+ * │ `Infinity`, e o desempate pela criação a traria de volta ao lugar de   │
+ * │ sempre. O botão pareceria quebrado — e o defeito seria real.           │
+ * │                                                                      │
+ * │ `null` deixa de significar "não decidido" nas seções de um cardápio    │
+ * │ que já foi reordenado. Continua significando isso nas que ninguém      │
+ * │ tocou. É a distinção que a tela precisa para não afirmar que houve uma │
+ * │ decisão que não houve.                                                │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * Devolve `null` quando não há para onde mover — a seção já está na ponta.
+ * Não é erro: é um clique que não muda nada, e gravar um `atualizadoEm` novo
+ * por causa dele faria o cardápio subir na lista sem ter mudado.
+ */
+export function moverSecao(
+  cardapio: Cardapio,
+  categoriaId: string,
+  direcao: -1 | 1
+): Partial<Cardapio> | null {
+  const secao = cardapio.categorias.find((c) => c.id === categoriaId) ?? null;
+  if (secao === null) return null;
+
+  const ordenadas = [...secoesDoCardapio(cardapio)];
+  const de = ordenadas.findIndex((c) => c.id === categoriaId);
+  const para = de + direcao;
+  if (de < 0 || para < 0 || para >= ordenadas.length) return null;
+
+  const anterior = ordenadas[de];
+  const seguinte = ordenadas[para];
+  if (!anterior || !seguinte) return null;
+  ordenadas[de] = seguinte;
+  ordenadas[para] = anterior;
+
+  return mudancaNoCardapio(
+    cardapio,
+    { categorias: ordenadas.map((c, i) => ({ ...c, ordem: i })) },
+    `Seção "${secao.nome}" ${direcao === -1 ? "subiu" : "desceu"} na ordem.`
+  );
+}
+
+export function renomearSecao(
+  cardapio: Cardapio,
+  categoriaId: string,
+  nome: string,
+  descricao: string
+): Partial<Cardapio> | null {
+  const secao = cardapio.categorias.find((c) => c.id === categoriaId) ?? null;
+  if (secao === null) return null;
+
+  /*
+    Nome vazio é recusado no domínio, e não só na tela. Uma seção sem nome
+    apareceria como um cabeçalho em branco no cardápio do cliente — e a
+    validação de tela é a que some quando alguém chamar esta função de outro
+    lugar. O vazio não é um nome ruim: é a ausência de um.
+  */
+  const limpo = nome.trim();
+  if (limpo === "") return null;
+
+  if (limpo === secao.nome && descricao.trim() === secao.descricao) return null;
+
+  return mudancaNoCardapio(
+    cardapio,
+    {
+      categorias: cardapio.categorias.map((c) =>
+        c.id === categoriaId ? { ...c, nome: limpo, descricao: descricao.trim() } : c
+      ),
+    },
+    `Seção renomeada para "${limpo}".`
+  );
+}
+
+/** Acrescenta uma seção ao fim. A ordem é explícita: vai depois das existentes. */
+export function acrescentarSecao(
+  cardapio: Cardapio,
+  id: string,
+  nome: string,
+  descricao: string
+): Partial<Cardapio> | null {
+  const limpo = nome.trim();
+  if (limpo === "") return null;
+
+  const ordem = cardapio.categorias.length;
+  const secao = novaSecaoDoCardapio(id, limpo, ordem);
+
+  return mudancaNoCardapio(
+    cardapio,
+    { categorias: [...secoesDoCardapio(cardapio), { ...secao, descricao: descricao.trim() }] },
+    `Seção "${limpo}" criada.`
+  );
+}
+
+/**
+ * PÕE UMA FICHA NOVA NO CARDÁPIO — sempre apontando para uma ficha existente.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O CARDÁPIO NÃO CRIA PRATO                                             │
+ * │                                                                      │
+ * │ Esta é a regra central do módulo, e é aqui que ela pode ser violada    │
+ * │ por acidente: bastaria `adicionarItem` receber um nome e uma lista de  │
+ * │ insumos, e o cardápio teria virado um segundo cadastro de prato — com  │
+ * │ custo próprio, divergindo da ficha no dia seguinte.                    │
+ * │                                                                      │
+ * │ Por isso o que entra é um `fichaId`, e nada mais. Não há caminho do    │
+ * │ cardápio para um prato que não tenha ficha técnica.                    │
+ * │                                                                      │
+ * │ A mesma ficha pode entrar duas vezes — no mesmo cardápio ou em        │
+ * │ seções diferentes. É uso legítimo: o mesmo prato anunciado no almoço    │
+ * │ e no jantar é uma decisão comercial, e recusá-la obrigaria a          │
+ * │ consultora a criar uma ficha duplicada só para publicar duas vezes.    │
+ * │                                                                      │
+ * │ O que a função recusa é o que não tem significado: seção inexistente.  │
+ * │ Um item numa seção que não existe é órfão desde o nascimento, e a      │
+ * │ pendência `ITEM_ORFAO` existe para consertar o que apareceu, não para   │
+ * │ criar de propósito.                                                    │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function adicionarItem(
+  cardapio: Cardapio,
+  id: string,
+  fichaId: string,
+  categoriaId: string
+): Partial<Cardapio> | null {
+  if (!cardapio.categorias.some((c) => c.id === categoriaId)) return null;
+
+  const item = novoItemDoCardapio(id, fichaId, categoriaId, ordemNoFimDaSecao(cardapio, categoriaId));
+
+  return mudancaNoCardapio(
+    cardapio,
+    { itens: [...cardapio.itens, item] },
+    "Prato acrescentado ao cardápio."
+  );
+}
+
+export function removerItem(cardapio: Cardapio, itemId: string): Partial<Cardapio> | null {
+  const item = cardapio.itens.find((i) => i.id === itemId) ?? null;
+  if (item === null) return null;
+
+  return mudancaNoCardapio(
+    cardapio,
+    { itens: cardapio.itens.filter((i) => i.id !== itemId) },
+    "Prato removido do cardápio. A ficha técnica continua no acervo."
+  );
+}
+
+/**
+ * ESCREVE o que é do cardápio: o nome de anúncio, a descrição e o destaque.
+ *
+ * O `nomeNoCardapio` existe porque o nome da ficha e o nome no menu são
+ * coisas diferentes na prática — "Costela bovina ao molho madeira, 350g" é a
+ * ficha; "Costela ao madeira" é o que cabe no menu. Guardar os dois evita a
+ * escolha ruim entre renomear a ficha (e perder o nome técnico) e mentir no
+ * anúncio.
+ *
+ * `null` no nome esvaziado é deliberado: volta a valer o nome da ficha. Não é
+ * um nome em branco — é a devolução da decisão.
+ */
+export function alterarItemDoCardapio(
+  cardapio: Cardapio,
+  itemId: string,
+  alteracao: { nomeNoCardapio?: string; descricao?: string; destaque?: string }
+): Partial<Cardapio> | null {
+  const item = cardapio.itens.find((i) => i.id === itemId) ?? null;
+  if (item === null) return null;
+
+  const nome =
+    alteracao.nomeNoCardapio === undefined
+      ? item.nomeNoCardapio
+      : alteracao.nomeNoCardapio.trim() === ""
+        ? null
+        : alteracao.nomeNoCardapio.trim();
+
+  return mudancaNoCardapio(
+    cardapio,
+    {
+      itens: cardapio.itens.map((i) =>
+        i.id === itemId
+          ? {
+              ...i,
+              nomeNoCardapio: nome,
+              descricao: alteracao.descricao?.trim() ?? i.descricao,
+              destaque: alteracao.destaque?.trim() ?? i.destaque,
+            }
+          : i
+      ),
+    },
+    nome === null ? "Nome de anúncio voltou a ser o da ficha." : `Anúncio ajustado: "${nome}".`
+  );
+}
+
+/**
+ * TROCA UM ITEM DE LUGAR DENTRO DA PRÓPRIA SEÇÃO.
+ *
+ * A renumeração vale aqui pelo mesmo motivo das seções, e é ainda mais
+ * visível: numa seção recém-montada todos os itens têm `ordem: null` e
+ * aparecem na ordem de cadastro. Sem renumerar, "subir" e "descer" seriam
+ * botões que não fazem nada.
+ *
+ * A renumeração toca SÓ a seção do item. As outras mantêm o que tinham —
+ * `null` continua significando "não decidido" onde ninguém decidiu.
+ */
+export function moverItem(
+  cardapio: Cardapio,
+  itemId: string,
+  direcao: -1 | 1
+): Partial<Cardapio> | null {
+  const item = cardapio.itens.find((i) => i.id === itemId) ?? null;
+  if (item === null) return null;
+
+  const ordenados = [...itensDaSecao(cardapio, item.categoriaId)];
+  const de = ordenados.findIndex((i) => i.id === itemId);
+  const para = de + direcao;
+  if (de < 0 || para < 0 || para >= ordenados.length) return null;
+
+  const anterior = ordenados[de];
+  const seguinte = ordenados[para];
+  if (!anterior || !seguinte) return null;
+  ordenados[de] = seguinte;
+  ordenados[para] = anterior;
+
+  const posicao = new Map(ordenados.map((i, indice) => [i.id, indice]));
+
+  return mudancaNoCardapio(
+    cardapio,
+    {
+      itens: cardapio.itens.map((i) => {
+        const nova = posicao.get(i.id);
+        return nova === undefined ? i : { ...i, ordem: nova };
+      }),
+    },
+    `Prato ${direcao === -1 ? "subiu" : "desceu"} na seção.`
+  );
+}
+
+/** Move um item para outra seção, ao fim dela. */
+export function trocarItemDeSecao(
+  cardapio: Cardapio,
+  itemId: string,
+  categoriaId: string
+): Partial<Cardapio> | null {
+  const item = cardapio.itens.find((i) => i.id === itemId) ?? null;
+  if (item === null) return null;
+  if (!cardapio.categorias.some((c) => c.id === categoriaId)) return null;
+
+  const ordem = ordemNoFimDaSecao(cardapio, categoriaId);
+  const secao = cardapio.categorias.find((c) => c.id === categoriaId) ?? null;
+
+  return mudancaNoCardapio(
+    cardapio,
+    {
+      itens: cardapio.itens.map((i) =>
+        i.id === itemId ? { ...i, categoriaId, ordem } : i
+      ),
+    },
+    `Prato movido para a seção "${secao?.nome ?? "?"}".`
+  );
+}
+
+/**
+ * PUBLICA, VOLTA PARA MONTAGEM.
+ *
+ * A situação é do cardápio, e não do prato: o mesmo prato pode estar
+ * publicado num cardápio e em montagem noutro.
+ *
+ * NÃO existe arquivamento por aqui: `arquivarCardapio` já cuida disso, e
+ * deixar `definirSituacaoDoCardapio` aceitar `"ARQUIVADO"` criaria um segundo
+ * caminho para o mesmo estado — com a diferença de que este não passaria pelo
+ * `cardapiosArquivados`, que é o que o desarquivar consulta. Os dois
+ * divergiriam no primeiro desarquivamento.
+ */
+export function definirSituacaoDoCardapio(
+  cardapioId: string,
+  situacao: SituacaoEditavel,
+  oQue: string
+): void {
+  const acervo = cardapiosNovos.find((c) => c.id === cardapioId);
+  const base = acervo ?? null;
+  const historico = base ? base.historico : alteracoesDeCardapio.get(cardapioId)?.historico;
+  const agora = new Date();
+
+  salvarCardapio(cardapioId, {
+    situacao,
+    atualizadoEm: agora,
+    historico: [
+      ...(historico ?? []),
+      { em: agora, oQue, quem: ASSINATURA_DA_SESSAO },
+    ],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A equipe do cliente
+// ---------------------------------------------------------------------------
+
+/**
+ * AS PESSOAS QUE EXECUTAM, na sessão.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE ISTO GRAVA, E O QUE ELE DELIBERADAMENTE NÃO GRAVA               │
+ * │                                                                      │
+ * │ Grava nomes de execução: quem trabalha na cozinha do cliente, em que   │
+ * │ função, em que turno, o que executa, e o que foi treinada a fazer.     │
+ * │                                                                      │
+ * │ Não grava, e não vai gravar por conveniência: salário, folha, férias,  │
+ * │ benefício, ponto, adiantamento. Este módulo não é RH, e a ausência     │
+ * │ desses campos é a garantia de que ele não vira um. Se um dia o salário │
+ * │ entrar, ele passa a ser leitura obrigatória para tratar de gente — e   │
+ * │ aí um nome errado na lista deixa de ser um prato que sai diferente e    │
+ * │ passa a ser um problema trabalhista.                                   │
+ * │                                                                      │
+ * │ ── POR QUE A SESSÃO, E NÃO O ACERVO ────────────────────────────────  │
+ * │                                                                      │
+ * │ `mock/operacao.ts` não tem lista de pessoas — e inventar uma seria     │
+ * │ afirmar que a consultora já cadastrou uma equipe que ela não          │
+ * │ cadastrou. O que os dados de demonstração têm são NOMES ESCRITOS nos   │
+ * │ processos ("Juliana (auxiliar de cozinha)", "Cozinha", "A definir com  │
+ * │ o Marcelo"), e é sobre eles que `lerResponsaveis` trabalha. Então o    │
+ * │ cadastro começa vazio, e a tela explica por quê.                       │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+let pessoasDaSessao: Pessoa[] = [];
+let treinamentosDaSessao: Treinamento[] = [];
+const pessoasAlteradas = new Map<string, Partial<Pessoa>>();
+
+/**
+ * A equipe de um cliente: as do cenário sobrepostas pelas da sessão.
+ *
+ * `doCenario` entra por argumento pelo mesmo motivo dos cardápios: enquanto
+ * não há tabela, quem tem os dados é o repositório, e o store só sabe o que
+ * foi mexido aqui.
+ */
+export function acervoDaEquipe(doCenario: readonly Pessoa[]): readonly Pessoa[] {
+  const alteradas = doCenario.map((p) => {
+    const alteracao = pessoasAlteradas.get(p.id);
+    return alteracao === undefined ? p : { ...p, ...alteracao };
+  });
+
+  return [...alteradas, ...pessoasDaSessao];
+}
+
+export function pessoaDaSessao(pessoaId: string): boolean {
+  return pessoasDaSessao.some((p) => p.id === pessoaId);
+}
+
+/**
+ * Grava a alteração de uma pessoa.
+ *
+ * Mesma regra do cardápio: se ela foi criada nesta sessão, a alteração vai
+ * direto no registro; se veio do cenário, vai para a sobreposição. Gravar nos
+ * dois lugares deixaria duas verdades — a tela leria uma e a exclusão
+ * procuraria a outra.
+ */
+export function salvarPessoa(pessoaId: string, alteracao: Partial<Pessoa>): void {
+  const indice = pessoasDaSessao.findIndex((p) => p.id === pessoaId);
+  if (indice >= 0) {
+    const atual = pessoasDaSessao[indice];
+    if (atual) pessoasDaSessao[indice] = { ...atual, ...alteracao };
+  } else {
+    pessoasAlteradas.set(pessoaId, { ...(pessoasAlteradas.get(pessoaId) ?? {}), ...alteracao });
+  }
+  avisar();
+}
+
+export function criarPessoa(pessoa: Pessoa): void {
+  pessoasDaSessao = [...pessoasDaSessao, pessoa];
+  avisar();
+}
+
+/**
+ * TIRAR DA ATIVA NÃO É APAGAR — a mesma distinção do insumo arquivado.
+ *
+ * A pessoa executou preparos. O registro do que ela executou continua sendo
+ * verdade quando ela sai da equipe, e apagar o cadastro apagaria junto a
+ * resposta de "quem fazia isto em março". Por isso a saída é `situacao`, e a
+ * pessoa fica: fora da escala de hoje, dentro do registro.
+ */
+export function marcarSaidaDaPessoa(pessoaId: string): void {
+  salvarPessoa(pessoaId, { situacao: "DESLIGADA" });
+}
+
+export function marcarRetornoDaPessoa(pessoaId: string): void {
+  salvarPessoa(pessoaId, { situacao: "ATIVA" });
+}
+
+/**
+ * O PAR (pessoa, preparo) TREINADO.
+ *
+ * Registrar de novo o mesmo par não acrescenta uma segunda linha: um
+ * treinamento é um fato que passou a valer, e dois registros do mesmo par
+ * fariam a contagem de "quantos treinamentos" subir sem que nada tivesse
+ * acontecido. A releitura do mesmo treinamento é uma coisa a mais — e é
+ * justamente por isso que ela não deve parecer um treinamento novo.
+ *
+ * ── A CHAVE VEM DE `./equipe`, E NÃO É ESCRITA AQUI ────────────────────
+ *
+ * Este arquivo tinha a própria ideia de "o mesmo par":
+ * `trim().toLowerCase()`. A conferência usava `normalizarNome`, que além da
+ * caixa e do espaço das pontas tira acento e colapsa espaço no meio. As duas
+ * concordavam nos casos fáceis e discordavam em dois que acontecem:
+ *
+ *   · "costela  ao molho" (espaço duplo, como vem colado de uma ficha)
+ *   · "Escondidinho à moda" e "Escondidinho a moda" (acento)
+ *
+ * Nos dois, o store aceitava o segundo registro e a conferência o via como o
+ * mesmo par — o sistema passava a ter dois registros do mesmo fato, e um
+ * deles nunca casava com nada. Importar a função faz as duas perguntas
+ * serem respondidas pela mesma regra, por construção.
+ *
+ * `concluidoEm` aceita a data por argumento para a bancada poder exercitá-lo
+ * com data fixa; a tela passa `new Date()`.
+ */
+export function registrarTreinamento(
+  treinamento: Treinamento,
+  quando: Date
+): boolean {
+  const jaExiste = treinamentosDaSessao.some(
+    (t) => chaveDoTreinamento(t.pessoaId, t.preparo) === chaveDoTreinamento(treinamento.pessoaId, treinamento.preparo)
+  );
+  if (jaExiste) return false;
+
+  treinamentosDaSessao = [...treinamentosDaSessao, { ...treinamento, concluidoEm: quando }];
+  avisar();
+  return true;
+}
+
+export function removerTreinamento(pessoaId: string, preparo: string): boolean {
+  const antes = treinamentosDaSessao.length;
+  treinamentosDaSessao = treinamentosDaSessao.filter(
+    (t) => chaveDoTreinamento(t.pessoaId, t.preparo) !== chaveDoTreinamento(pessoaId, preparo)
+  );
+
+  if (treinamentosDaSessao.length === antes) return false;
+  avisar();
+  return true;
+}
+
+export function treinamentosDaEquipe(doCenario: readonly Treinamento[]): readonly Treinamento[] {
+  return [...doCenario, ...treinamentosDaSessao];
+}
+
+// ---------------------------------------------------------------------------
+// Biblioteca
+// ---------------------------------------------------------------------------
+
+/**
+ * OS MATERIAIS DE APOIO DA SESSÃO.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ O QUE A SESSÃO GUARDA AQUI, E O QUE ELA NÃO GUARDA                    │
+ * │                                                                      │
+ * │ Guarda o REGISTRO: título, tipo, para que serve, onde o material está  │
+ * │ e a quem ele vale. É o que a Biblioteca precisa para endereçar o       │
+ * │ material que ela já tem.                                              │
+ * │                                                                      │
+ * │ Não guarda o material em si. Não há upload, não há anexo, não há       │
+ * │ base64, não há blob — e a ausência é deliberada, não uma etapa que     │
+ * │ falta. Um material com o arquivo em memória seria a demonstração       │
+ * │ mostrando um arquivo que não existe no disco, e ela acharia que subiu  │
+ * │ uma coisa que não subiu. A regra está no cabeçalho de `./biblioteca`.  │
+ * │                                                                      │
+ * │ `onde` é o endereço — e pode ficar vazio. Vazio é o material que ela   │
+ * │ tem e que ninguém consegue abrir a partir do sistema; a tela lista     │
+ * │ esses à parte, porque é a única pendência real do módulo.             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+let materiaisDaSessao: Material[] = [];
+const materiaisAlterados = new Map<string, Partial<Material>>();
+const materiaisExcluidos = new Set<string>();
+
+/**
+ * A biblioteca: os do cenário sobrepostos pelos da sessão.
+ *
+ * `doCenario` entra por argumento pelo mesmo motivo dos cardápios e da equipe:
+ * enquanto não há tabela, quem tem os dados é o repositório, e o store só sabe
+ * o que foi mexido aqui.
+ *
+ * Os excluídos saem DEPOIS da sobreposição, e não durante: um material do
+ * cenário que foi editado e depois excluído não pode reaparecer pela edição.
+ */
+export function acervoDaBiblioteca(doCenario: readonly Material[]): readonly Material[] {
+  const alterados = doCenario
+    .filter((m) => !materiaisExcluidos.has(m.id))
+    .map((m) => {
+      const alteracao = materiaisAlterados.get(m.id);
+      return alteracao === undefined ? m : { ...m, ...alteracao };
+    });
+
+  return [...alterados, ...materiaisDaSessao];
+}
+
+export function materialDaSessao(materialId: string): boolean {
+  return materiaisDaSessao.some((m) => m.id === materialId);
+}
+
+/**
+ * Grava a alteração de um material.
+ *
+ * Mesma regra do cardápio e da pessoa: se ele nasceu nesta sessão, a alteração
+ * vai direto no registro; se veio do cenário, vai para a sobreposição. Gravar
+ * nos dois lugares deixaria duas verdades — a tela leria uma e a exclusão
+ * procuraria a outra.
+ */
+export function salvarMaterial(materialId: string, alteracao: Partial<Material>): void {
+  const indice = materiaisDaSessao.findIndex((m) => m.id === materialId);
+  if (indice >= 0) {
+    const atual = materiaisDaSessao[indice];
+    if (atual) materiaisDaSessao[indice] = { ...atual, ...alteracao };
+  } else {
+    materiaisAlterados.set(materialId, {
+      ...(materiaisAlterados.get(materialId) ?? {}),
+      ...alteracao,
+    });
+  }
+  avisar();
+}
+
+export function criarMaterial(material: Material): void {
+  materiaisDaSessao = [...materiaisDaSessao, material];
+  avisar();
+}
+
+/**
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ EXCLUIR AQUI É EXCLUIR — E POR QUE NÃO É ARQUIVAR COMO NO INSUMO      │
+ * │                                                                      │
+ * │ O insumo tem `arquivar` porque ARQUIVAR É A REGRA DELE: ele entra em   │
+ * │ fichas, e uma ficha que o usa precisa continuar legível. O registro do │
+ * │ preço de um insumo arquivado segue valendo para o custo de março.      │
+ * │                                                                      │
+ * │ O material de apoio não entra em cálculo nenhum. Ele é um endereço —   │
+ * │ e um endereço errado não precisa ser preservado para nada continuar    │
+ * │ correto. Excluir é excluir.                                           │
+ * │                                                                      │
+ * │ Mas excluir NÃO apaga o material dela, e isso a tela diz com todas as  │
+ * │ letras: o que sai é o REGISTRO no sistema. O material continua onde    │
+ * │ ele está — no Drive, no caderno, publicado. É por isso que o botão     │
+ * │ pergunta antes, e é por isso que esta distinção aparece na tela:       │
+ * │ apagar um endereço não é apagar a coisa endereçada.                    │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
+export function excluirMaterial(materialId: string): void {
+  materiaisExcluidos.add(materialId);
+  materiaisDaSessao = materiaisDaSessao.filter((m) => m.id !== materialId);
+  avisar();
+}
+
+export function materialFoiExcluido(materialId: string): boolean {
+  return materiaisExcluidos.has(materialId);
+}
+
 /** Sobe a cada escrita. É o que o React observa para saber que mudou. */
 let versao = 0;
 
@@ -666,6 +1753,28 @@ export function limparDemonstracao(): void {
   cadastrosDeCliente = new Map();
   inicioDoAtendimento = new Map();
   eventosDaSessao = [];
+  cardapiosNovos = [];
+  alteracoesDeCardapio = new Map();
+  cardapiosArquivados = new Set();
+  cardapiosExcluidos = new Set();
+  /*
+    A equipe entra aqui como tudo o mais. Uma lista de pessoas que sobrevivesse
+    ao "reiniciar demonstração" faria a tela afirmar uma equipe cadastrada que
+    ela acabou de mandar esquecer — e o nome de uma pessoa é o dado que menos
+    pode reaparecer por descuido.
+  */
+  pessoasDaSessao = [];
+  treinamentosDaSessao = [];
+  pessoasAlteradas.clear();
+  /*
+    E a biblioteca. Uma lista de materiais que sobrevivesse ao reiniciar faria
+    a tela mostrar um acervo que ela acabou de mandar esquecer — e, pior, a
+    lista de "sem endereço" continuaria acusando pendências que já não fazem
+    parte de nada.
+  */
+  materiaisDaSessao = [];
+  materiaisAlterados.clear();
+  materiaisExcluidos.clear();
   avisar();
 }
 
@@ -686,7 +1795,35 @@ export function temAlteracoes(): boolean {
     insumosArquivados.size > 0 ||
     cadastrosDeCliente.size > 0 ||
     inicioDoAtendimento.size > 0 ||
-    eventosDaSessao.length > 0
+    eventosDaSessao.length > 0 ||
+    /*
+      Os cardápios entram aqui como todos os outros. Sem estas quatro linhas, a
+      faixa de "há alterações nesta sessão" apareceria com a carteira de fichas
+      mexida e ficaria MUDA depois de montar um cardápio inteiro — que é a
+      mesma classe de defeito que um limpar que não limpa: a tela afirma algo
+      sobre a sessão que não corresponde ao que a sessão tem.
+    */
+    cardapiosNovos.length > 0 ||
+    alteracoesDeCardapio.size > 0 ||
+    cardapiosArquivados.size > 0 ||
+    cardapiosExcluidos.size > 0 ||
+    /*
+      E a equipe, pelo mesmo motivo: cadastrar três pessoas e registrar um
+      treinamento é mexer na sessão, e a faixa que diz "há alterações" ficaria
+      muda depois disso. `pessoasAlteradas` conta mesmo quando a alteração é
+      marcar alguém como desligada — ela continua sendo uma alteração.
+    */
+    pessoasDaSessao.length > 0 ||
+    treinamentosDaSessao.length > 0 ||
+    pessoasAlteradas.size > 0 ||
+    /*
+      E a biblioteca — pelo mesmo motivo de sempre. `materiaisExcluidos` conta
+      mesmo quando o material veio do cenário: excluir algo É mexer na sessão,
+      e a faixa ficaria muda exatamente depois da ação mais destrutiva da tela.
+    */
+    materiaisDaSessao.length > 0 ||
+    materiaisAlterados.size > 0 ||
+    materiaisExcluidos.size > 0
   );
 }
 
@@ -1007,7 +2144,24 @@ export const ASSINATURA_DA_SESSAO = "sessão de trabalho";
  */
 let contadorDeId = 0;
 
-export function idDaSessao(prefixo: "in" | "fi", nome: string): string {
+/**
+ * O prefixo declara QUAL ESPÉCIE de registro o id identifica.
+ *
+ * `in` insumo, `fi` ficha, `ca` cardápio, `se` seção, `it` item de cardápio,
+ * `pe` pessoa da equipe, `tr` treinamento, `bi` material da biblioteca.
+ * O prefixo aparece no id e é o que permite, numa lista que mistura espécies,
+ * saber de que se está falando sem consultar mais nada — e é por isso que ele
+ * é um `union` fechado, e não uma `string`: um prefixo inventado numa tela
+ * deixaria de ser reconhecível por todo o resto.
+ *
+ * `it` e `in` diferem por uma letra, e é de propósito — os dois nomes são os
+ * naturais para "item" e "insumo". Quem lê o id separa os dois pelo `_demo_`
+ * que vem depois: `it_demo_…` contra `in_demo_…`. `bi` não colide com nenhum
+ * dos dois, mas é a mesma escolha de duas letras do nome natural.
+ */
+export type PrefixoDaSessao = "in" | "fi" | "ca" | "se" | "it" | "pe" | "tr" | "bi";
+
+export function idDaSessao(prefixo: PrefixoDaSessao, nome: string): string {
   const slug = nome
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -1018,6 +2172,33 @@ export function idDaSessao(prefixo: "in" | "fi", nome: string): string {
 
   contadorDeId += 1;
   return `${prefixo}_demo_${slug || "registro"}_${Date.now().toString(36)}_${contadorDeId.toString(36)}`;
+}
+
+/**
+ * OS IDS DE UMA CÓPIA — a função que a tela injeta em `duplicarCardapio`.
+ *
+ * Existe para que a tela não chame `idDaSessao` num laço — e, mais
+ * importante, para que a decisão de COMO um id de cópia se parece continue
+ * morando aqui. A tela diz a espécie e a quantidade; o formato é deste
+ * arquivo.
+ *
+ * A ordem dos argumentos é a da injeção: `duplicarCardapio` chama
+ * `montarIds("se", n)` e `montarIds("it", n)`. Manter as duas assinaturas
+ * idênticas é o que permite passar esta função direto, sem uma lambda de
+ * adaptação — e uma lambda de adaptação é onde os dois argumentos trocam de
+ * lugar sem que ninguém perceba.
+ *
+ * O nome que entra no slug é o da espécie (`secao`, `item`), e não o da seção:
+ * o slug é para quem lê o id conseguir dizer o que ele é, e "secao" diz isso
+ * melhor do que "entradas". O que distingue uma seção da outra é o sufixo.
+ */
+export function idsDeCopia(
+  especie: "se" | "it",
+  quantidade: number
+): readonly string[] {
+  return Array.from({ length: quantidade }, () =>
+    idDaSessao(especie, especie === "se" ? "secao" : "item")
+  );
 }
 
 export function criarFicha(ficha: Ficha): void {

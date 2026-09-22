@@ -106,6 +106,13 @@ const FONTES = [
   "src/lib/dados/repositorio.ts",
   "src/lib/dados/repositorio-operacao.ts",
   "src/lib/dados/demonstracao.ts",
+  // A cadeia de `demonstracao.ts` até os cardápios. Ver `conferir-destino.mjs`
+  // para o motivo de ela vir inteira, e não só o arquivo que mudou.
+  "src/lib/dados/precificacao.ts",
+  "src/lib/dados/cardapios.ts",
+  "src/lib/dados/equipe.ts",
+  // `./biblioteca` pelo mesmo motivo de `./equipe` logo acima.
+  "src/lib/dados/biblioteca.ts",
   "src/lib/dados/mock/repositorio-mock.ts",
   "src/lib/dados/mock/repositorio-operacao-mock.ts",
   "src/lib/dados/mock/dados.ts",

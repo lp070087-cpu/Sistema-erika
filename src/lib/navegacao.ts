@@ -40,11 +40,33 @@
  * │   "Documentos" por acidente de implementação; resultado é o que a     │
  * │   consultoria produziu, e é outra pergunta.                           │
  * │                                                                      │
- * │ Os quatro módulos que ainda não abrem ficaram num grupo no fim,       │
+ * │ Os quatro módulos que ainda não abriam ficaram num grupo no fim,       │
  * │ "Em preparo". Antes eles dividiam espaço com Configurações, o que     │
  * │ fazia uma tela de sistema parecer irmã de Precificação — e fazia o    │
- * │ menu parecer maior do que o produto é. Continuam visíveis, porque     │
+ * │ menu parecer maior do que o produto é. Continuavam visíveis, porque   │
  * │ esconder o escopo seria pior: ela precisa saber o que vem.            │
+ * │                                                                      │
+ * │ ── E ESSE GRUPO FOI DESFEITO QUANDO AS TELAS NASCERAM ──────────────── │
+ * │                                                                      │
+ * │ "Em preparo" era um grupo de PROMESSA, e por isso ele tinha prazo de   │
+ * │ validade: no dia em que as telas existissem, manter uma delas lá      │
+ * │ dentro seria o menu dizendo "disponível em breve" sobre uma tela que   │
+ * │ responde.                                                            │
+ * │                                                                      │
+ * │ As quatro saíram, e não todas para o mesmo lugar — o grupo de destino  │
+ * │ de cada uma é decidido pelo TRABALHO que ela faz, não pela fase:       │
+ * │                                                                      │
+ * │ · Precificação, Cardápios e Equipe → Operação. É o caminho do dado na  │
+ * │   cozinha, e a ordem delas ali é essa: insumo → ficha → custo →        │
+ * │   preço anunciado, com a equipe executando o que está na ficha.        │
+ * │                                                                      │
+ * │ · Biblioteca → Sistema, ao lado de Configurações. Ela é o acervo de    │
+ * │   material de APOIO — guia, checklist, procedimento —, e não entra em  │
+ * │   nenhuma conta. A biblioteca que entra em conta é a de insumos, e     │
+ * │   essa já tem tela: Ingredientes, em Operação.                         │
+ * │                                                                      │
+ * │ O grupo ficou vazio e foi removido. Um grupo vazio no menu é uma       │
+ * │ promessa de que algo vem, e não vem.                                   │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -212,6 +234,71 @@ export const NAVEGACAO: GrupoNavegacao[] = [
         fase: 6,
         estado: "no-ar",
       },
+      /*
+        ── A CADEIA TÉCNICA FECHA AQUI, E A ORDEM DO GRUPO É A DELA ────────
+        Precificação, Cardápios e Equipe estavam em "Em preparo" com
+        `estado: "previsto"` e o aviso "Disponível em breve". As três telas já
+        existem e fazem o que prometem — o menu é que não sabia.
+
+        A ordem abaixo não é a ordem em que foram programadas: é o caminho do
+        dado. O insumo entra pela ficha (Ingredientes → Fichas, logo acima),
+        a ficha vira custo (Precificação), o custo vira preço anunciado
+        (Cardápios), e a Equipe é quem executa o que está nas fichas. Ler o
+        grupo de cima para baixo é ler como o número nasce.
+
+        │ POR QUE "parcial" NAS TRÊS, E NÃO "no-ar" │
+
+        Nenhuma das três é um módulo inteiro, e chamá-las de prontas seria o
+        mesmo erro que este arquivo foi escrito para não cometer — a primeira
+        versão deduzia "está pronto" de `fase <= 2` e o menu pintava de cheio
+        telas que não existiam.
+
+        O que falta nas três é A MESMA COISA: persistência. Elas calculam,
+        montam e leem de verdade sobre o cenário, e o que foi criado na sessão
+        vive em memória (`demonstracao.ts`). Não é pendência de metodologia —
+        é a Fase 3, e por isso o aviso nomeia o registro, e não uma definição.
+
+        O aviso é escrito para ela, como a regra deste arquivo pede: "Registro
+        em preparação" diz o que falta sem exigir que ela saiba o que é
+        sessionStorage.
+      */
+      {
+        chave: "precificacao",
+        titulo: "Precificação e CMV",
+        href: "/precificacao",
+        fase: 4,
+        // O custo fecha, e CMV, markup e o preço que um alvo exige são contas
+        // sobre números declarados. O que NÃO existe continua nomeado DENTRO
+        // da tela: não há CMV alvo por cliente, margem padrão da casa nem
+        // regra de arredondamento — nenhuma das três foi inventada.
+        estado: "parcial",
+        aviso: "Registro em preparação",
+      },
+      {
+        chave: "cardapios",
+        titulo: "Cardápios",
+        href: "/cardapios",
+        fase: 5,
+        // Monta de verdade — seção, ordem e nome de anúncio — referenciando
+        // fichas que já existem. O cardápio não guarda preço próprio: ele
+        // PUBLICA o preço que mora na ficha. O custo do período continua fora,
+        // porque depende do volume vendido, e o sistema não presume quanto
+        // cada prato vende.
+        estado: "parcial",
+        aviso: "Registro em preparação",
+      },
+      {
+        chave: "equipe",
+        titulo: "Equipe",
+        href: "/equipe",
+        fase: 6,
+        // Quem executa: nome, função, turno, o que executa e o que já foi
+        // treinada a fazer. Lê os responsáveis escritos nos processos SEM
+        // reescrevê-los — "A definir com o Marcelo" continua como ela
+        // escreveu. NÃO é RH: sem salário, folha, férias, benefício ou ponto.
+        estado: "parcial",
+        aviso: "Registro em preparação",
+      },
     ],
   },
   {
@@ -289,61 +376,78 @@ export const NAVEGACAO: GrupoNavegacao[] = [
         fase: 1,
         estado: "no-ar",
       },
-    ],
-  },
-  {
-    chave: "em-preparo",
-    titulo: "Em preparo",
-    itens: [
       /*
-        Os três módulos que ainda não abrem ficam aqui, separados de
-        Configurações e agrupados com um título que diz o que eles são.
+        ── BIBLIOTECA FICA AQUI, E NÃO NA OPERAÇÃO ──────────────────────────
+        Ela quer dizer duas coisas diferentes, e a diferença é o que decide o
+        grupo.
 
-        Continuam VISÍVEIS de propósito: esconder o que ainda não existe
-        faria o menu parecer um sistema fechado, e ela precisa saber o que
-        vem. O que mudou é que agora eles se apresentam como um conjunto —
-        "isto ainda está sendo preparado" — em vez de parecerem itens
-        quebrados espalhados entre os que funcionam.
+        Se "Biblioteca" fosse a biblioteca de INSUMOS — preço, fornecedor,
+        histórico —, ela seria Operação: é matéria-prima do custo, e o preço
+        dela entra na ficha. Essa biblioteca JÁ EXISTE, e é a tela de
+        Ingredientes, que está no grupo Operação logo acima. Criar outra
+        chamada "Biblioteca" ao lado seria a segunda tela para o mesmo dado.
 
-        O aviso é escrito para ela, não para quem programa: "Disponível em
-        breve" no lugar de "f4". O campo `fase` continua no dado, porque
-        organiza o trabalho — mas quem lê o menu não precisa dele.
+        Esta é outra coisa: o material de APOIO da consultoria — o guia, o
+        checklist, o procedimento, a referência. Não entra em cálculo nenhum.
+        É o acervo de trabalho dela, e por isso fica junto de Configurações,
+        no grupo das telas do sistema.
+
+        A própria página declara `rotulo="Sistema"`, e o menu passa a
+        concordar com ela. Antes desta rodada os dois discordavam: a tela
+        dizia "Sistema" e o menu a listava em "Em preparo".
+
+        │ POR QUE "parcial" │
+
+        Registrar, editar, ligar a um insumo/ficha/processo e excluir
+        funcionam sobre a sessão. O que falta é o mesmo dos outros três —
+        persistência — e, por ser o único módulo cujo CONTEÚDO é escrito por
+        ela, é o que mais depende disso.
+
+        Um detalhe que a tela diz e o menu não pode deixar implícito: o
+        sistema NÃO guarda o material. Ele guarda o REGISTRO e o ENDEREÇO.
+        Não há upload, nem anexo, nem campo de arquivo em lugar nenhum — ver
+        `src/lib/dados/biblioteca.ts`, onde a ausência está documentada como
+        decisão, e não como falta.
       */
-      {
-        chave: "precificacao",
-        titulo: "Precificação e CMV",
-        href: "/precificacao",
-        fase: 4,
-        estado: "previsto",
-        aviso: "Aguardando definição",
-        pendencias: ["7", "19"],
-      },
-      {
-        chave: "cardapios",
-        titulo: "Cardápios",
-        href: "/cardapios",
-        fase: 5,
-        estado: "previsto",
-        aviso: "Disponível em breve",
-      },
-      {
-        chave: "equipe",
-        titulo: "Equipe",
-        href: "/equipe",
-        fase: 6,
-        estado: "previsto",
-        aviso: "Disponível em breve",
-      },
       {
         chave: "biblioteca",
         titulo: "Biblioteca",
         href: "/biblioteca",
         fase: 9,
-        estado: "previsto",
-        aviso: "Disponível em breve",
+        estado: "parcial",
+        aviso: "Registro em preparação",
       },
     ],
   },
+  /*
+    ── O GRUPO "EM PREPARO" DEIXOU DE EXISTIR, E ISSO É O RESULTADO ─────────
+
+    Ele foi criado para segurar os quatro módulos que ainda não abriam —
+    "quem ainda não abre fica aqui, visível, em vez de escondido". A ideia
+    era boa e o grupo era o lugar certo enquanto as telas não existiam.
+
+    As quatro passaram a existir nesta fase, e todas as quatro telas JÁ
+    diziam isso quando eram abertas pela rota direta: cada uma declara no
+    próprio cabeçalho que tirou o `ModuloPendente` porque o que ele listava
+    como bloqueio já estava resolvido. O menu é que continuava anunciando
+    "Disponível em breve" para telas que respondiam.
+
+    Então o grupo não foi substituído por outro: ele ficou VAZIO, e um grupo
+    vazio no menu é uma promessa de que algo vem. As quatro foram para os
+    grupos a que pertencem pelo trabalho que fazem — três para Operação, que
+    é o caminho do dado na cozinha, e a Biblioteca para o lado de
+    Configurações, porque ela não entra em cálculo nenhum.
+
+    │ O QUE ISSO NÃO QUER DIZER │
+
+    Não quer dizer que os quatro estejam prontos. Nenhum está — o estado
+    deles é "parcial", e é a persistência que falta nos quatro. O que mudou
+    é onde essa informação mora: antes ela era uma frase no menu dizendo que
+    a tela não abria; agora ela é a tela abrindo e nomeando dentro de si o
+    que ainda não tem. A segunda é mais honesta e é mais útil, porque a
+    pendência aparece onde ela trabalha, e não num item de menu que ela não
+    abriria justamente por causa do aviso.
+  */
 ];
 
 /** Todos os itens, achatados — usado para casar a rota atual com o item ativo. */
